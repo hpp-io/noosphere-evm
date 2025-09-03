@@ -1,0 +1,51 @@
+@startuml sequence-create-wallet
+
+    !theme plain
+
+    title Wallet Creation and Approval Sequence
+
+    autonumber
+
+    actor User
+    participant Router <<IRouter>>
+    participant WalletFactory
+    participant Wallet
+
+    ' == 1. 사용자가 Router를 통해 Wallet 생성을 요청합니다 ==
+    User -> Router: createWallet()
+    activate Router
+
+    Router -> WalletFactory: createWallet(userAddress)
+    activate WalletFactory
+
+    create Wallet
+    WalletFactory -> Wallet: <<create>>
+    note right of WalletFactory
+        새로운 Wallet 인스턴스를 생성하고
+        사용자를 owner로 설정합니다.
+    end note
+
+    WalletFactory --> Router: walletAddress
+    deactivate WalletFactory
+
+    Router --> User: walletAddress
+    deactivate Router
+
+    ' == 2. 사용자가 생성된 Wallet에 자금을 이체합니다 ==
+    User -> Wallet: transferFunds(token, amount)
+    note right of User
+        사용자는 자신의 EOA에서
+        새로 생성된 Wallet으로
+        ETH 또는 ERC20 토큰을 전송합니다.
+    end note
+
+    ' == 3. 사용자가 Router를 지출자로 승인합니다 ==
+    User -> Wallet: approveToken(token, Router, amount)
+    note right of Wallet
+        Wallet의 owner인 사용자는
+        향후 구독 결제를 위해
+        Router가 자신의 Wallet에서
+        자금을 사용할 수 있도록 승인합니다.
+    end note
+
+@enduml
