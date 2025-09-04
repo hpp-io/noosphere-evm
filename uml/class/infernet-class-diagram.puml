@@ -79,7 +79,7 @@ class "Inbox" as Inbox implements IInbox {
     + read(containerId: bytes32, node: address, index: uint256): InboxItem
 }
 
-' Payment system
+' Payment.sol system
 class "Fee" as Fee {
     - FEE : uint16
     --

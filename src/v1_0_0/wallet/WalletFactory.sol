@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.23;
 
+import {Routable} from "../Routable.sol";
 import {Wallet} from "./Wallet.sol";
-import {Registry} from "../Registry.sol";
+import {ITypeAndVersion} from "../interfaces/ITypeAndVersion.sol";
 
 /// @title WalletFactory
 /// @notice Responsible for creating and tracking `Wallet`(s)
-contract WalletFactory {
+contract WalletFactory is Routable {
     /*//////////////////////////////////////////////////////////////
                                IMMUTABLE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Registry contract
     /// @dev Consumed as parameter during `Wallet`-creation
-    Registry private immutable REGISTRY;
 
     /*//////////////////////////////////////////////////////////////
                                 MUTABLE
@@ -38,11 +37,8 @@ contract WalletFactory {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes new WalletFactory
-    /// @param registry registry contract
-    constructor(Registry registry) {
-        // Store registry contract
-        REGISTRY = registry;
-    }
+    /// @param router router contract
+    constructor(address router) Routable(router) {}
 
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
@@ -53,7 +49,7 @@ contract WalletFactory {
     /// @return newly-created `Wallet` address
     function createWallet(address initialOwner) external returns (address) {
         // Create new wallet
-        Wallet wallet = new Wallet(REGISTRY, initialOwner);
+        Wallet wallet = new Wallet(address(_getRouter()), initialOwner);
 
         // Track created wallet
         wallets[address(wallet)] = true;
@@ -72,4 +68,12 @@ contract WalletFactory {
         return wallets[wallet];
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        TYPE & VERSION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ITypeAndVersion
+    function typeAndVersion() external pure override returns (string memory) {
+        return "WalletFactory 1.0.0";
+    }
 }
