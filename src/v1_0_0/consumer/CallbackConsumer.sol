@@ -13,7 +13,7 @@ abstract contract CallbackConsumer is BaseConsumer {
 
     /// @notice subscriptionId => callback input data
     /// @dev Could be restricted to `private` visibility but kept `internal` for better testing/downstream modification support
-    mapping(uint32 => bytes) internal subscriptionInputs;
+    mapping(uint64 => bytes) internal subscriptionInputs;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -46,9 +46,9 @@ abstract contract CallbackConsumer is BaseConsumer {
         uint256 paymentAmount,
         address wallet,
         address verifier
-    ) internal returns (uint32) {
+    ) internal returns (uint64) {
         // Create one-time subscription at coordinator
-        uint32 subscriptionId = _getRouter().createSubscription(
+        uint64 subscriptionId = _getRouter().createSubscription(
             containerId,
             1, // frequency == 1, one-time subscription
             0, // period == 0, available to be responded to immediately
@@ -79,7 +79,7 @@ abstract contract CallbackConsumer is BaseConsumer {
     /// @param interval subscription interval to collect container inputs for
     /// @param timestamp timestamp at which container inputs are collected
     /// @param caller calling address
-    function getContainerInputs(uint32 subscriptionId, uint32 interval, uint32 timestamp, address caller)
+    function getContainerInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
         external
         view
         override

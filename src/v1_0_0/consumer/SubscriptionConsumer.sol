@@ -40,7 +40,7 @@ abstract contract SubscriptionConsumer is BaseConsumer {
         uint256 paymentAmount,
         address wallet,
         address verifier
-    ) internal returns (uint32) {
+    ) internal returns (uint64) {
         return _getRouter().createSubscription(
             containerId, frequency, period, redundancy, lazy, paymentToken, paymentAmount, wallet, verifier
         );
@@ -49,7 +49,7 @@ abstract contract SubscriptionConsumer is BaseConsumer {
     /// @notice Cancels a created subscription
     /// @dev Can only cancel owned subscriptions (`address(this) == Coordinator.subscriptions[subscriptionId].owner`)
     /// @param subscriptionId ID of subscription to cancel
-    function _cancelComputeSubscription(uint32 subscriptionId) internal {
+    function _cancelComputeSubscription(uint64 subscriptionId) internal {
         _getRouter().cancelSubscription(subscriptionId);
     }
 }

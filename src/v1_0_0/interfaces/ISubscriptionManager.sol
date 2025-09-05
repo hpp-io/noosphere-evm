@@ -7,7 +7,7 @@ interface ISubscriptionsManager {
      * @param subscriptionId The ID of the subscription.
      * @return The `Subscription` object.
      */
-    function getSubscription(uint32 subscriptionId) external view returns (Subscription memory);
+    function getSubscription(uint64 subscriptionId) external view returns (Subscription memory);
 
     /**
      * @notice Calculate the interval of a subscription based on activation time and period.
@@ -31,24 +31,24 @@ interface ISubscriptionsManager {
         uint256 paymentAmount,
         address wallet,
         address verifier
-    ) external returns (uint32);
+    ) external returns (uint64);
 
     /**
      * @notice Cancel an existing subscription.
      * @param subscriptionId The ID of the subscription to cancel.
      */
-    function cancelSubscription(uint32 subscriptionId) external;
+    function cancelSubscription(uint64 subscriptionId) external;
 
     /**
      * @notice Check if there are pending requests for a specific subscription.
      * @param subscriptionId The subscription ID.
      * @return True if there are pending requests, false otherwise.
      */
-    function pendingRequestExists(uint32 subscriptionId) external view returns (bool);
+    function pendingRequestExists(uint64 subscriptionId) external view returns (bool);
 
     /**
      * @notice Handle the timeout of requests.
-     * @param requestsToTimeoutByCommitment The commitment of requests to timeout.
+     * @param requestId The id of requests to timeout.
      */
-    function timeoutRequests(bytes32 requestsToTimeoutByCommitment) external;
+    function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external;
 }

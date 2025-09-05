@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {ISubscriptionsManager} from "./interfaces/ISubscriptionManager.sol";
 import {Subscription} from "./types/Subscription.sol";
 import {Payment} from "./types/Payment.sol";
+import {Wallet} from "./wallet/Wallet.sol";
 
 abstract contract SubscriptionsManager is ISubscriptionsManager {
     /*//////////////////////////////////////////////////////////////
@@ -11,54 +12,56 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Mapping of subscription IDs to `Subscription` objects.
-    mapping(uint32 => Subscription) internal subscriptions;
+    mapping(uint64 subscriptionId => Subscription) internal subscriptions;
 
-    /// @dev A mapping storing request commitments.
-    mapping(bytes32 => bytes32) internal requestCommitments;
+    /// @dev A mapping storing request commitments. The key is `keccak256(abi.encode(subscriptionId, interval))`
+    /// and the value is the commitment hash.
+    /// This allows tracking pending requests for a given subscription and interval.
+    mapping(bytes32 requestId => bytes32 commitmentHash) internal requestCommitments;
+
+    // Keep a count of the number of subscriptions so that its possible to
+    // loop through all the current subscriptions via .getSubscription().
+    uint64 private currentSubscriptionId;
 
     /// @notice Emitted when a new subscription is created
     /// @param id subscription ID
-    event SubscriptionCreated(uint32 indexed id);
+    event SubscriptionCreated(uint64 indexed id);
 
     /// @notice Emitted when a subscription is cancelled
     /// @param id subscription ID
-    event SubscriptionCancelled(uint32 indexed id);
+    event SubscriptionCancelled(uint64 indexed id);
 
     /// @notice Emitted when a subscription is fulfilled
     /// @param id subscription ID
     /// @param node address of fulfilling node
-    event SubscriptionFulfilled(uint32 indexed id, address indexed node);
+    event SubscriptionFulfilled(uint64 indexed id, address indexed node);
 
-    /// @notice Thrown by `cancelSubscription()` if attempting to modify a subscription not owned by caller
-    /// @dev 4-byte signature: `0xa7fba711`
+    /// @notice Emitted when a commitment times out and is cleaned up
+    event CommitmentTimedOut(bytes32 indexed requestId, uint64 indexed subscriptionId, uint32 indexed interval);
+
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
     error NotSubscriptionOwner();
-
-    /// @notice Thrown by `deliverCompute()` if attempting to deliver a completed subscription
-    /// @dev 4-byte signature: `0xae6704a7`
     error SubscriptionCompleted();
-
-    /// @notice Thrown by `deliverCompute()` if attempting to deliver a subscription before `activeAt`
-    /// @dev 4-byte signature: `0xefb74efe`
     error SubscriptionNotActive();
+    error CannotRemoveWithPendingRequests();
+    error InvalidSubscription();
+    error NoSuchCommitment();
+    error CommitmentNotTimeoutable();
 
     /*//////////////////////////////////////////////////////////////
                          ISubscriptionsManager IMPLEMENTATION
     //////////////////////////////////////////////////////////////*/
 
-    function getSubscription(uint32 subscriptionId) external view returns (Subscription memory) {
+    /// @notice Get stored subscription (use uint64 to match mapping key)
+    function getSubscription(uint64 subscriptionId) external view returns (Subscription memory) {
         return subscriptions[subscriptionId];
     }
 
     function getSubscriptionInterval(uint32 activeAt, uint32 period) external view returns (uint32){
-        if (uint32(block.timestamp) < activeAt) {
-            return 0;
-        }
-        if (period == 0) {
-            return 1;
-        }
-        unchecked {
-            return ((uint32(block.timestamp) - activeAt) / period) + 1;
-        }
+        return _getSubscriptionInterval(activeAt, period);
     }
 
     function createSubscription(
@@ -71,40 +74,175 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         uint256 paymentAmount,
         address wallet,
         address verifier
-    ) external virtual override returns (uint32) {
+    ) external virtual override returns (uint64) {
+        uint64 subscriptionId;
+        unchecked {
+            subscriptionId = ++currentSubscriptionId;
+        }
 
+        subscriptions[subscriptionId] = Subscription({
+            activeAt: uint32(block.timestamp) + period,
+            owner: msg.sender,
+            redundancy: redundancy,
+            frequency: frequency,
+            period: period,
+            containerId: keccak256(abi.encode(containerId)),
+            lazy: lazy,
+            verifier: payable(verifier),
+            paymentAmount: paymentAmount,
+            paymentToken: paymentToken,
+            wallet: payable(wallet)
+        });
+
+        emit SubscriptionCreated(subscriptionId);
+        return subscriptionId;
     }
 
-    function cancelSubscription(uint32 subscriptionId) external virtual override {
+    function cancelSubscription(uint64 subscriptionId) external override {
         if (subscriptions[subscriptionId].owner != msg.sender) {
             revert NotSubscriptionOwner();
         }
-
-//        if (pendingRequestExists(subscriptionId)) {
-//
-//        }
+        if (_pendingRequestExists(subscriptionId)) {
+            revert CannotRemoveWithPendingRequests();
+        }
+        subscriptions[subscriptionId].activeAt = type(uint32).max;
+        emit SubscriptionCancelled(subscriptionId);
     }
 
-    function pendingRequestExists(uint32 subscriptionId) external view virtual override returns (bool) {
-        // Implementation Placeholder
+    function pendingRequestExists(uint64 subscriptionId) external view override returns (bool) {
+        return _pendingRequestExists(subscriptionId);
     }
 
-    function timeoutRequests(bytes32 requestsToTimeoutByCommitment) external virtual override {
-        // Implementation Placeholder
+    /// @notice Time out a single request identified by requestId (and the subscriptionId/interval used to build it).
+    /// @dev Uses Wallet.releaseForRequest(requestId) to refund remaining locked funds for that request.
+    function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external override {
+        bytes32 expectedId = keccak256(abi.encode(subscriptionId, interval));
+        if (expectedId != requestId) revert NoSuchCommitment();
+
+        bytes32 stored = requestCommitments[requestId];
+        if (stored == bytes32(0)) revert NoSuchCommitment();
+
+        Subscription storage sub = subscriptions[subscriptionId];
+        uint32 currentInterval = _getSubscriptionInterval(sub.activeAt, sub.period);
+        if (currentInterval == 0) revert CommitmentNotTimeoutable();
+
+        bool timeoutable;
+        if (sub.period == 0) {
+            // one-shot: activeAt passed => timeout allowed
+            timeoutable = uint32(block.timestamp) >= sub.activeAt;
+        } else {
+            // recurring: only if this interval is already in the past
+            timeoutable = interval < currentInterval;
+        }
+
+        if (!timeoutable) revert CommitmentNotTimeoutable();
+
+        // Use request-level release (Wallet.releaseForRequest)
+        Wallet consumer = Wallet(sub.wallet);
+        consumer.releaseForRequest(requestId);
+
+        delete requestCommitments[requestId];
+
+        emit CommitmentTimedOut(requestId, subscriptionId, interval);
+    }
+
+    mapping(uint64 => uint32) internal subscriptionLastProcessedInterval; // optional progress tracker
+
+    /// @notice Batch timeout up to `uptoInterval` for a subscription; bounded by `maxIter`.
+    /// @dev Uses Wallet.releaseForRequest for each timed-out request.
+    function timeoutSubscriptionIntervalsUpTo(uint64 subscriptionId, uint32 uptoInterval, uint32 maxIter) external {
+        Subscription storage sub = subscriptions[subscriptionId];
+        uint32 currentInterval = _getSubscriptionInterval(sub.activeAt, sub.period);
+        if (currentInterval == 0) {
+            return; // not active yet
+        }
+        if (uptoInterval > currentInterval) uptoInterval = currentInterval;
+
+        uint32 start = subscriptionLastProcessedInterval[subscriptionId] + 1;
+        if (start == 0) start = 1;
+
+        uint32 processed = 0;
+        for (uint32 i = start; i <= uptoInterval && processed < maxIter; ++i) {
+            bytes32 rid = keccak256(abi.encode(subscriptionId, i));
+            bytes32 stored = requestCommitments[rid];
+            if (stored != bytes32(0)) {
+                bool timeoutable;
+                if (sub.period == 0) {
+                    timeoutable = uint32(block.timestamp) >= sub.activeAt;
+                } else {
+                    timeoutable = i < currentInterval;
+                }
+
+                if (timeoutable) {
+                    Wallet consumer = Wallet(sub.wallet);
+                    consumer.releaseForRequest(rid);
+                    delete requestCommitments[rid];
+                    emit CommitmentTimedOut(rid, subscriptionId, i);
+                }
+                processed++;
+            } else {
+                // advance lastProcessed even when no commitment exists, to avoid revisiting
+                subscriptionLastProcessedInterval[subscriptionId] = i;
+            }
+        }
+
+        if (processed > 0) {
+            uint32 last = start + processed - 1;
+            if (last > subscriptionLastProcessedInterval[subscriptionId]) {
+                subscriptionLastProcessedInterval[subscriptionId] = last;
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                             INTERNAL LOGIC HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    function _getSubscriptionInterval(uint32 activeAt, uint32 period) internal view returns (uint32){
+        if (uint32(block.timestamp) < activeAt) {
+            return 0;
+        }
+        if (period == 0) {
+            return 1;
+        }
+        unchecked {
+            return ((uint32(block.timestamp) - activeAt) / period) + 1;
+        }
+    }
+
+    function _pendingRequestExists(uint64 subscriptionId) internal view returns (bool) {
+        uint32 interval = _getSubscriptionInterval(subscriptions[subscriptionId].activeAt, subscriptions[subscriptionId].period);
+        bytes32 requestId = keccak256(abi.encode(subscriptionId, interval));
+        return requestCommitments[requestId] != bytes32(0);
+    }
+
+    /// @notice Lock funds (request-level). Coordinator will return/issue commitment externally.
+    /// @dev This locks `paymentAmount * redundancy` on the Wallet (via lockForRequest).
+    /// @param walletAddr Wallet address (subscriptions[subscriptionId].wallet)
+    /// @param subscriptionId subscription id
+    /// @param interval interval for this request
+    /// @param redundancy number of expected payouts
+    /// @param paymentToken token used for payment
+    /// @param paymentAmount per-response payment amount
     function _markRequestInFlight(
-        address wallet,
+        address payable walletAddr,
         uint64 subscriptionId,
+        uint32 interval,
         uint16 redundancy,
         address paymentToken,
         uint256 paymentAmount
-    ) internal {
-        // Internal implementation placeholder
+    ) internal returns (bytes32 requestId) {
+        // compute requestId
+        requestId = keccak256(abi.encode(subscriptionId, interval));
+
+        // compute total to lock (paymentAmount * redundancy)
+        uint256 total = uint256(paymentAmount) * uint256(redundancy);
+
+        // lock on wallet (this will revert if insufficient funds/allowance)
+        Wallet consumer = Wallet(walletAddr);
+        consumer.lockForRequest(subscriptions[subscriptionId].owner, paymentToken, total, requestId, redundancy);
+
+        // Note: coordinator is responsible for issuing/storing the commitment hash and returning it to this system if needed.
     }
 
     function _pay(
@@ -112,7 +250,10 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         uint64 commitmentId,
         Payment[] memory payments
     ) internal {
-        // Internal implementation placeholder
+        // Placeholder:
+        // Implementors should iterate `payments` and call Wallet.disburseForRequest(requestId, recipient, amount)
+        // where requestId = keccak256(abi.encode(subscriptionId, interval)) — you will need the interval or requestId parameter.
+        // After all expected disbursements (or per policy), clear requestCommitments[requestId] if appropriate.
     }
 
     function _callback(
@@ -127,13 +268,75 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         uint256 index
     ) internal {
         // Internal implementation placeholder
+        // Typical flow:
+        // 1. Validate requestCommitments[requestId] exists and matches _computeCommitmentHash(...) if you stored the commitment.
+        // 2. Call Wallet.disburseForRequest(requestId, node, subscriptions[subscriptionId].paymentAmount);
+        // 3. If fully paid (paidCount == redundancy or remainingAmount == 0), then delete requestCommitments[requestId]
     }
 
-    function _cancelSubscriptionHelper(uint32 subscriptionId) internal {
-        // Internal implementation placeholder
+    function _cancelSubscriptionHelper(uint64 subscriptionId) internal {
+        Subscription memory subscription = subscriptions[subscriptionId];
+        subscription.activeAt = type(uint32).max;
+
+        // Attempt to release any request-level lock for the current interval (if exists).
+        // Note: we don't scan all historical intervals here for gas reasons.
+        uint32 currentInterval = _getSubscriptionInterval(subscription.activeAt, subscription.period);
+        if (currentInterval != 0) {
+            bytes32 rid = keccak256(abi.encode(subscriptionId, currentInterval));
+            if (requestCommitments[rid] != bytes32(0)) {
+                Wallet consumer = Wallet(subscription.wallet);
+                // release funds for that single requestId
+                consumer.releaseForRequest(rid);
+                delete requestCommitments[rid];
+                emit CommitmentTimedOut(rid, subscriptionId, currentInterval);
+            }
+        }
+
+        // Mark subscription inactive
+        subscriptions[subscriptionId].activeAt = type(uint32).max;
+        emit SubscriptionCancelled(subscriptionId);
     }
 
     function _timeoutPrepareNextIntervalRequests(uint32 subscriptionId) internal {
         // Internal implementation placeholder
     }
+
+    function _computeCommitmentHash(
+        uint64 subscriptionId,
+        uint32 interval,
+        address coordinator
+    ) internal view returns (bytes32) {
+        Subscription storage s = subscriptions[subscriptionId];
+        return keccak256(
+            abi.encode(
+                subscriptionId,
+                interval,
+                s.containerId,
+                s.lazy,
+                s.verifier,
+                s.paymentAmount,
+                s.paymentToken,
+                s.redundancy,
+                coordinator
+            )
+        );
+    }
+
+    // ================================================================
+    // |                      Owner methods                           |
+    // ================================================================
+
+    function ownerCancelSubscription(uint64 subscriptionId) external {
+        _onlyRouterOwner();
+        _cancelSubscriptionHelper(subscriptionId);
+    }
+
+    // ================================================================
+    // |                         Modifiers                            |
+    // ================================================================
+
+    /// @dev Overriden in FunctionsRouter.sol
+    function _whenNotPaused() internal virtual;
+
+    function _onlyRouterOwner() internal virtual;
 }

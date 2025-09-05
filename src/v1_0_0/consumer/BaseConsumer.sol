@@ -50,7 +50,7 @@ abstract contract BaseConsumer is Routable {
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
     /// @param index if lazy subscription, `Inbox` lazy store index, else empty
     function _receiveCompute(
-        uint32 subscriptionId,
+        uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
         address node,
@@ -68,7 +68,7 @@ abstract contract BaseConsumer is Routable {
     /// @param timestamp timestamp at which container inputs are collected
     /// @param caller calling address
     /// @return The container inputs as bytes.
-    function getContainerInputs(uint32 subscriptionId, uint32 interval, uint32 timestamp, address caller)
+    function getContainerInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
         external
         view
         virtual
