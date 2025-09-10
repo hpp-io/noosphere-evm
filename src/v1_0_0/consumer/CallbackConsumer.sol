@@ -45,7 +45,8 @@ abstract contract CallbackConsumer is BaseConsumer {
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
-        address verifier
+        address verifier,
+        bytes32 routeId
     ) internal returns (uint64) {
         // Create one-time subscription at coordinator
         uint64 subscriptionId = _getRouter().createSubscription(
@@ -59,7 +60,8 @@ abstract contract CallbackConsumer is BaseConsumer {
             paymentAmount,
             wallet,
             // Optional proof verification
-            verifier
+            verifier,
+        routeId
         );
 
         // Store inputs by subscriptionId (to be retrieved by off-chain Infernet nodes)

@@ -39,10 +39,11 @@ abstract contract SubscriptionConsumer is BaseConsumer {
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
-        address verifier
+        address verifier,
+        bytes32 routeId
     ) internal returns (uint64) {
         return _getRouter().createSubscription(
-            containerId, frequency, period, redundancy, lazy, paymentToken, paymentAmount, wallet, verifier
+            containerId, frequency, period, redundancy, lazy, paymentToken, paymentAmount, wallet, verifier, routeId
         );
     }
 

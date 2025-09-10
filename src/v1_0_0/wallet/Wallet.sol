@@ -6,8 +6,8 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "openzeppelin-contracts/contracts/utils/Address.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import {ITypeAndVersion} from "../interfaces/ITypeAndVersion.sol";
 import {Routable} from "../Routable.sol";
+import {Payment} from "../types/Payment.sol";
 
 /// @title Wallet
 /// @notice Lightweight payments wallet with per-request escrow + redundancy-aware disbursements.
@@ -61,7 +61,11 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
     event RequestReleased(bytes32 indexed requestId, address indexed spender, address token, uint256 amountRefunded);
 
     /// Emitted when a request-level disbursement is made to `to`
-    event RequestDisbursed(bytes32 indexed requestId, address indexed to, address token, uint256 amount);
+    event RequestDisbursed(bytes32 indexed requestId, address indexed to, address token, uint256 amount, uint16 paidCount);
+
+    /// @notice Emitted when funds are locked or unlocked from escrow by the router.
+    /// @param locked True if funds were locked, false if unlocked.
+    event Escrow(address indexed spender, address indexed token, uint256 amount, bool locked);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -120,6 +124,54 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
+                         GENERAL-PURPOSE ESCROW
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Allows router to lock `amount` `token`(s) into escrow on behalf of `spender`.
+    /// @dev This is a general-purpose lock, not tied to a specific request ID.
+    /// @param spender The user on whose behalf tokens are locked.
+    /// @param token The token to lock (address(0) for ETH).
+    /// @param amount The amount to lock.
+    function cLock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
+        // Throw if requested escrow amount is greater than available unlocked token amount
+        if (amount > _getUnlockedBalance(token)) {
+            revert InsufficientFunds();
+        }
+
+        // Ensure allowance allows locking `amount` `token`
+        if (allowance[spender][token] < amount) {
+            revert InsufficientAllowance();
+        }
+
+        // Decrement allowance
+        allowance[spender][token] -= amount;
+
+        // Increment escrow locked balance for the spender and in total
+        lockedBalanceOf[spender][token] += amount;
+        totalLocked[token] += amount;
+
+        // Emit escrow locking
+        emit Escrow(spender, token, amount, true);
+    }
+
+    /// @notice Allows router to unlock `amount` `token`(s) from escrow on behalf of `spender`.
+    /// @param spender on-behalf of whom tokens are unlocked
+    /// @param token token to unlock
+    /// @param amount amount to unlock
+    function cUnlock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
+        // Throw if requested unlock amount is greater than the spender's locked balance
+        if (amount > lockedBalanceOf[spender][token]) {
+            revert InsufficientFunds();
+        }
+
+        lockedBalanceOf[spender][token] -= amount;
+        totalLocked[token] -= amount;
+        allowance[spender][token] += amount;
+
+        emit Escrow(spender, token, amount, false);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                       REQUEST-LEVEL ESCROW & PAYMENTS
     //////////////////////////////////////////////////////////////*/
 
@@ -149,7 +201,6 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
             paidCount: 0,
             exists: true
         });
-
         emit RequestLocked(requestId, spender, token, totalAmount, redundancy);
     }
 
@@ -183,8 +234,56 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
             delete requestLocks[requestId];
         }
 
-        emit RequestDisbursed(requestId, to, rl.token, amount);
+        emit RequestDisbursed(requestId, to, rl.token, amount, rl.paidCount);
     }
+
+    /// @notice Disburses funds for a single fulfillment event to multiple recipients.
+    /// @dev Increments the paidCount for the request lock only once.
+    /// @param requestId The unique ID for the request.
+    /// @param payments An array of payments to be made for this fulfillment.
+    function disburseForFulfillment(bytes32 requestId, Payment[] calldata payments) external onlyRouter nonReentrant {
+        RequestLock storage rl = requestLocks[requestId];
+        if (!rl.exists) revert NoSuchRequestLock();
+        if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
+
+        uint256 totalToDisburse = 0;
+        for (uint256 i = 0; i < payments.length; i++) {
+//            if (payments[i].paymentAmount == 0) revert ZeroAmount();
+            // Ensure all payments use the token specified in the lock
+            if (payments[i].paymentToken != rl.token) revert("Mismatched payment token");
+            totalToDisburse += payments[i].paymentAmount;
+        }
+
+        if (totalToDisburse > rl.remainingAmount) revert ExceedsRemaining();
+
+        // Bookkeeping for the entire fulfillment first
+        uint256 lockedForSpender = lockedBalanceOf[rl.spender][rl.token];
+        if (totalToDisburse > lockedForSpender) revert InconsistentLockedBalance();
+        lockedBalanceOf[rl.spender][rl.token] = lockedForSpender - totalToDisburse;
+        totalLocked[rl.token] -= totalToDisburse;
+
+        rl.remainingAmount -= totalToDisburse;
+        unchecked {
+            rl.paidCount += 1;
+        } // Increment paidCount only ONCE
+
+        // Perform external transfers
+        for (uint256 i = 0; i < payments.length; i++) {
+            Payment calldata p = payments[i];
+            _transferToken(rl.token, p.recipient, p.paymentAmount);
+            emit RequestDisbursed(requestId, p.recipient, rl.token, p.paymentAmount, rl.paidCount);
+        }
+
+        // Finalize: if fully consumed or redundancy reached, refund leftover and cleanup
+        if (rl.remainingAmount == 0 || rl.paidCount == rl.redundancy) {
+            if (rl.remainingAmount > 0) {
+                // refund leftover back to spender's allowance
+                allowance[rl.spender][rl.token] += rl.remainingAmount;
+            }
+            delete requestLocks[requestId];
+        }
+    }
+
 
     /// Release remaining funds for a request (timeout/cancel). Refunds remaining amount to spender's allowance.
     function releaseForRequest(bytes32 requestId) external onlyRouter nonReentrant {

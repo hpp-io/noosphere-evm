@@ -3,14 +3,14 @@ pragma solidity ^0.8.23;
 
 struct Commitment {
     bytes32 requestId;
-    address coordinator;
     uint64 subscriptionId;
     bytes32 containerId;
+    uint32 interval;
     bool lazy;
-    address payable verifier;
+    uint16 redundancy;
+    address walletAddress;
     uint256 paymentAmount;
     address paymentToken;
-    uint32 timeoutTimestamp;
-    uint16 redundancy;
-    uint32 interval;
+    address verifier;
+    address coordinator;
 }

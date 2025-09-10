@@ -67,4 +67,8 @@ struct Subscription {
     /// @notice Optional `Wallet` to pay for compute payments; `owner` must be approved spender
     /// @dev Defaults to `address(0)` when no payment specified
     address payable wallet;
+
+    /// @notice Identifier for the specific route configuration to be used for this subscription.
+    /// @dev This allows for dynamic routing and configuration of off-chain compute.
+    bytes32 routeId;
 }

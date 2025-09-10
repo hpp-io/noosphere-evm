@@ -91,7 +91,7 @@ abstract contract BaseConsumer is Routable {
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
     /// @param index if lazy subscription, `Inbox` lazy store index, else empty
     function rawReceiveCompute(
-        uint32 subscriptionId,
+        uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
         address node,

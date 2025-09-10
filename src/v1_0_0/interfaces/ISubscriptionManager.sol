@@ -11,11 +11,10 @@ interface ISubscriptionsManager {
 
     /**
      * @notice Calculate the interval of a subscription based on activation time and period.
-     * @param activeAt The timestamp when the subscription becomes active.
-     * @param period The subscription period in seconds.
+     * @param subscriptionId The ID of the subscription.
      * @return The computed interval.
      */
-    function getSubscriptionInterval(uint32 activeAt, uint32 period) external view returns (uint32);
+    function getSubscriptionInterval(uint64 subscriptionId) external view returns (uint32);
 
     /**
      * @notice Create a new subscription.
@@ -30,7 +29,8 @@ interface ISubscriptionsManager {
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
-        address verifier
+        address verifier,
+        bytes32 routeId
     ) external returns (uint64);
 
     /**

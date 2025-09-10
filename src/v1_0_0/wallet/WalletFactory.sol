@@ -71,7 +71,6 @@ contract WalletFactory is Routable {
     /*//////////////////////////////////////////////////////////////
                         TYPE & VERSION
     //////////////////////////////////////////////////////////////*/
-
     /// @inheritdoc ITypeAndVersion
     function typeAndVersion() external pure override returns (string memory) {
         return "WalletFactory 1.0.0";
