@@ -54,9 +54,7 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         address _routerAddress,
         address _initialOwner,
         BillingConfig memory _config
-    ) Ownable(_initialOwner) Billing(_routerAddress, _config) {
-
-    }
+    ) Ownable(_initialOwner) Billing(_routerAddress, _config) {}
 
     /**
      * @inheritdoc ICoordinator

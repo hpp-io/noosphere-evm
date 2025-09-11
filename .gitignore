@@ -2,6 +2,7 @@
 cache/
 out/
 .idea/
+broadcast/
 
 # Ignores development broadcast logs
 !/broadcast

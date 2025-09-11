@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {FulfillResult} from "./types/FulfillResult.sol";
-import {ConfirmedOwner} from "./utillity/ConfirmedOwner.sol";
+import {ConfirmedOwner} from "./utility/ConfirmedOwner.sol";
 import {ContractProposalSet} from "./types/ContractProposalSet.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {ITypeAndVersion} from "./interfaces/ITypeAndVersion.sol";
@@ -52,7 +52,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     event ContractsUpdateProposed(bytes32[] ids, address[] addresses);
 
     /// @notice Emitted when contracts are updated
-    event ContractsUpdated();
+    event ContractsUpdated(bytes32 id, address contractAddress);
 
     /// @notice Emitted when the allow list ID is updated
     event AllowListIdSet(bytes32 indexed newAllowListId);
@@ -107,17 +107,20 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     //////////////////////////////////////////////////////////////*/
     /**
      * @notice Constructor initializes the Router with essential dependencies
-     * @param initInbox The Inbox contract address
-     * @param initWalletFactory The WalletFactory contract address
      */
-    constructor(
-        address initInbox,
-        address initWalletFactory
-    )
-        ConfirmedOwner(msg.sender)
-    {
-        inbox = initInbox;
-        walletFactory = WalletFactory(initWalletFactory);
+    constructor() ConfirmedOwner(msg.sender) {
+//        inbox = initInbox;
+    }
+
+    /**
+     * @notice Sets the WalletFactory contract address.
+     * @dev Can only be called once by the owner to break the circular dependency at deployment.
+     * @param _walletFactory The address of the deployed WalletFactory contract.
+     */
+    function setWalletFactory(address _walletFactory) external onlyOwner {
+        require(address(walletFactory) == address(0), "WalletFactory already set");
+        require(_walletFactory != address(0), "Invalid WalletFactory address");
+        walletFactory = WalletFactory(_walletFactory);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -313,9 +316,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function updateContracts() external override onlyOwner {
         for (uint256 i = 0; i < proposedContractSet.ids.length; i++) {
             route[proposedContractSet.ids[i]] = proposedContractSet.to[i];
+            emit ContractsUpdated(proposedContractSet.ids[i], proposedContractSet.to[i]);
         }
         delete proposedContractSet;
-        emit ContractsUpdated();
     }
 
     /**

@@ -20,7 +20,7 @@ abstract contract Billing is IBilling, Routable {
 
     /// @notice A mapping from a request's unique identifier to its commitment hash.
     /// @dev The key is typically keccak256(abi.encodePacked(subscriptionId, interval)).
-    mapping(bytes32 => bytes32) internal requestCommitments;
+    mapping(bytes32 => bytes32) public requestCommitments;
 
     error InvalidRequestCommitment(bytes32 requestId);
     error ProtocolFeeExceeds();
