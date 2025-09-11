@@ -103,11 +103,40 @@ abstract contract BaseConsumer is Routable {
     ) external {
         // Note: The original check was against a `COORDINATOR` variable that is no longer defined.
         // This check should be updated to reflect the current authorization mechanism, likely via the router.
-        if (msg.sender != _getRouter().owner()) { // Example check, might need adjustment based on router logic.
+        if (msg.sender != address (_getRouter())) { // Example check, might need adjustment based on router logic.
             revert NotRouter();
         }
 
         // Call internal receive function, since caller is validated
         _receiveCompute(subscriptionId, interval, redundancy, node, input, output, proof, containerId, index);
+    }
+
+    /// @notice Creates a new compute subscription.
+    /// @param containerId The ID of the container to subscribe to.
+    /// @param frequency The frequency of the subscription in seconds.
+    /// @param period The period of the subscription in seconds.
+    /// @param redundancy The number of redundant nodes required for the computation.
+    /// @param lazy Whether the subscription is lazy (i.e., computation is triggered on demand).
+    /// @param paymentToken The address of the payment token.
+    /// @param paymentAmount The amount of payment token to be paid.
+    /// @param wallet The address of the wallet to receive payments.
+    /// @param verifier The address of the verifier contract.
+    /// @param routeId The ID of the route to use for the subscription.
+    /// @return The ID of the newly created subscription.
+    function createComputeSubscription(
+        string memory containerId,
+        uint32 frequency,
+        uint32 period,
+        uint16 redundancy,
+        bool lazy,
+        address paymentToken,
+        uint256 paymentAmount,
+        address wallet,
+        address verifier,
+        bytes32 routeId
+    ) external returns (uint64) {
+        return _getRouter().createSubscription(
+            containerId, frequency, period, redundancy, lazy, paymentToken, paymentAmount, wallet, verifier, routeId
+        );
     }
 }

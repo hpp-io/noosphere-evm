@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.23;
 
+import {Commitment} from "../types/Commitment.sol";
 import {BaseConsumer} from "./BaseConsumer.sol";
 
 /// @title CallbackConsumer
@@ -47,7 +48,7 @@ abstract contract CallbackConsumer is BaseConsumer {
         address wallet,
         address verifier,
         bytes32 routeId
-    ) internal returns (uint64) {
+    ) internal returns (uint64, Commitment memory) {
         // Create one-time subscription at coordinator
         uint64 subscriptionId = _getRouter().createSubscription(
             containerId,
@@ -61,19 +62,22 @@ abstract contract CallbackConsumer is BaseConsumer {
             wallet,
             // Optional proof verification
             verifier,
-        routeId
+            routeId
         );
 
         // Store inputs by subscriptionId (to be retrieved by off-chain Infernet nodes)
         subscriptionInputs[subscriptionId] = inputs;
 
+        (bytes32 requestId, Commitment memory commitment) =_getRouter().sendRequest(subscriptionId, 1);
         // Return subscriptionId
-        return subscriptionId;
+        return (subscriptionId, commitment);
     }
 
     /*//////////////////////////////////////////////////////////////
                            OVERRIDE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+
 
     /// @notice View function to broadcast dynamic container inputs to off-chain Infernet nodes
     /// @dev Modified from `BaseConsumer` to expose callback input data, indexed by subscriptionId

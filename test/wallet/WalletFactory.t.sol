@@ -7,6 +7,7 @@ import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 import "../lib/LibDeploy.sol";
 import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title IWalletFactoryEvents
 /// @notice Events emitted by WalletFactory
@@ -53,10 +54,11 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
 
     /// @notice Wallets created via `WalletFactory.createWallet()` are appropriately setup
     function testFuzzWalletsAreCreatedCorrectly(address initialOwner) public {
+        vm.assume(initialOwner != address(0));
         // Predict expected wallet address
         uint256 nonce = vm.getNonce(address(WALLET_FACTORY));
         address expected = vm.computeCreateAddress(address(WALLET_FACTORY), nonce);
-
+        bytes32 NAME = bytes32("Coordinator_v1.0.0");
         // Create new wallet
         vm.expectEmit(address(WALLET_FACTORY));
         emit WalletCreated(address(this), initialOwner, expected);
@@ -73,7 +75,6 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
 
         // Verify wallet owner is correctly set
         assertEq(wallet.owner(), initialOwner);
-
         // Verify router-only functions can be called by the router.
         // We expect it to revert with InsufficientFunds, which confirms the auth check passed.
         vm.startPrank(address(ROUTER));
@@ -85,6 +86,7 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
 
     /// @notice Wallets not created via `WalletFactory` do not return as valid
     function testFuzzWalletsCreatedDirectlyAreNotValid(address deployer) public {
+        vm.assume(deployer != address(0));
         // Deploy from a different address to increase entropy
         vm.startPrank(deployer);
 

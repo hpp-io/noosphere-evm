@@ -17,8 +17,8 @@ import {Commitment} from "./types/Commitment.sol";
 
 /**
  * @title Router
- * @notice Main entry point for Infernet network. Manages contract resolution, subscription management,
- * and provides a unified interface for interacting with the Infernet protocol.
+ * @notice Main entry point for network. Manages contract resolution, subscription management,
+ * and provides a unified interface for interacting with the protocol.
  */
 
 contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, ConfirmedOwner {
@@ -147,7 +147,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function sendRequest(
         uint64 subscriptionId,
         uint32 interval
-    ) external override returns (bytes32) {
+    ) external override returns (bytes32, Commitment memory) {
         return _sendRequest(subscriptionId, interval);
     }
 
@@ -372,17 +372,20 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function _sendRequest(
         uint64 subscriptionId,
         uint32 interval
-    ) private returns (bytes32) {
+    ) private returns (bytes32, Commitment memory) {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
         Subscription storage subscription = subscriptions[subscriptionId];
-        ICoordinator coordinator = ICoordinator(this.getContractById(subscription.routeId));
+        address coordinatorAddr = getContractById(subscription.routeId);
+        require(coordinatorAddr != address(0), "Coordinator not found");
+        ICoordinator coordinator = ICoordinator(coordinatorAddr);
         bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
 
         if (requestCommitments[requestId] != bytes32(0)) {
             revert DuplicateRequestId(requestId);
         }
 
+        emit ContractsUpdated(subscription.routeId, coordinatorAddr);
         _markRequestInFlight(
             requestId,
             payable(subscription.wallet),
@@ -392,6 +395,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscription.paymentToken,
             subscription.paymentAmount
         );
+        emit ContractsUpdated(subscription.routeId, coordinatorAddr);
 
         Commitment memory commitment = coordinator.startRequest(
             requestId,
@@ -419,6 +423,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.verifier,
             address(coordinator)
         );
-        return requestId;
+        return (requestId, commitment);
     }
 }

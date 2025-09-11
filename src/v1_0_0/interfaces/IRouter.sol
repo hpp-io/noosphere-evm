@@ -16,7 +16,7 @@ interface IRouter {
     function sendRequest(
         uint64 subscriptionId,
         uint32 interval
-    ) external returns (bytes32);
+    ) external returns (bytes32, Commitment memory);
 
     /**
      * @notice Fulfill a subscription request

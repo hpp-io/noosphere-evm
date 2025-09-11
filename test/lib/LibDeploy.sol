@@ -37,19 +37,14 @@ library LibDeploy {
             WalletFactory
         )
     {
-        // Precompute contract addresses using the correct method
         address routerAddr = vm.computeCreateAddress(deployerAddress, initialNonce);
         address coordinatorAddr = vm.computeCreateAddress(deployerAddress, initialNonce + 1);
-        // address inboxAddr = vm.computeCreateAddress(deployerAddress, initialNonce + 2);
         address readerAddr = vm.computeCreateAddress(deployerAddress, initialNonce + 2);
         address walletFactoryAddr = vm.computeCreateAddress(deployerAddress, initialNonce + 3);
 
-//        // Deploy contracts
-//        vm.startBroadcast(deployerAddress);
 
         Router router = new Router(); // This uses nonce: initialNonce + 0
         require(address(router) == routerAddr, "Router address mismatch");
-
         Coordinator coordinator = new Coordinator(
             routerAddr,
             deployerAddress,
@@ -68,15 +63,8 @@ library LibDeploy {
         addrs[0] = coordinatorAddr;
         router.proposeContractsUpdate(ids, addrs);
         router.updateContracts();
-        // This check is removed as it can cause gas estimation issues in complex scripts.
-        // The address pre-computation and deployment order provide sufficient confidence.
-        // require(coordinatorAddr == router.getContractById("Coordinator_v1.0.0"), "Coordinator address mismatch");
-
         Reader reader = new Reader(routerAddr, coordinatorAddr);
         WalletFactory walletFactory = new WalletFactory(routerAddr);
-//        vm.stopBroadcast();
-
         return (router, coordinator, reader, walletFactory);
-
     }
 }

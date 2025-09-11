@@ -83,7 +83,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         address verifier,
         bytes32 routeId
     ) external virtual override returns (uint64) {
-        uint64 subscriptionId;
+        uint64 subscriptionId = ++currentSubscriptionId;
         unchecked {
         }
         subscriptions[subscriptionId] = Subscription({
@@ -247,6 +247,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         uint256 total = uint256(paymentAmount) * uint256(redundancy);
         // lock on wallet (this will revert if insufficient funds/allowance)
         Wallet consumer = Wallet(walletAddr);
+        require(address(consumer) != address(0), "Invalid wallet address");
         consumer.lockForRequest(subscriptions[subscriptionId].owner, paymentToken, total, requestId, redundancy);
     }
 
