@@ -3,10 +3,10 @@ pragma solidity ^0.8.23;
 import {Routable} from "../Routable.sol";
 
 /// @title BaseConsumer
-/// @notice Handles receiving container compute responses from Infernet coordinator
-/// @notice Handles exposing container inputs to Infernet nodes via `getContainerInputs()`
+/// @notice Handles receiving container compute responses from  coordinator
+/// @notice Handles exposing container inputs to  nodes via `getContainerInputs()`
 /// @notice Declares internal `INBOX` reference to allow downstream consumers to read from `Inbox`
-/// @dev Contains a single public entrypoint `rawReceiveCompute` callable only by the Infernet coordinator.
+/// @dev Contains a single public entrypoint `rawReceiveCompute` callable only by the  coordinator.
 ///      Once msg.sender is verified, parameters are proxied to internal function `_receiveCompute`
 /// @dev Does not inherit `Coordinated` for `rawReceiveCompute` coordinator-permissioned check to keep error scope localized
 abstract contract BaseConsumer is Routable {
@@ -42,9 +42,9 @@ abstract contract BaseConsumer is Routable {
     /// @dev This function should be implemented by derived contracts to handle the compute result.
     /// @param subscriptionId id of subscription being responded to
     /// @param interval subscription interval
-    /// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
-    /// @param node address of responding Infernet node
-    /// @param input optional off-chain container input recorded by Infernet node (empty, hashed input, processed input, or both), empty for lazy subscriptions
+    /// @param numRedundantDeliveries after this call succeeds, how many nodes will have delivered a response for this interval
+    /// @param node address of responding  node
+    /// @param input optional off-chain container input recorded by  node (empty, hashed input, processed input, or both), empty for lazy subscriptions
     /// @param output optional off-chain container output (empty, hashed output, processed output, both, or fallback: all encodeable data), empty for lazy subscriptions
     /// @param proof optional off-chain container execution proof (or arbitrary metadata), empty for lazy subscriptions
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
@@ -52,7 +52,7 @@ abstract contract BaseConsumer is Routable {
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 redundancy,
+        uint16 numRedundantDeliveries,
         address node,
         bytes calldata input,
         bytes calldata output,
@@ -61,7 +61,7 @@ abstract contract BaseConsumer is Routable {
         uint256 index
     ) internal virtual {}
 
-    /// @notice View function to broadcast dynamic container inputs to off-chain Infernet nodes
+    /// @notice View function to broadcast dynamic container inputs to off-chain  nodes
     /// @dev Developers can modify this function to return dynamic inputs
     /// @param subscriptionId subscription ID to collect container inputs for
     /// @param interval subscription interval to collect container inputs for
@@ -79,13 +79,13 @@ abstract contract BaseConsumer is Routable {
                                FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Callback entrypoint called by Infernet Coordinator to return container compute responses
+    /// @notice Callback entrypoint called by Coordinator to return container compute responses
     /// @dev Callable only by `address(COORDINATOR)`, else throws `NotCoordinator()` error
     /// @param subscriptionId id of subscription being responded to
     /// @param interval subscription interval
-    /// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
-    /// @param node address of responding Infernet node
-    /// @param input optional off-chain container input recorded by Infernet node (empty, hashed input, processed input, or both), empty for lazy subscriptions
+    /// @param numRedundantDeliveries after this call succeeds, how many nodes will have delivered a response for this interval
+    /// @param node address of responding  node
+    /// @param numRedundantDeliveries optional off-chain container input recorded by  node (empty, hashed input, processed input, or both), empty for lazy subscriptions
     /// @param output optional off-chain container output (empty, hashed output, processed output, both, or fallback: all encodeable data), empty for lazy subscriptions
     /// @param proof optional off-chain container execution proof (or arbitrary metadata), empty for lazy subscriptions
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
@@ -93,7 +93,7 @@ abstract contract BaseConsumer is Routable {
     function rawReceiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 redundancy,
+        uint16 numRedundantDeliveries,
         address node,
         bytes calldata input,
         bytes calldata output,
@@ -108,7 +108,7 @@ abstract contract BaseConsumer is Routable {
         }
 
         // Call internal receive function, since caller is validated
-        _receiveCompute(subscriptionId, interval, redundancy, node, input, output, proof, containerId, index);
+        _receiveCompute(subscriptionId, interval, numRedundantDeliveries, node, input, output, proof, containerId, index);
     }
 
     /// @notice Creates a new compute subscription.

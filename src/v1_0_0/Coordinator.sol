@@ -27,7 +27,7 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
     mapping(bytes32 => bool) public nodeResponded;
 
     /// @notice Emitted when a node delivers a computation result.
-    event ComputeDelivered(bytes32 indexed requestId, address nodeWallet);
+    event ComputeDelivered(bytes32 indexed requestId, address nodeWallet, uint16 numRedundantDeliveries);
 
     /// @notice Emitted when a new request is started and a commitment is created.
     event RequestStarted(
@@ -36,11 +36,8 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         bytes32 indexed containerId,
         Commitment commitment
     );
-
-    error SubscriptionNotFound();
-    error SubscriptionNotActive();
-    error IntervalMismatch();
-    error SubscriptionCompleted();
+    error IntervalMismatch(uint32 deliveryInterval);
+    error RequestCompleted(bytes32 requestId);
     error IntervalCompleted();
     error NodeRespondedAlready();
     error InvalidWallet();
@@ -101,17 +98,24 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
         uint32 interval = _getRouter().getSubscriptionInterval(commitment.subscriptionId);
         if (interval != deliveryInterval) {
-            revert IntervalMismatch();
+            revert IntervalMismatch(deliveryInterval);
         }
         // Revert if redundancy requirements for this interval have been met
         uint16 numRedundantDeliveries = redundancyCount[commitment.requestId];
         if (numRedundantDeliveries == commitment.redundancy) {
-            revert IntervalCompleted();
+            revert RequestCompleted(commitment.requestId);
         }
 
         unchecked {
             redundancyCount[commitment.requestId] = numRedundantDeliveries + 1;
         }
+
+        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
+        if (nodeResponded[key]) {
+            revert NodeRespondedAlready();
+        }
+        nodeResponded[key] = true;
+
         _processDelivery(
             commitment,
             msg.sender,
@@ -119,11 +123,11 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
             input,
             output,
             proof,
-            0,
+            redundancyCount[commitment.requestId],
             numRedundantDeliveries == commitment.redundancy - 1
         );
 
-        emit ComputeDelivered(commitment.requestId, nodeWallet);
+        emit ComputeDelivered(commitment.requestId, nodeWallet, redundancyCount[commitment.requestId]);
     }
 
     /**

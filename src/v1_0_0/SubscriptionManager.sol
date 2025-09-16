@@ -46,8 +46,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
     //////////////////////////////////////////////////////////////*/
 
     error NotSubscriptionOwner();
-    error SubscriptionCompleted();
+    error SubscriptionNotFound();
     error SubscriptionNotActive();
+    error SubscriptionCompleted();
     error CannotRemoveWithPendingRequests();
     error InvalidSubscription();
     error NoSuchCommitment();
@@ -207,10 +208,14 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
 
     function _getSubscriptionInterval(uint64 subscriptionId) internal view returns (uint32) {
         Subscription storage sub = subscriptions[subscriptionId];
+        if (!_isExistingSubscription(subscriptionId)) {
+            revert SubscriptionNotFound();
+        }
+
         uint32 activeAt = sub.activeAt;
         uint32 period = sub.period;
         if (uint32(block.timestamp) < activeAt) {
-            return 0;
+            revert SubscriptionNotActive();
         }
         if (period == 0) {
             return 1;
@@ -276,12 +281,11 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        bytes32 containerId,
-        uint256 index
+        bytes32 containerId
     ) internal {
         Subscription memory subscription = subscriptions[subscriptionId];
         BaseConsumer(subscription.owner).rawReceiveCompute(
-            subscriptionId, interval, numRedundantDeliveries + 1,
+            subscriptionId, interval, numRedundantDeliveries,
             node, input, output, proof, bytes32(0), 0
         );
     }

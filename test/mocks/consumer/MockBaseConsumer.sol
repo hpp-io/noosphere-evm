@@ -34,6 +34,8 @@ abstract contract MockBaseConsumer {
                                 MUTABLE
     //////////////////////////////////////////////////////////////*/
 
+    error DeliveredOutputNotFount(uint64 subscriptionId, uint32 interval, uint16 redundancy);
+
     /// @notice Subscription ID => Interval => Redundancy => DeliveredOutput
     /// @dev Visibility restricted to `internal` to allow downstream inheriting contracts to modify mapping
     mapping(uint64 => mapping(uint64 => mapping(uint16 => DeliveredOutput))) internal outputs;

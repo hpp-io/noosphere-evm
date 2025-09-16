@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
+import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
 import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
 import {SubscriptionConsumer} from "../../../src/v1_0_0/consumer/SubscriptionConsumer.sol";
 import "./MockBaseConsumer.sol";
@@ -52,7 +53,7 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         uint256 paymentAmount,
         address wallet,
         address verifier
-    ) external returns (uint64) {
+    ) external returns (uint64, Commitment memory) {
         uint256 creationTimestamp = block.timestamp;
         uint64 actualSubscriptionID = _createComputeSubscription(
             containerId,
@@ -67,10 +68,81 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
             bytes32("Coordinator_v1.0.0")
         );
 
-        // Collect subscription from storage
-        Subscription memory sub = _getRouter().getSubscription(actualSubscriptionID);
+        _assertSubscription(
+            actualSubscriptionID,
+            containerId,
+            frequency,
+            period,
+            redundancy,
+            lazy,
+            paymentToken,
+            paymentAmount,
+            wallet,
+            verifier,
+            creationTimestamp
+        );
 
-        // Assert subscription storage
+        return _requestCompute(actualSubscriptionID, 1);
+    }
+
+    /// @notice Create new mock subscription without sending an initial request
+    function createMockSubscriptionWithoutRequest(
+        string calldata containerId,
+        uint32 frequency,
+        uint32 period,
+        uint16 redundancy,
+        bool lazy,
+        address paymentToken,
+        uint256 paymentAmount,
+        address wallet,
+        address verifier
+    ) external returns (uint64) {
+        uint64 actualSubscriptionID = _createComputeSubscription(
+            containerId,
+            frequency,
+            period,
+            redundancy,
+            lazy,
+            paymentToken,
+            paymentAmount,
+            wallet,
+            verifier,
+            bytes32("Coordinator_v1.0.0")
+        );
+
+        _assertSubscription(
+            actualSubscriptionID,
+            containerId,
+            frequency,
+            period,
+            redundancy,
+            lazy,
+            paymentToken,
+            paymentAmount,
+            wallet,
+            verifier,
+            block.timestamp
+        );
+
+        return actualSubscriptionID;
+    }
+
+    /// @dev Asserts that the subscription was created with the correct parameters.
+    function _assertSubscription(
+        uint64 subId,
+        string calldata containerId,
+        uint32 frequency,
+        uint32 period,
+        uint16 redundancy,
+        bool lazy,
+        address paymentToken,
+        uint256 paymentAmount,
+        address wallet,
+        address verifier,
+        uint256 creationTimestamp
+    ) private {
+        Subscription memory sub = _getRouter().getSubscription(subId);
+
         assertEq(sub.activeAt, creationTimestamp + period);
         assertEq(sub.owner, address(this));
         assertEq(sub.redundancy, redundancy);
@@ -83,8 +155,6 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
 
-        // Explicitly return subscription ID
-        return actualSubscriptionID;
     }
 
     /// @notice Allows cancelling subscription
@@ -93,7 +163,6 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
     /// @dev Asserts subscription owner is nullified after cancellation
     function cancelMockSubscription(uint64 subscriptionId) external {
         _cancelComputeSubscription(subscriptionId);
-
         // Assert maxxed out subscription `activeAt`
         uint32 expected = type(uint32).max;
         Subscription memory actual = _getRouter().getSubscription(subscriptionId);

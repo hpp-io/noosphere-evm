@@ -15,6 +15,7 @@ import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {Reader} from "../src/v1_0_0/utility/Reader.sol";
 import {console} from "forge-std/console.sol";
+import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
 
 
 
@@ -23,10 +24,25 @@ import {console} from "forge-std/console.sol";
 interface ICoordinatorEvents {
     event SubscriptionCreated(uint64 indexed id);
     event SubscriptionCancelled(uint64 indexed id);
-    event SubscriptionFulfilled(uint64 indexed id, address indexed node);
+    event ComputeDelivered(bytes32 indexed requestId, address nodeWallet, uint16 numRedundantDeliveries);
     event ProofVerified(
         uint64 indexed id, uint32 indexed interval, address indexed node, bool active, address verified, bool valid
     );
+
+    event RequestStart(
+        bytes32 indexed requestId,
+        uint64 indexed subscriptionId,
+        bytes32 indexed containerId,
+        uint32 interval,
+        uint16 redundancy,
+        bool lazy,
+        uint256 paymentAmount,
+        address paymentToken,
+        address verifier,
+        address coordinator
+    );
+    error RequestCompleted(bytes32 requestId);
+    error IntervalMismatch(uint32 deliveryInterval);
 }
 
 /// @title CoordinatorConstants
@@ -83,8 +99,6 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
 
     Router internal ROUTER;
 
-
-    /// @notice Coordinator
     Coordinator internal COORDINATOR;
 
     /// @notice Inbox
@@ -135,17 +149,19 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) =
                             LibDeploy.deployContracts(address(this), initialNonce, address(0), 1);
 
-        ROUTER = Router(router);
+        ROUTER = router;
+        COORDINATOR = coordinator;
+        WALLET_FACTORY = walletFactory;
+
+        // Complete deployment by setting the WalletFactory address in the Router.
+        // This breaks the circular dependency during deployment.
+        router.setWalletFactory(address(walletFactory));
 
         // Initialize mock protocol wallet
         PROTOCOL = new MockProtocol(coordinator);
 
         // Create mock token
         TOKEN = new MockToken();
-
-        // Assign to internal (overriding EIP712Coordinator -> isolated Coordinator for tests)
-        COORDINATOR = Coordinator(coordinator);
-        WALLET_FACTORY = walletFactory;
 
         // Initalize mock nodes
         ALICE = new MockNode(router);
@@ -155,7 +171,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         CALLBACK = new MockCallbackConsumer(address(router));
 
         // Initialize mock subscription consumer
-//        SUBSCRIPTION = new MockSubscriptionConsumer(address(registry));
+        SUBSCRIPTION = new MockSubscriptionConsumer(address(router));
 
         // Initialize mock subscription consumer w/ Allowlist
         // Add only Alice as initially allowed node
@@ -260,406 +276,310 @@ contract CoordinatorCallbackTest is CoordinatorTest {
         assertEq(CALLBACK.getContainerInputs(actual, 0, 0, address(0)), MOCK_CONTAINER_INPUTS);
     }
 
-    /// @notice Cannot deliver callback response if incorrect interval
-//    function testFuzzCannotDeliverCallbackIfIncorrectInterval(uint32 interval) public {
-//        // Check non-correct intervals
-//        vm.assume(interval != 1);
-//
-//        // Create new callback request
-//        (uint64 subId,Commitment memory commitment) = CALLBACK.createMockRequest(
-//            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
-//        );
-//
-//        // Attempt to deliver callback request w/ incorrect interval
-//        vm.expectRevert(Coordinator.IntervalMismatch.selector);
-//        bytes memory commitmentData = abi.encode(commitment);
-//        vm.prank(address(ALICE));
-//        vm.expectRevert(
-//            abi.encodeWithSelector(
-//                Coordinator.IntervalMismatch.selector,
-//                commitment.subscriptionId,
-//                commitment.interval,
-//                interval
-//            )
-//        );
-//        ALICE.deliverCompute(interval, "", "", "", commitmentData, NO_WALLET);
-//    }
+    function testFuzzCannotDeliverCallbackIfIncorrectInterval(uint32 interval) public {
+        // Check non-correct intervals
+        vm.assume(interval != 1);
+
+        // Create new callback request
+        (uint64 subId, Commitment memory commitment) =
+            CALLBACK.createMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
+        assertEq(subId, 1);
+
+        // Attempt to deliver callback request w/ incorrect interval
+        vm.expectRevert(abi.encodeWithSelector(Coordinator.IntervalMismatch.selector, interval));
+        bytes memory commitmentData = abi.encode(commitment);
+        vm.prank(address(ALICE));
+        // Use the fuzzed interval to test the logic correctly
+        ALICE.deliverCompute(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+    }
 
     /// @notice Can deliver callback response successfully
     function testCanDeliverCallbackResponse() public {
-        // Create new callback request
-        (uint64 subId,Commitment memory commitment) = CALLBACK.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
-        );
+        // --- 1. Arrange: Create a request ---
+        (uint64 subId, Commitment memory commitment) =
+            CALLBACK.createMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
         assertEq(subId, 1);
 
-        // Deliver callback request
-//        vm.expectEmit(address(COORDINATOR));
+        // --- 2. Act: Deliver the response and check for the event ---
+        // Expect the `ComputeDelivered` event from the COORDINATOR contract.
+        // We check both indexed topics (requestId, nodeWallet) and the emitter address.
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(ALICE), 1);
+
+        // Call the function that emits the event.
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(ALICE));
-        ALICE.deliverCompute(1, "", "", "", commitmentData, address(ALICE));
-        // Assert delivery
+        ALICE.deliverCompute(
+            commitment.interval, // Use the correct interval from the commitment
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            commitmentData,
+            address(ALICE)
+        );
+        // --- 3. Assert: Verify the outcome ---
         DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subId, 1, 1);
-//        assertEq(out.subscriptionId, subId);
-//        assertEq(out.interval, 1);
-//        assertEq(out.redundancy, 1);
-//        assertEq(out.node, address(ALICE));
-//        assertEq(out.input, MOCK_INPUT);
-//        assertEq(out.output, MOCK_OUTPUT);
-//        assertEq(out.proof, MOCK_PROOF);
-//        assertEq(out.containerId, bytes32(0));
-//        assertEq(out.index, 0);
+        assertEq(out.subscriptionId, subId);
+        assertEq(out.interval, 1);
+        assertEq(out.redundancy, 1);
+        assertEq(out.node, address(ALICE));
+        assertEq(out.input, MOCK_INPUT);
+        assertEq(out.output, MOCK_OUTPUT);
+        assertEq(out.proof, MOCK_PROOF);
+        // For non-lazy (eager) subscriptions, the containerId is expected to be bytes32(0)
+        // in the callback, as the consumer already knows the container from the subscription.
+        assertEq(out.containerId, bytes32(0));
+        assertEq(out.index, 0);
     }
 
     /// @notice Can deliver callback response once, across two unique nodes
-//    function testCanDeliverCallbackResponseOnceAcrossTwoNodes() public {
-//        // Create new callback request w/ redundancy = 2
-//        uint16 redundancy = 2;
-//        uint32 subId = CALLBACK.createMockRequest(
-//            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Deliver callback request from two nodes
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//        BOB.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Assert delivery
-//        address[2] memory nodes = [address(ALICE), address(BOB)];
-//        for (uint16 r = 1; r <= 2; r++) {
-//            DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subId, 1, r);
-//            assertEq(out.subscriptionId, subId);
-//            assertEq(out.interval, 1);
-//            assertEq(out.redundancy, r);
-//            assertEq(out.node, nodes[r - 1]);
-//            assertEq(out.input, MOCK_INPUT);
-//            assertEq(out.output, MOCK_OUTPUT);
-//            assertEq(out.proof, MOCK_PROOF);
-//            assertEq(out.containerId, bytes32(0));
-//            assertEq(out.index, 0);
-//        }
-//    }
+    function testCanDeliverCallbackResponseOnceAcrossTwoNodes() public {
+        // Create new callback request w/ redundancy = 2
+        uint16 redundancy = 2;
+        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
 
-    /// @notice Cannot deliver callback response twice from same node
-//    function testCannotDeliverCallbackResponseFromSameNodeTwice() public {
-//        // Create new callback request w/ redundancy = 2
-//        uint16 redundancy = 2;
-//        uint32 subId = CALLBACK.createMockRequest(
-//            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Deliver callback request from Alice twice
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//        vm.expectRevert(Coordinator.NodeRespondedAlready.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
+        // Call the function that emits the event.
+        bytes memory commitmentData = abi.encode(commitment);
 
-    /// @notice Delivered callbacks are not stored in Inbox
-//    function testCallbackDeliveryDoesNotStoreDataInInbox() public {
-//        // Create new callback request
-//        uint32 subId = CALLBACK.createMockRequest(
-//            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Deliver callback request from Alice
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Expect revert (indexOOBError but in external contract)
-//        vm.expectRevert();
-////        INBOX.read(HASHED_MOCK_CONTAINER_ID, address(ALICE), 0);
-//    }
+        // Deliver callback request from two nodes
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(ALICE), 1);
+        ALICE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(BOB), 2);
+        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(BOB));
+
+        // Assert delivery
+        address[2] memory nodes = [address(ALICE), address(BOB)];
+        for (uint16 r = 1; r <= 2; r++) {
+            DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subId, 1, r);
+            assertEq(out.subscriptionId, subId);
+            assertEq(out.interval, 1);
+            assertEq(out.redundancy, r);
+            assertEq(out.node, nodes[r - 1]);
+            assertEq(out.input, MOCK_INPUT);
+            assertEq(out.output, MOCK_OUTPUT);
+            assertEq(out.proof, MOCK_PROOF);
+            assertEq(out.containerId, bytes32(0));
+            assertEq(out.index, 0);
+        }
+    }
+
+    function testCannotDeliverCallbackResponseFromSameNodeTwice() public {
+        // Create new callback request w/ redundancy = 2
+        uint16 redundancy = 2;
+        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // Deliver callback request from two nodes (within redundancy)
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(ALICE), 1);
+        ALICE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+        vm.expectRevert(Coordinator.NodeRespondedAlready.selector);
+        ALICE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+    }
+
+
+    /// @notice Cannot deliver callback response more than redundancy
+    function testCannotDeliverCallbackResponseMoreThanRedundancy() public {
+        // Create new callback request w/ redundancy = 2
+        uint16 redundancy = 2;
+        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+        // Call the function that emits the event.
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // Deliver callback request from two nodes (within redundancy)
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(ALICE), 1);
+        ALICE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(BOB), 2);
+        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(BOB));
+
+        // Attempt to deliver a third response (exceeds redundancy)
+        // The Coordinator should revert with a RequestCompleted error.
+        vm.expectRevert(abi.encodeWithSelector(ICoordinatorEvents.RequestCompleted.selector, commitment.requestId));
+        CHARLIE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(CHARLIE));
+    }
+
 }
 
-/// @title CoordinatorSubscriptionTest
-/// @notice Coordinator tests specific to usage by SubscriptionConsumer
-//contract CoordinatorSubscriptionTest is CoordinatorTest {
-//    /// @notice Can read container inputs
-//    function testCanReadContainerInputs() public {
-//        bytes memory expected = SUBSCRIPTION.CONTAINER_INPUTS();
-//        bytes memory actual = SUBSCRIPTION.getContainerInputs(0, 0, 0, address(this));
-//        assertEq(expected, actual);
-//    }
-//
-//    /// @notice Can cancel a subscription
-//    function testCanCancelSubscription() public {
-//        // Create subscription
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Cancel subscription and expect event emission
-//        vm.expectEmit(address(COORDINATOR));
-//        emit SubscriptionCancelled(subId);
-//        SUBSCRIPTION.cancelMockSubscription(subId);
-//    }
-//
-//    /// @notice Can cancel a subscription that has been fulfilled at least once
-//    function testCanCancelFulfilledSubscription() public {
-//        // Create subscription
+contract CoordinatorSubscriptionTest is CoordinatorTest {
+    function testCanCancelSubscription() public {
+        // Create subscription
+        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+        vm.warp(block.timestamp + 1 minutes);
+        // Cancel subscription and expect event emission
+        vm.expectEmit(address(ROUTER));
+        emit SubscriptionCancelled(subId);
+        SUBSCRIPTION.cancelMockSubscription(subId);
+    }
+
+    function testCanCancelFulfilledSubscription() public {
+        // Create subscription
 //        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Fulfill at least once
-//        vm.warp(60);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Cancel subscription
-//        SUBSCRIPTION.cancelMockSubscription(subId);
-//    }
-//
-//    /// @notice Cannot cancel a subscription that does not exist
-//    function testCannotCancelNonExistentSubscription() public {
-//        // Try to delete subscription without creating
-//        vm.expectRevert(Coordinator.NotSubscriptionOwner.selector);
-//        SUBSCRIPTION.cancelMockSubscription(1);
-//    }
-//
-//    /// @notice Can cancel a subscription that has already been cancelled
-//    function testCanCancelCancelledSubscription() public {
-//        // Create and cancel subscription
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//        SUBSCRIPTION.cancelMockSubscription(subId);
-//
-//        // Attempt to cancel subscription again
-//        SUBSCRIPTION.cancelMockSubscription(subId);
-//    }
-//
-//    /// @notice Cannot cancel a subscription you do not own
-//    function testCannotCancelUnownedSubscription() public {
-//        // Create callback subscription
-//        uint32 subId = CALLBACK.createMockRequest(
-//            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Attempt to cancel subscription from SUBSCRIPTION consumer
-//        vm.expectRevert(Coordinator.NotSubscriptionOwner.selector);
-//        SUBSCRIPTION.cancelMockSubscription(subId);
-//    }
-//
-//    /// @notice Subscription intervals are properly calculated
-//    function testFuzzSubscriptionIntervalsAreCorrect(uint32 blockTime, uint32 frequency, uint32 period) public {
-//        // In the interest of testing time, upper bounding frequency loops + having at minimum 1 frequency
-//        vm.assume(frequency > 1 && frequency < 32);
-//        // Prevent upperbound overflow
-//        vm.assume(uint256(blockTime) + (uint256(frequency) * uint256(period)) < 2 ** 32 - 1);
-//
-//        // Subscription activeAt timestamp
-//        uint32 activeAt = blockTime + period;
-//
-//        // If period == 0, interval is always 1
-//        if (period == 0) {
-//            uint32 actual = COORDINATOR.getSubscriptionInterval(activeAt, period);
-//            assertEq(1, actual);
-//            return;
-//        }
-//
-//        // Else, verify each manual interval
-//        // blockTime -> blockTime + period = underflow (this should never be called since we verify block.timestamp >= activeAt)
-//        // blockTime + N * period = N
-//        uint32 expected = 1;
-//        for (uint32 start = blockTime + period; start < (blockTime) + (frequency * period); start += period) {
-//            // Set current time
-//            vm.warp(start);
-//
-//            // Check subscription interval
-//            uint32 actual = COORDINATOR.getSubscriptionInterval(activeAt, period);
-//            assertEq(expected, actual);
-//
-//            // Check subscription interval 1s before if not first iteration
-//            if (expected != 1) {
-//                vm.warp(start - 1);
-//                actual = COORDINATOR.getSubscriptionInterval(activeAt, period);
-//                assertEq(expected - 1, actual);
-//            }
-//
-//            // Increment expected for next cycle
-//            expected++;
-//        }
-//    }
-//
-//    /// @notice Cannot deliver response for subscription that does not exist
-//    function testCannotDeliverResponseForNonExistentSubscription() public {
-//        // Attempt to deliver output for subscription without creating
-//        vm.expectRevert(Coordinator.SubscriptionNotFound.selector);
-//        ALICE.deliverCompute(1, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response for non-active subscription
-//    function testCannotDeliverResponseNonActiveSubscription() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
-//        );
-//
-//        // Expect subscription to be inactive till time = 60
-//        vm.expectRevert(Coordinator.SubscriptionNotActive.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Ensure subscription can be fulfilled when active
-//        // Force failure at next conditional (gas price)
-//        vm.warp(1 minutes);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response for completed subscription
-//    function testCannotDeliverResponseForCompletedSubscription() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            1,
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Expect failure at any time prior to t = 60s
-//        vm.warp(1 minutes - 1);
-//        vm.expectRevert(Coordinator.SubscriptionNotActive.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Deliver first response at time t = 60s
-//        vm.warp(1 minutes);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Deliver second response at time t = 120s
-//        vm.warp(2 minutes);
-//        ALICE.deliverCompute(subId, 2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Expect revert because interval > frequency
-//        vm.warp(3 minutes);
-//        vm.expectRevert(Coordinator.SubscriptionCompleted.selector);
-//        ALICE.deliverCompute(subId, 3, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response if incorrect interval
-//    function testCannotDeliverResponseIncorrectInterval() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            1,
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Successfully deliver at t = 60s, interval = 1
-//        vm.warp(1 minutes);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Unsuccesfully deliver at t = 120s, interval = 1 (expected = 2)
-//        vm.warp(2 minutes);
-//        vm.expectRevert(Coordinator.IntervalMismatch.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response delayed (after interval passed)
-//    function testCannotDeliverResponseDelayed() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            1,
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Attempt to deliver interval = 1 at time = 120s
-//        vm.warp(2 minutes);
-//        vm.expectRevert(Coordinator.IntervalMismatch.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response early (before interval arrived)
-//    function testCannotDeliverResponseEarly() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            1,
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Attempt to deliver interval = 2 at time < 120s
-//        vm.warp(2 minutes - 1);
-//        vm.expectRevert(Coordinator.IntervalMismatch.selector);
-//        ALICE.deliverCompute(subId, 2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response if redundancy maxxed out
-//    function testCannotDeliverMaxRedundancyResponse() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            2, // redundancy = 2
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Deliver from Alice
-//        vm.warp(1 minutes);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Deliver from Bob
-//        BOB.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Attempt to deliver from Charlie, expect failure
-//        vm.expectRevert(Coordinator.IntervalCompleted.selector);
-//        CHARLIE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//
-//    /// @notice Cannot deliver response if already delivered in current interval
-//    function testCannotDeliverResponseIfAlreadyDeliveredInCurrentInterval() public {
-//        // Create new subscription at time = 0
-//        vm.warp(0);
-//        uint32 subId = SUBSCRIPTION.createMockSubscription(
-//            MOCK_CONTAINER_ID,
-//            2, // frequency = 2
-//            1 minutes,
-//            2, // redundancy = 2
-//            false,
-//            NO_PAYMENT_TOKEN,
-//            0,
-//            NO_WALLET,
-//            NO_VERIFIER
-//        );
-//
-//        // Deliver from Alice
-//        vm.warp(1 minutes);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//
-//        // Attempt to deliver from Alice again
-//        vm.expectRevert(Coordinator.NodeRespondedAlready.selector);
-//        ALICE.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, NO_WALLET);
-//    }
-//}
+        (uint64 subId, Commitment memory commitment)  = SUBSCRIPTION.createMockSubscription(
+            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // Fulfill at least once
+        vm.warp(block.timestamp + 1 minutes);
+        vm.expectEmit(true, true, true, true, address(COORDINATOR));
+        emit ICoordinatorEvents.ComputeDelivered(commitment.requestId, address(ALICE), 1);
+        ALICE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+
+
+        // Cancel subscription
+        vm.expectEmit(address(ROUTER));
+        emit SubscriptionCancelled(subId);
+        SUBSCRIPTION.cancelMockSubscription(subId);
+    }
+
+    /// @notice Cannot cancel a subscription that does not exist
+    function testCannotCancelNonExistentSubscription() public {
+        // Try to delete subscription without creating
+        vm.expectRevert(bytes("NotSubscriptionOwner()"));
+        SUBSCRIPTION.cancelMockSubscription(1);
+    }
+
+
+    /// @notice Can cancel a subscription that has already been cancelled
+    function testCanCancelCancelledSubscription() public {
+        // Create and cancel subscription
+        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+        vm.warp(block.timestamp + 1 minutes);
+
+        // Cancel subscription and expect event emission
+        vm.expectEmit(address(ROUTER));
+        emit SubscriptionCancelled(subId);
+        SUBSCRIPTION.cancelMockSubscription(subId);
+        // Attempt to cancel again, expect a revert as it's already cancelled
+        vm.expectRevert(bytes("SubscriptionNotFound()"));
+        SUBSCRIPTION.cancelMockSubscription(subId);
+    }
+
+    /// @notice Subscription intervals are properly calculated
+    function testFuzzSubscriptionIntervalsAreCorrect(uint32 blockTime, uint32 frequency, uint32 period) public {
+        // In the interest of testing time, upper bounding frequency loops + having at minimum 1 frequency
+        vm.assume(frequency > 1 && frequency < 32);
+        // Prevent upperbound overflow
+        vm.assume(uint256(blockTime) + (uint256(frequency) * uint256(period)) < 2 ** 32 - 1);
+
+        // Set the block time before creating the subscription
+        vm.warp(blockTime);
+
+        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID, frequency, period, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+
+        // Subscription activeAt timestamp
+        uint32 activeAt = blockTime + period;
+
+        // If period == 0, interval is always 1
+        if (period == 0) {
+            uint32 actual = ROUTER.getSubscriptionInterval(subId);
+            assertEq(1, actual);
+            return;
+        }
+
+        // Else, verify each manual interval
+        // blockTime -> blockTime + period = underflow (this should never be called since we verify block.timestamp >= activeAt)
+        // blockTime + N * period = N
+        uint32 expected = 1;
+        for (uint32 start = blockTime + period; start < (blockTime) + (frequency * period); start += period) {
+            // Set current time
+            vm.warp(start);
+
+            // Check subscription interval
+            uint32 actual = ROUTER.getSubscriptionInterval(subId);
+            assertEq(expected, actual);
+
+            // Check subscription interval 1s before if not first iteration
+            if (expected != 1) {
+                vm.warp(start - 1);
+                actual = ROUTER.getSubscriptionInterval(subId);
+                assertEq(expected - 1, actual);
+            }
+
+            // Increment expected for next cycle
+            expected++;
+        }
+    }
+
+    function testCannotDeliverResponseForNonExistentSubscription() public {
+        // Attempt to deliver output for subscription without creating
+        uint64 nonExistentSubId = 999;
+        Commitment memory fakeCommitment = Commitment({
+            requestId: keccak256(abi.encodePacked(nonExistentSubId, uint32(1))),
+            subscriptionId: nonExistentSubId,
+            containerId: HASHED_MOCK_CONTAINER_ID,
+            interval: 1,
+            lazy: false,
+            redundancy: 1,
+            walletAddress: userWalletAddress,
+            paymentAmount: 0,
+            paymentToken: NO_PAYMENT_TOKEN,
+            verifier: NO_VERIFIER,
+            coordinator: address(COORDINATOR)
+        });
+        bytes memory commitmentData = abi.encode(fakeCommitment);
+
+        // The call chain is deliverCompute -> getSubscriptionInterval -> _isExistingSubscription.
+        // This will revert with "InvalidSubscription".
+        vm.expectRevert(bytes("SubscriptionNotFound()"));
+
+        // Call deliverCompute with the crafted commitment.
+        ALICE.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+    }
+
+    /// @notice Cannot deliver a response for an interval that is not the current one.
+    function testCannotDeliverResponseIncorrectInterval() public {
+        // Create new subscription at time = 0, which will be active at t = 60s
+        vm.warp(0);
+        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID,
+            2, // frequency = 2
+            1 minutes,
+            1,
+            false,
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
+        );
+
+        // Warp to the first active interval and send the request
+        vm.warp(1 minutes);
+        (, Commitment memory commitment1) = ROUTER.sendRequest(subId, 1);
+        bytes memory commitmentData1 = abi.encode(commitment1);
+
+        // Successfully deliver for interval 1
+        ALICE.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, address(ALICE));
+
+        // Warp to the second interval
+        vm.warp(2 minutes);
+
+        // Now, the current interval is 2. Attempting to deliver for interval 1 should fail.
+        // We use the commitment from the first interval to simulate this.
+        vm.expectRevert(abi.encodeWithSelector(ICoordinatorEvents.IntervalMismatch.selector, 1));
+        ALICE.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, address(ALICE));
+    }
+
+}

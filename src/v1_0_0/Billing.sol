@@ -131,7 +131,7 @@ abstract contract Billing is IBilling, Routable {
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        uint256 index,
+        uint16 numRedundantDeliveries,
         bool isLastDelivery
     ) internal virtual {
         bytes32 storedHash = requestCommitments[commitment.requestId];
@@ -143,9 +143,9 @@ abstract contract Billing is IBilling, Routable {
         }
 
         if (commitment.verifier != address(0)) {
-            _processVerifiedDelivery(commitment, proofSubmitter, nodeWallet, input, output, proof, index);
+            _processVerifiedDelivery(commitment, proofSubmitter, nodeWallet, input, output, proof, numRedundantDeliveries);
         } else {
-            _processStandardDelivery(commitment, nodeWallet, input, output, proof, index);
+            _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
         }
 
         if (isLastDelivery == true) {
@@ -161,11 +161,11 @@ abstract contract Billing is IBilling, Routable {
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        uint256 index
+        uint16 numRedundantDeliveries
     ) private {
         Payment[] memory payments = _prepareVerificationPayments(commitment);
         _initiateVerification(commitment, proofSubmitter, nodeWallet, proof);
-        _getRouter().fulfill(input, output, proof, index, payments, commitment);
+        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet,payments, commitment);
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.
@@ -175,10 +175,10 @@ abstract contract Billing is IBilling, Routable {
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        uint256 index
+        uint16 numRedundantDeliveries
     ) private {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
-        _getRouter().fulfill(input, output, proof, index, payments, commitment);
+        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
     }
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.

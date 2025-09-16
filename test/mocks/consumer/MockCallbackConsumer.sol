@@ -10,6 +10,8 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 /// @title MockCallbackConsumer
 /// @notice Mocks CallbackConsumer
 contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertions {
+
+    event DeliverOutput(uint64 subscriptionId, uint32 interval, uint16 redundancy, bytes32 containerId, address node);
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -40,21 +42,39 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         uint256 currentTimestamp = block.timestamp;
         // Request off-chain container compute
         bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
-        (uint64 actualSubscriptionID, Commitment memory commitment)  = _requestCompute(
-            containerId,
-            inputs,
-            redundancy,
-            paymentToken,
-            paymentAmount,
-            wallet,
-            verifier,
-            coordinatorId
-        );
-        // Collect subscription from storage
-        Subscription memory sub = _getRouter().getSubscription(actualSubscriptionID);
 
-        // Assert subscription storage
-        assertEq(sub.activeAt, currentTimestamp);
+        uint64 subId = _createComputeSubscription(
+            containerId, redundancy, false, paymentToken, paymentAmount, wallet, verifier, bytes32("Coordinator_v1.0.0")
+        );
+
+        (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
+
+        _assertSubscription(
+            actualSubscriptionID, containerId, inputs, redundancy, paymentToken, paymentAmount, wallet, verifier, currentTimestamp
+        );
+
+        return (actualSubscriptionID, commitment);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           INHERITED FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Asserts that the subscription was created with the correct parameters.
+    function _assertSubscription(
+        uint64 subId,
+        string memory containerId,
+        bytes memory inputs,
+        uint16 redundancy,
+        address paymentToken,
+        uint256 paymentAmount,
+        address wallet,
+        address verifier,
+        uint256 creationTimestamp
+    ) private {
+        Subscription memory sub = _getRouter().getSubscription(subId);
+
+        assertEq(sub.activeAt, creationTimestamp);
         assertEq(sub.owner, address(this));
         assertEq(sub.redundancy, redundancy);
         assertEq(sub.frequency, 1);
@@ -65,15 +85,8 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         assertEq(sub.paymentAmount, paymentAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
-        assertEq(subscriptionInputs[actualSubscriptionID], inputs);
-
-        // Explicitly return subscription ID
-        return (actualSubscriptionID, commitment);
+        assertEq(subscriptionInputs[subId], inputs);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                           INHERITED FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /// @notice Overrides internal function, pushing received response to delivered outputs map
     function _receiveCompute(
@@ -87,7 +100,6 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         bytes32 containerId,
         uint256 index
     ) internal override {
-        // Log delivered output
         outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
             subscriptionId: subscriptionId,
             interval: interval,
@@ -99,6 +111,7 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
             containerId: containerId,
             index: index
         });
+        emit DeliverOutput(subscriptionId, interval, redundancy, containerId, node);
     }
 
     function typeAndVersion() external pure override returns (string memory) {

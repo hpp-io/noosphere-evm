@@ -214,27 +214,33 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
         if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
 
         // bookkeeping first
-        uint256 lockedForSpender = lockedBalanceOf[rl.spender][rl.token];
-        if (amount > lockedForSpender) revert InconsistentLockedBalance();
-        lockedBalanceOf[rl.spender][rl.token] = lockedForSpender - amount;
+        lockedBalanceOf[rl.spender][rl.token] -= amount;
         totalLocked[rl.token] -= amount;
 
         rl.remainingAmount -= amount;
-        unchecked { rl.paidCount += 1; }
+        uint16 newPaidCount;
+        unchecked {
+            rl.paidCount += 1;
+            newPaidCount = rl.paidCount;
+        }
 
         // external transfer
         _transferToken(rl.token, to, amount);
 
+        emit RequestDisbursed(requestId, to, rl.token, amount, newPaidCount);
+
         // finalize: if fully consumed or redundancy reached, refund leftover and cleanup
-        if (rl.remainingAmount == 0 || rl.paidCount == rl.redundancy) {
-            if (rl.remainingAmount > 0) {
+        if (rl.remainingAmount == 0 || newPaidCount == rl.redundancy) {
+            uint256 amountToRefund = rl.remainingAmount;
+            address spender = rl.spender;
+            address token = rl.token;
+            if (amountToRefund > 0) {
                 // refund leftover back to spender's allowance
-                allowance[rl.spender][rl.token] += rl.remainingAmount;
+                allowance[spender][token] += amountToRefund;
             }
             delete requestLocks[requestId];
+            emit RequestReleased(requestId, spender, token, amountToRefund);
         }
-
-        emit RequestDisbursed(requestId, to, rl.token, amount, rl.paidCount);
     }
 
     /// @notice Disburses funds for a single fulfillment event to multiple recipients.
@@ -263,24 +269,30 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
         totalLocked[rl.token] -= totalToDisburse;
 
         rl.remainingAmount -= totalToDisburse;
+        uint16 newPaidCount;
         unchecked {
             rl.paidCount += 1;
+            newPaidCount = rl.paidCount;
         } // Increment paidCount only ONCE
 
         // Perform external transfers
         for (uint256 i = 0; i < payments.length; i++) {
             Payment calldata p = payments[i];
             _transferToken(rl.token, p.recipient, p.paymentAmount);
-            emit RequestDisbursed(requestId, p.recipient, rl.token, p.paymentAmount, rl.paidCount);
+            emit RequestDisbursed(requestId, p.recipient, rl.token, p.paymentAmount, newPaidCount);
         }
 
         // Finalize: if fully consumed or redundancy reached, refund leftover and cleanup
-        if (rl.remainingAmount == 0 || rl.paidCount == rl.redundancy) {
-            if (rl.remainingAmount > 0) {
+        if (newPaidCount == rl.redundancy) {
+            uint256 amountToRefund = rl.remainingAmount;
+            address spender = rl.spender;
+            address token = rl.token;
+            if (amountToRefund > 0) {
                 // refund leftover back to spender's allowance
-                allowance[rl.spender][rl.token] += rl.remainingAmount;
+                allowance[spender][token] += amountToRefund;
             }
             delete requestLocks[requestId];
+            emit RequestReleased(requestId, spender, token, amountToRefund);
         }
     }
 

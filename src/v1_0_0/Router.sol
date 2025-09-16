@@ -158,7 +158,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        uint256 index,
+        uint16 numRedundantDeliveries,
+        address nodeWallet,
         Payment[] memory payments,
         Commitment memory commitment
     ) external override returns (FulfillResult resultCode) {
@@ -180,20 +181,21 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 //        Subscription memory subscription = subscriptions[subscriptionId];
         _pay(commitment.requestId, commitment.walletAddress, 0, payments);
 
-        delete requestCommitments[commitment.requestId];
+        if (numRedundantDeliveries == commitment.redundancy) {
+            delete requestCommitments[commitment.requestId];
+        }
 
         // Process payment and handle callback
         _callback(
             commitment.subscriptionId,
             commitment.interval,
-            commitment.redundancy,
-            msg.sender,
+            numRedundantDeliveries,
+            nodeWallet,
             input,
             output,
             proof,
-            commitment.containerId,
-            index
-        );        
+            commitment.containerId
+        );
         resultCode = FulfillResult.FULFILLED;
         emit RequestProcessed(
             commitment.requestId,
@@ -385,7 +387,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             revert DuplicateRequestId(requestId);
         }
 
-        emit ContractsUpdated(subscription.routeId, coordinatorAddr);
         _markRequestInFlight(
             requestId,
             payable(subscription.wallet),
@@ -395,7 +396,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscription.paymentToken,
             subscription.paymentAmount
         );
-        emit ContractsUpdated(subscription.routeId, coordinatorAddr);
 
         Commitment memory commitment = coordinator.startRequest(
             requestId,

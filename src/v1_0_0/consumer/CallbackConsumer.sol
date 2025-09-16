@@ -28,56 +28,36 @@ abstract contract CallbackConsumer is BaseConsumer {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Creates a one-time request for off-chain container compute via callback
-    /// @dev Under the hood, creates a new subscription at the Infernet coordinator, with `period == 0` and
-    ///      `frequency == 1`, effectively initializing a subscription valid immediately and only for 1 interval
-    /// @param containerId compute container identifier(s) used by off-chain Infernet node
-    /// @param inputs optional container inputs
-    /// @param redundancy number of unique responding Infernet nodes
-    /// @param paymentToken If providing payment for compute, payment token address (address(0) for ETH, else ERC20 contract address)
-    /// @param paymentAmount If providing payment for compute, payment in `paymentToken` per compute request fulfillment
-    /// @param wallet If providing payment for compute, Infernet `Wallet` address; this contract must be approved spender of `Wallet`
-    /// @param verifier optional verifier contract to restrict payment based on response proof verification
-    /// @return subscription ID of newly-created one-time subscription
-    function _requestCompute(
+    function _createComputeSubscription(
         string memory containerId,
-        bytes memory inputs,
         uint16 redundancy,
+        bool lazy,
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
         address verifier,
         bytes32 routeId
-    ) internal returns (uint64, Commitment memory) {
-        // Create one-time subscription at coordinator
-        uint64 subscriptionId = _getRouter().createSubscription(
-            containerId,
-            1, // frequency == 1, one-time subscription
-            0, // period == 0, available to be responded to immediately
-            redundancy,
-            false, // lazy == false, always eagerly await subscription response
-            // Optional payment for compute
-            paymentToken,
-            paymentAmount,
-            wallet,
-            // Optional proof verification
-            verifier,
-            routeId
+    ) internal returns (uint64) {
+        return _getRouter().createSubscription(
+            containerId, 1, 0, redundancy, lazy, paymentToken, paymentAmount, wallet, verifier, routeId
         );
+    }
 
-        // Store inputs by subscriptionId (to be retrieved by off-chain Infernet nodes)
+    /// @notice Requests off-chain compute for a given subscription
+    /// @dev Stores the provided inputs in `subscriptionInputs` and then calls the router's `sendRequest`
+    /// @param subscriptionId The ID of the subscription to request compute for
+    /// @param inputs The input data for the off-chain compute
+    /// @return subscriptionId The ID of the subscription
+    /// @return commitment The commitment for the request
+    function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
         subscriptionInputs[subscriptionId] = inputs;
-
         (bytes32 requestId, Commitment memory commitment) =_getRouter().sendRequest(subscriptionId, 1);
-        // Return subscriptionId
         return (subscriptionId, commitment);
     }
 
     /*//////////////////////////////////////////////////////////////
                            OVERRIDE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-
 
     /// @notice View function to broadcast dynamic container inputs to off-chain Infernet nodes
     /// @dev Modified from `BaseConsumer` to expose callback input data, indexed by subscriptionId

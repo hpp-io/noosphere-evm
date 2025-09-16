@@ -7,7 +7,6 @@ import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {Payment} from "../types/Payment.sol";
 
 interface IRouter {
-
     /**
      * @notice Sends a subscription request
      * @param subscriptionId The ID of the subscription
@@ -18,20 +17,23 @@ interface IRouter {
         uint32 interval
     ) external returns (bytes32, Commitment memory);
 
+
     /**
-     * @notice Fulfill a subscription request
-     * @param commitment The commitment to the request
-     * @param input The input data
-     * @param output The output data
-     * @param proof The proof of the request
-     * @param payments The payments for the request
-     * @param index The index of the request
+     * @notice Fulfills a subscription request.
+     * @param input The input data for the fulfillment.
+     * @param output The output data from the fulfillment.
+     * @param proof The proof of execution for the fulfillment.
+     * @param numRedundantDeliveries The number of the RedundantDeliveries.
+     * @param nodeWallet The wallet address of the node fulfilling the request.
+     * @param payments An array of payments associated with the fulfillment.
+     * @param commitment The commitment object for the original request.
      */
     function fulfill(
         bytes memory input,
         bytes memory output,
         bytes memory proof,
-        uint256 index,
+        uint16 numRedundantDeliveries,
+        address nodeWallet,
         Payment[] memory payments,
         Commitment memory commitment
     ) external returns (FulfillResult resultCode);

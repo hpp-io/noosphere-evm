@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
+import {Commitment} from "../types/Commitment.sol";
 import {BaseConsumer} from "./BaseConsumer.sol";
 
 /// @title SubscriptionConsumer
@@ -52,5 +53,15 @@ abstract contract SubscriptionConsumer is BaseConsumer {
     /// @param subscriptionId ID of subscription to cancel
     function _cancelComputeSubscription(uint64 subscriptionId) internal {
         _getRouter().cancelSubscription(subscriptionId);
+    }
+
+    /// @notice Requests compute for a given subscription
+    /// @dev This function is intended to be called by the subscription owner to trigger a new compute request
+    /// @param subscriptionId ID of the subscription to request compute for
+    /// @return subscriptionId The ID of the subscription for which compute was requested
+    /// @return commitment The commitment for the newly created compute request, containing `requestId` and `submissionWindow`
+    function _requestCompute(uint64 subscriptionId, uint32 interval) internal returns (uint64, Commitment memory) {
+        (bytes32 requestId, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
+        return (subscriptionId, commitment);
     }
 }

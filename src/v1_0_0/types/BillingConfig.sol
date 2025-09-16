@@ -14,4 +14,6 @@ struct BillingConfig {
     uint256 minimumEstimateGasPriceWei;
     // The fee paid to the node that triggers a new interval tick.
     uint256 tickNodeFee;
+
+//    address tickNodeFeeToken;
 }
