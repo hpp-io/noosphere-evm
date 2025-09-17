@@ -45,10 +45,4 @@ interface ISubscriptionsManager {
      * @return True if there are pending requests, false otherwise.
      */
     function pendingRequestExists(uint64 subscriptionId) external view returns (bool);
-
-    /**
-     * @notice Handle the timeout of requests.
-     * @param requestId The id of requests to timeout.
-     */
-    function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external;
 }

@@ -17,7 +17,6 @@ import {IWalletFactory} from "./wallet/IWalletFactory.sol";
  * complex logic for node selection, payment distribution, and verification handling.
  */
 contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
-
     // solhint-disable-next-line const-name-snakecase
     string public constant override typeAndVersion = "Coordinator_v1.0.0";
     /// @dev Tracks the number of redundant deliveries for an interval. key: keccak256(subId, interval)
@@ -66,8 +65,7 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
-        address verifier
-    ) external override onlyRouter returns (Commitment memory) {
+        address verifier) external override onlyRouter returns (Commitment memory) {
         Commitment memory commitment = _startBilling(
             requestId,
             subscriptionId,
@@ -93,8 +91,7 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         bytes memory output,
         bytes memory proof,
         bytes memory commitmentData,
-        address nodeWallet
-    ) external override nonReentrant {
+        address nodeWallet) external override nonReentrant {
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
         uint32 interval = _getRouter().getSubscriptionInterval(commitment.subscriptionId);
         if (interval != deliveryInterval) {
@@ -105,7 +102,9 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         if (numRedundantDeliveries == commitment.redundancy) {
             revert RequestCompleted(commitment.requestId);
         }
-
+        if (_getRouter().isValidWallet(nodeWallet) == false) {
+            revert InvalidWallet();
+        }
         unchecked {
             redundancyCount[commitment.requestId] = numRedundantDeliveries + 1;
         }
@@ -128,6 +127,11 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         );
 
         emit ComputeDelivered(commitment.requestId, nodeWallet, redundancyCount[commitment.requestId]);
+
+        // If the subscription has a next interval, prepare it.
+        if (_getRouter().hasSubscriptionNextInterval(commitment.subscriptionId, interval)) {
+            _prepareNextInterval(commitment.subscriptionId, interval + 1);
+        }
     }
 
     /**
@@ -140,14 +144,17 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
     /**
      * @inheritdoc ICoordinator
      */
-    function finalizeProofVerification(uint64 subscriptionId, uint32 interval, address node, bool valid) external override {
+    function finalizeProofVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address node,
+        bool valid
+    ) external override {
         revert("Not implemented");
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval) external override {
-        revert("Not implemented");
+
+    function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval) internal {
+        _getRouter().sendRequest(subscriptionId, nextInterval);
     }
 }

@@ -151,6 +151,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return _sendRequest(subscriptionId, interval);
     }
 
+    function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external override {
+        _timeoutRequest(requestId, subscriptionId, interval);
+    }
+
     /**
      * @inheritdoc IRouter
      */
@@ -227,6 +231,13 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
         _lockForVerification(proofRequest);
         emit VerificationFundsLocked(proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount);
+    }
+
+    function hasSubscriptionNextInterval(
+        uint64 subscriptionId,
+        uint32 currentInterval
+    ) external view override returns (bool) {
+        return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
     }
 
     /**
@@ -360,12 +371,23 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return address(walletFactory);
     }
 
+    function isValidWallet(address walletAddr) external view override returns (bool) {
+        return walletFactory.isValidWallet(walletAddr);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         TYPE & VERSION
     //////////////////////////////////////////////////////////////*/
     /// @inheritdoc ITypeAndVersion
     function typeAndVersion() external pure override returns (string memory) {
         return "route_v1_0_0";
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       SUBSCRIPTION MANAGER OVERRIDES
+    //////////////////////////////////////////////////////////////*/
+    function _getWalletFactory() internal view override returns (WalletFactory) {
+        return walletFactory;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -424,5 +446,14 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             address(coordinator)
         );
         return (requestId, commitment);
+    }
+
+    function _timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) internal {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        address coordinatorAddr = getContractById(subscription.routeId);
+        require(coordinatorAddr != address(0), "Coordinator not found");
+        ICoordinator coordinator = ICoordinator(coordinatorAddr);
+        _releaseTimeoutRequestLock(requestId, subscriptionId, interval);
+        coordinator.cancelRequest(requestId);
     }
 }

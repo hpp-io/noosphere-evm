@@ -17,6 +17,17 @@ interface IRouter {
         uint32 interval
     ) external returns (bytes32, Commitment memory);
 
+    /**
+     * @notice Checks if a subscription has a next interval to be processed.
+     * @param subscriptionId The ID of the subscription.
+     * @param currentInterval The current interval of the subscription.
+     * @return True if there is a next interval, false otherwise.
+     */
+    function hasSubscriptionNextInterval(
+        uint64 subscriptionId,
+        uint32 currentInterval
+    ) external view returns (bool);
+
 
     /**
      * @notice Fulfills a subscription request.
@@ -97,6 +108,13 @@ interface IRouter {
     function getWalletFactory() external view returns (address);
 
     /**
+     * @notice Checks if a given address is a valid wallet managed by the WalletFactory.
+     * @param walletAddr The address to check.
+     * @return The address of the wallet if valid, otherwise the zero address.
+     */
+    function isValidWallet(address walletAddr) external view returns (bool);
+
+    /**
      * @notice Propose a set of contract updates
      * @param proposalSetIds Array of contract IDs
      * @param proposalSetAddresses Array of contract addresses
@@ -132,4 +150,10 @@ interface IRouter {
      * @param allowListId New allow list ID
      */
     function setAllowListId(bytes32 allowListId) external;
+
+    /**
+     * @notice Handle the timeout of requests.
+     * @param requestId The id of requests to timeout.
+     */
+    function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external;
 }

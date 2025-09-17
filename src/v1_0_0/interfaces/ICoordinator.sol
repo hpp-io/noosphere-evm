@@ -77,5 +77,5 @@ interface ICoordinator {
      * @param subscriptionId The ID of the subscription to prepare.
      * @param nextInterval The upcoming interval number.
      */
-    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval) external;
+//    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval) external;
 }
