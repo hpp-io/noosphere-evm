@@ -67,6 +67,13 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
     /// @param locked True if funds were locked, false if unlocked.
     event Escrow(address indexed spender, address indexed token, uint256 amount, bool locked);
 
+    /// @notice Emitted when `Wallet` transfers some quantity of tokens
+    /// @param spender authorized spender of `amount` `token`
+    /// @param token token transferred
+    /// @param to receipient
+    /// @param amount amount of `token` transferred
+    event Transfer(address indexed spender, address token, address indexed to, uint256 amount);
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -169,6 +176,29 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
         allowance[spender][token] += amount;
 
         emit Escrow(spender, token, amount, false);
+    }
+
+    function cTransfer(address spender, Payment[] calldata payments) external onlyRouter nonReentrant {
+        for (uint256 i = 0; i < payments.length; i++) {
+            Payment calldata p = payments[i];
+
+            if (p.paymentAmount > 0) {
+                // Ensure allowance allows transferring `amount` `token`
+                uint256 currentAllowance = allowance[spender][p.paymentToken];
+                if (currentAllowance < p.paymentAmount) {
+                    revert InsufficientAllowance();
+                }
+
+                // Decrement allowance (Effect)
+                allowance[spender][p.paymentToken] = currentAllowance - p.paymentAmount;
+
+                // Transfer token (Interaction)
+                _transferToken(p.paymentToken, p.recipient, p.paymentAmount);
+
+                // Emit transfer
+                emit Transfer(spender, p.paymentToken, p.recipient, p.paymentAmount);
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

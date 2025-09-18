@@ -36,7 +36,7 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
         // Initialize contracts
         uint256 initialNonce = vm.getNonce(address(this));
         (Router router, Coordinator coordinator, , WalletFactory walletFactory) =
-                            LibDeploy.deployContracts(address(this), initialNonce, address(0), 1);
+                            LibDeploy.deployContracts(address(this), initialNonce, address(0), 1, address(0));
 
         // Assign contracts
         WALLET_FACTORY = walletFactory;

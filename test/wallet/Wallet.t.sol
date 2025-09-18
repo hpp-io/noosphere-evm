@@ -52,7 +52,7 @@ abstract contract WalletTest is Test, IWalletEvents {
         // Deploy core contracts
         uint256 initialNonce = vm.getNonce(address(this));
         (Router router, Coordinator coordinator, , WalletFactory walletFactory) = LibDeploy.deployContracts(
-            address(this), initialNonce, owner, 1
+            address(this), initialNonce, owner, 1, address(TOKEN)
         );
         ROUTER = router;
         COORDINATOR = coordinator;

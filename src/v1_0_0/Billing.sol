@@ -28,11 +28,12 @@ abstract contract Billing is IBilling, Routable {
     error InsufficientForVerifierFee();
 
     /// @param _router The address of the router contract.
-    /// @param _initialConfig The initial billing configuration.
     constructor(
-        address _router,
-        BillingConfig memory _initialConfig
-    ) Routable(_router) {
+        address _router
+    ) Routable(_router) {}
+
+    function initialize(BillingConfig memory _initialConfig) public virtual {
+        _onlyOwner();
         _updateConfig(_initialConfig);
     }
 
@@ -68,6 +69,7 @@ abstract contract Billing is IBilling, Routable {
 
     /// @dev Internal function to update the configuration, allowing for access control in child contracts.
     function _updateConfig(BillingConfig memory newConfig) internal virtual {
+        _onlyOwner();
         billingConfig = newConfig;
     }
 
@@ -249,17 +251,19 @@ abstract contract Billing is IBilling, Routable {
     }
 
     /// @notice Calculates the fee for a node that triggers the next interval.
-    /// @return A list of payments for the tick transaction.
     function _calculateNextTickFee(
         uint64 subscriptionId,
-        uint32 deliveryInterval,
+        uint32 nextInterval,
         address nodeWallet
-    ) internal view virtual returns (Payment[] memory) {
-        // Placeholder for calculating the bounty for a tick transaction.
-        revert("Not implemented");
+    ) internal virtual {
+        Payment[] memory payments = new Payment[](1);
+        payments[0] = Payment(nodeWallet, billingConfig.tickNodeFeeToken, billingConfig.tickNodeFee);
+        _getRouter().payFromCoordinator(subscriptionId, nextInterval, billingConfig.protocolFeeRecipient, payments);
     }
 
     function _cancelRequest(bytes32 requestId) internal virtual {
         delete requestCommitments[requestId];
     }
+
+    function _onlyOwner() internal view virtual;
 }

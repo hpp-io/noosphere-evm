@@ -246,17 +246,35 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         submitterWallet.cLock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.escrowedAmount);
     }
 
-    function _pay(
+    function _payForFulfillment(
         bytes32 requestId,
         address walletAddress,
-        uint64 commitmentId,
         Payment[] memory payments
     ) internal {
+        if (requestCommitments[requestId] == bytes32(0)) {
+            revert NoSuchCommitment();
+        }
         Wallet consumer = Wallet(payable(walletAddress));
         if (_getWalletFactory().isValidWallet(address(consumer)) == false) {
             revert InvalidWallet();
         }
         consumer.disburseForFulfillment(requestId, payments);
+    }
+
+    function _pay(
+        bytes32 requestId,
+        address walletAddress,
+        address spenderAddress,
+        Payment[] memory payments
+    ) internal {
+        if (requestCommitments[requestId] == bytes32(0)) {
+            revert NoSuchCommitment();
+        }
+        Wallet wallet = Wallet(payable(walletAddress));
+        if (_getWalletFactory().isValidWallet(address(wallet)) == false) {
+            revert InvalidWallet();
+        }
+        wallet.cTransfer(spenderAddress, payments);
     }
 
     function _callback(

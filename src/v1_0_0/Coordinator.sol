@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "./utility/ConfirmedOwner.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";
 import {Billing} from "./Billing.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
-import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IWalletFactory} from "./wallet/IWalletFactory.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Coordinator
@@ -16,7 +17,7 @@ import {IWalletFactory} from "./wallet/IWalletFactory.sol";
  * @dev This implementation is a basic example. Production coordinators may have more
  * complex logic for node selection, payment distribution, and verification handling.
  */
-contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
+contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     // solhint-disable-next-line const-name-snakecase
     string public constant override typeAndVersion = "Coordinator_v1.0.0";
     /// @dev Tracks the number of redundant deliveries for an interval. key: keccak256(subId, interval)
@@ -44,13 +45,16 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
     /**
      * @param _routerAddress The address of the main Router contract.
      * @param _initialOwner The initial owner of this Coordinator.
-     * @param _config The initial billing configuration.
      */
-    constructor(
-        address _routerAddress,
-        address _initialOwner,
-        BillingConfig memory _config
-    ) Ownable(_initialOwner) Billing(_routerAddress, _config) {}
+    constructor(address _routerAddress, address _initialOwner) ConfirmedOwner(_initialOwner) Billing(_routerAddress) {}
+
+    /**
+     * @notice Initializes the Coordinator with its billing configuration.
+     * @dev This is separate from the constructor to avoid owner-related issues during deployment.
+     */
+    function initialize(BillingConfig memory _config) public override onlyOwner {
+        super.initialize(_config);
+    }
 
     /**
      * @inheritdoc ICoordinator
@@ -130,7 +134,7 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
 
         // If the subscription has a next interval, prepare it.
         if (_getRouter().hasSubscriptionNextInterval(commitment.subscriptionId, interval)) {
-            _prepareNextInterval(commitment.subscriptionId, interval + 1);
+            _prepareNextInterval(commitment.subscriptionId, interval + 1, nodeWallet);
         }
     }
 
@@ -153,8 +157,26 @@ contract Coordinator is ICoordinator, Ownable, Billing, ReentrancyGuard {
         revert("Not implemented");
     }
 
-
-    function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval) internal {
-        _getRouter().sendRequest(subscriptionId, nextInterval);
+    /**
+     * @inheritdoc ICoordinator
+     */
+    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override {
+        if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval) == true) {
+            _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
+        }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        INTERNAL LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal {
+        _getRouter().sendRequest(subscriptionId, nextInterval);
+        _calculateNextTickFee(subscriptionId, nextInterval, nodeWallet);
+    }
+
+    function _onlyOwner() internal view override {
+        _validateOwnership();
+    }
+
 }

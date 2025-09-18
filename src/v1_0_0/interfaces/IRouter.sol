@@ -156,4 +156,11 @@ interface IRouter {
      * @param requestId The id of requests to timeout.
      */
     function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external;
+
+    function payFromCoordinator(
+        uint64 subscriptionId,
+        uint32 interval,
+        address spenderWallet,
+        Payment[] memory payments
+    ) external;
 }

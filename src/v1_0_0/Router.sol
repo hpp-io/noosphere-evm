@@ -155,6 +155,23 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         _timeoutRequest(requestId, subscriptionId, interval);
     }
 
+    function payFromCoordinator(
+        uint64 subscriptionId,
+        uint32 interval,
+        address spenderWallet,
+        Payment[] memory payments
+    ) external override {
+        if (_isExistingSubscription(subscriptionId) == false) {
+            revert InvalidSubscription();
+        }
+        Subscription memory sub = subscriptions[subscriptionId];
+        if (msg.sender != getContractById(sub.routeId)) {
+            revert OnlyCallableFromCoordinator();
+        }
+        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+        _pay(requestId, spenderWallet, msg.sender, payments);
+    }
+
     /**
      * @inheritdoc IRouter
      */
@@ -167,11 +184,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         Payment[] memory payments,
         Commitment memory commitment
     ) external override returns (FulfillResult resultCode) {
-
         if (msg.sender != commitment.coordinator) {
             revert OnlyCallableFromCoordinator();
         }
-
         bytes32 commitmentHash = requestCommitments[commitment.requestId];
         if (commitmentHash == bytes32(0)) {
             resultCode = FulfillResult.INVALID_REQUEST_ID;
@@ -183,7 +198,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
 
 //        Subscription memory subscription = subscriptions[subscriptionId];
-        _pay(commitment.requestId, commitment.walletAddress, 0, payments);
+        _payForFulfillment(commitment.requestId, commitment.walletAddress,  payments);
 
         if (numRedundantDeliveries == commitment.redundancy) {
             delete requestCommitments[commitment.requestId];

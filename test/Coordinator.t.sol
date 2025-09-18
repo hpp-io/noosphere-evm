@@ -156,6 +156,8 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
 
     address internal bobWalletAddress;
 
+    address internal protocolWalletAddress;
+
     /// @notice Mock subscription consumer w/ Allowlist
 //    MockAllowlistSubscriptionConsumer internal ALLOWLIST_SUBSCRIPTION;
 
@@ -172,12 +174,12 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
     function setUp() public {
         // Create mock protocol wallet
         uint256 initialNonce = vm.getNonce(address(this));
-        address mockProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
+        address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) =
-                            LibDeploy.deployContracts(address(this), initialNonce, mockProtocolWalletAddress, MOCK_PROTOCOL_FEE);
-
+        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) = LibDeploy.deployContracts(
+            address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(TOKEN)
+        );
         ROUTER = router;
         COORDINATOR = coordinator;
         WALLET_FACTORY = walletFactory;
@@ -218,6 +220,18 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         Wallet userWallet = Wallet(payable(userWalletAddress));
         aliceWalletAddress = WALLET_FACTORY.createWallet(address(this));
         bobWalletAddress = WALLET_FACTORY.createWallet(address(this));
+        protocolWalletAddress = WALLET_FACTORY.createWallet(ownerProtocolWalletAddress);
+
+        // Fund protocol wallet with ETH
+//        vm.deal(protocolWalletAddress, 10 ether);
+//        vm.startPrank(ownerProtocolWalletAddress);
+//        Wallet(payable(protocolWalletAddress)).approve(address(COORDINATOR), address(0), 10 ether);
+//        vm.stopPrank();
+
+        // Approve the coordinator to spend from the protocol wallet for native token
+        LibDeploy.updateBillingConfig(coordinator, 1 weeks,
+            protocolWalletAddress, MOCK_PROTOCOL_FEE,
+            0, 0 ether, address(0));
 
         // 2. Define payment details for a paid request.
         uint256 paymentAmount = 0.1 ether;
@@ -655,7 +669,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         // Assert new balances
         assertEq(aliceWallet.balance, 0 ether);
         assertEq(bobWallet.balance, 0.8978 ether);
-        assertEq(PROTOCOL.getEtherBalance(), 0.1022 ether);
+        assertEq(protocolWalletAddress.balance, 0.1022 ether);
 
         // Assert consumed allowance
         assertEq(Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS), 0 ether);
@@ -696,13 +710,11 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
             commitmentData,
             bobWallet
         );
-        // Execute response fulfillment from Bob
-//        BOB.deliverCompute(subId, 1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWallet);
 
         // Assert new balances
         assertEq(TOKEN.balanceOf(aliceWallet), 50e6);
         assertEq(TOKEN.balanceOf(bobWallet), 44_890_000);
-        assertEq(PROTOCOL.getTokenBalance(address(TOKEN)), 5_110_000);
+        assertEq(TOKEN.balanceOf(protocolWalletAddress), 5_110_000);
 
         // Assert consumed allowance
         assertEq(Wallet(payable(aliceWallet)).allowance(address(CALLBACK), address(TOKEN)), 40e6);
@@ -750,7 +762,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         // Assert new balances
         assertEq(TOKEN.balanceOf(aliceWallet), 20e6);
         assertEq(TOKEN.balanceOf(bobWallet), (40e6 * 2) - (4_088_000 * 2));
-        assertEq(PROTOCOL.getTokenBalance(address(TOKEN)), 4_088_000 * 2);
+        assertEq(TOKEN.balanceOf(protocolWalletAddress), 4_088_000 * 2);
 
         // Assert consumed allowance
         assertEq(Wallet(payable(aliceWallet)).allowance(address(SUBSCRIPTION), address(TOKEN)), 10e6);
@@ -996,6 +1008,54 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 7. Assert that no funds were locked for the next interval.
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
         assertEq(Wallet(payable(consumerWallet)).lockedOfRequest(requestId2), 0, "Should not lock funds for next interval due to allowance");
+    }
+
+    function testPaysTickFeeOnNextIntervalPreparation() public {
+        // 1. Arrange: Set the tickNodeFee specifically for this test.
+        uint256 expectedTickFee = 0.01 ether;
+
+        // Create a recurring subscription and a node wallet.
+        address consumerWallet = WALLET_FACTORY.createWallet(address(this));
+        address nodeWallet = WALLET_FACTORY.createWallet(address(BOB)); // This wallet will receive the tick fee.
+        address protocolWallet = WALLET_FACTORY.createWallet(address(this));
+        uint16 redundancy = 1;
+        uint256 paymentAmount = 1 ether;
+
+        // Fund protocol wallet with ETH
+        vm.deal(protocolWallet, 10 ether);
+        vm.startPrank(address(this));
+        Wallet(payable(protocolWallet)).approve(address(COORDINATOR), address(0), 10 ether);
+        vm.stopPrank();
+        LibDeploy.updateBillingConfig(
+            COORDINATOR, 1 weeks, protocolWallet, MOCK_PROTOCOL_FEE, 0, expectedTickFee, address(0)
+        );
+
+        // Fund the consumer wallet for the subscription payments
+        vm.deal(consumerWallet, paymentAmount * 2); // Fund for two intervals
+
+        // Approve the SUBSCRIPTION consumer to spend from the wallet
+        vm.prank(address(this));
+        Wallet(payable(consumerWallet)).approve(address(SUBSCRIPTION), ZERO_ADDRESS, paymentAmount * 2);
+
+        // Create the subscription
+        (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription(
+            MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, ZERO_ADDRESS, paymentAmount, consumerWallet, NO_VERIFIER
+        );
+        assertEq(subId, 1);
+
+        // 2. Act: Deliver compute for the first interval, which triggers preparation for the second.
+        vm.warp(block.timestamp + 1 minutes);
+        bytes memory commitmentData1 = abi.encode(commitment);
+        vm.prank(address(BOB));
+        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+
+        // 3. Assert: Check if the node wallet received the tick fee.
+        uint256 computeFee = 0.8978 ether;
+        uint256 finalNodeWalletBalance = expectedTickFee + computeFee;
+
+        // Get initial balance of the node wallet that will trigger the tick
+        uint256 nodeWalletBalance = nodeWallet.balance;
+        assertEq(nodeWalletBalance, finalNodeWalletBalance, "Node wallet should receive the tick fee");
     }
 }
 
