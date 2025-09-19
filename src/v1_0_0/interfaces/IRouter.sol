@@ -5,6 +5,7 @@ import {Commitment} from "../types/Commitment.sol";
 import {FulfillResult} from "../types/FulfillResult.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {Payment} from "../types/Payment.sol";
+import {Subscription} from "../types/Subscription.sol";
 
 interface IRouter {
     /**
@@ -163,4 +164,19 @@ interface IRouter {
         address spenderWallet,
         Payment[] memory payments
     ) external;
+
+    /**
+     * @notice Creates a subscription via an EIP-712 signature.
+     * @dev Validates the signature and then creates the subscription.
+     */
+    function createSubscriptionDelegatee(
+        uint32 nonce,
+        uint32 expiry,
+        Subscription calldata sub,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external returns (uint64);
+
+    function getLastSubscriptionId() external view returns (uint64);
 }

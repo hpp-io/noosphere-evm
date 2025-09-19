@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {ICoordinator} from "./interfaces/ICoordinator.sol";
-import {FulfillResult} from "./types/FulfillResult.sol";
+import "./interfaces/ICoordinator.sol";
+import {Commitment} from "./types/Commitment.sol";
 import {ConfirmedOwner} from "./utility/ConfirmedOwner.sol";
 import {ContractProposalSet} from "./types/ContractProposalSet.sol";
+import {FulfillResult} from "./types/FulfillResult.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {ITypeAndVersion} from "./interfaces/ITypeAndVersion.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 import {Payment} from "./types/Payment.sol";
-import {SubscriptionsManager} from "./SubscriptionManager.sol";
-import {WalletFactory} from "./wallet/WalletFactory.sol";
-import {Subscription} from "./types/Subscription.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
-import {Commitment} from "./types/Commitment.sol";
+import {SubscriptionsManager} from "./SubscriptionManager.sol";
+import {Subscription} from "./types/Subscription.sol";
+import {WalletFactory} from "./wallet/WalletFactory.sol";
 
 /**
  * @title Router
  * @notice Main entry point for network. Manages contract resolution, subscription management,
  * and provides a unified interface for interacting with the protocol.
  */
-
 contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, ConfirmedOwner {
     /*//////////////////////////////////////////////////////////////
                                  STATE
@@ -109,9 +108,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @notice Constructor initializes the Router with essential dependencies
      */
     constructor() ConfirmedOwner(msg.sender) {
-//        inbox = initInbox;
+        //        inbox = initInbox;
     }
-
     /**
      * @notice Sets the WalletFactory contract address.
      * @dev Can only be called once by the owner to break the circular dependency at deployment.
@@ -140,7 +138,12 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                              ROUTER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
+    /**
+     * @inheritdoc IRouter
+     */
+    function getLastSubscriptionId() external override view returns (uint64)  {
+        return currentSubscriptionId;
+    }
     /**
      * @inheritdoc IRouter
      */
@@ -197,8 +200,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             return resultCode;
         }
 
-//        Subscription memory subscription = subscriptions[subscriptionId];
-        _payForFulfillment(commitment.requestId, commitment.walletAddress,  payments);
+        //        Subscription memory subscription = subscriptions[subscriptionId];
+        _payForFulfillment(commitment.requestId, commitment.walletAddress, payments);
 
         if (numRedundantDeliveries == commitment.redundancy) {
             delete requestCommitments[commitment.requestId];
@@ -226,13 +229,16 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.paymentToken,
             commitment.verifier,
             commitment.coordinator,
-            resultCode);
+            resultCode
+        );
     }
 
     /**
      * @inheritdoc IRouter
      */
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external override {
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
+        external override
+    {
         if (msg.sender != commitment.coordinator) {
             revert OnlyCallableFromCoordinator();
         }
@@ -255,26 +261,28 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
     }
 
+    function createSubscriptionDelegatee(
+        uint32 nonce,
+        uint32 expiry,
+        Subscription calldata sub,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public override(IRouter, SubscriptionsManager) returns (uint64)
+    {
+        return super.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+    }
+
     /**
      * @inheritdoc IRouter
      */
-    function writeInbox(
-        bytes32 containerId,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof
-    ) external override whenNotPaused {
+    function writeInbox(bytes32 containerId, bytes calldata input, bytes calldata output, bytes calldata proof)
+        external override whenNotPaused
+    {
         // Call to inbox contract to write data
         require(inbox != address(0), "Inbox not set");
-        (bool success,) = inbox.call(
-            abi.encodeWithSignature(
-                "write(bytes32,bytes,bytes,bytes)",
-                containerId,
-                input,
-                output,
-                proof
-            )
-        );
+        (bool success, ) =
+            inbox.call(abi.encodeWithSignature("write(bytes32,bytes,bytes,bytes)", containerId, input, output, proof));
         require(success, "Inbox write failed");
     }
 
@@ -408,10 +416,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _sendRequest(
-        uint64 subscriptionId,
-        uint32 interval
-    ) private returns (bytes32, Commitment memory) {
+    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32, Commitment memory) {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
         Subscription storage subscription = subscriptions[subscriptionId];
@@ -470,5 +475,19 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         ICoordinator coordinator = ICoordinator(coordinatorAddr);
         _releaseTimeoutRequestLock(requestId, subscriptionId, interval);
         coordinator.cancelRequest(requestId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                EIP712 LOGIC
+     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Overrides Solady.EIP712._domainNameAndVersion to return EIP712-compatible domain name, version
+    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
+        return (EIP712_NAME, EIP712_VERSION);
+    }
+
+    /// @notice Overrides Solady.EIP712._domainNameAndVersionMayChange to always return false since the domain params are not updateable
+    function _domainNameAndVersionMayChange() internal pure override returns (bool) {
+        return false;
     }
 }

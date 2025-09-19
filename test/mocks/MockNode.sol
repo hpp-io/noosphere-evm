@@ -48,6 +48,10 @@ contract MockNode is StdAssertions {
         COORDINATOR.deliverCompute(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
     }
 
+    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external {
+        COORDINATOR.prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 FALLBACK
     //////////////////////////////////////////////////////////////*/

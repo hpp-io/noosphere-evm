@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import "../../src/v1_0_0/types/BillingConfig.sol";
 import {BillingConfig} from "../../src/v1_0_0/types/BillingConfig.sol";
-import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
+import {EIP712Coordinator} from "../../src/v1_0_0/EIP712Coordinator.sol";
 import {Reader} from "../../src/v1_0_0/utility/Reader.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -30,7 +30,7 @@ library LibDeploy {
         address initialFeeRecipient,
         uint16 initialFee,
         address tokenAddr
-    ) internal returns (Router, Coordinator, Reader, WalletFactory) {
+    ) internal returns (Router, EIP712Coordinator, Reader, WalletFactory) {
         // By breaking the deployment into smaller pieces and using helper functions,
         // we reduce the number of local variables in this function's scope,
         // preventing the "Stack too deep" error.
@@ -39,7 +39,7 @@ library LibDeploy {
         Router router = new Router();
 
         // Deploy other contracts, using a helper for the complex Coordinator deployment.
-        Coordinator coordinator =
+        EIP712Coordinator coordinator =
             _deployCoordinator(address(router), deployerAddress, initialFeeRecipient, initialFee, tokenAddr);
         Reader reader = new Reader(address(router), address(coordinator));
         WalletFactory walletFactory = new WalletFactory(address(router));
@@ -55,7 +55,7 @@ library LibDeploy {
     }
 
     function updateBillingConfig(
-        Coordinator coordinator,
+        EIP712Coordinator coordinator,
         uint32 verificationTimeout,
         address protocolFeeRecipient,
         uint16 protocolFee,
@@ -83,10 +83,9 @@ library LibDeploy {
         address initialFeeRecipient,
         uint16 protocolFee,
         address tokenAddr
-    ) private returns (Coordinator) {
+    ) private returns (EIP712Coordinator) {
         // The constructor now only takes the router and owner addresses.
-        Coordinator coordinator = new Coordinator(routerAddress, owner);
-
+        EIP712Coordinator coordinator = new EIP712Coordinator(routerAddress, owner);
         // Initialize it in a separate step to avoid constructor/owner issues
         coordinator.initialize(
             BillingConfig({

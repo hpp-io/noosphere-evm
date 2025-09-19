@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {Vm} from "forge-std/Vm.sol";
-import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-import {Vm} from "forge-std/Vm.sol";
-import "./mocks/consumer/MockCallbackConsumer.sol";
+import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
+import {Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
+import {MockCallbackConsumer} from "./mocks/consumer/MockCallbackConsumer.sol";
 import {BaseConsumer} from "../src/v1_0_0/consumer/BaseConsumer.sol";
-import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
+import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
 import {LibDeploy} from "./lib/LibDeploy.sol";
 import {MockNode} from "./mocks/MockNode.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
 import {MockSubscriptionConsumer} from "./mocks/consumer/MockSubscriptionConsumer.sol";
 import {MockToken} from "./mocks/MockToken.sol";
+import {Reader} from "../src/v1_0_0/utility/Reader.sol";
+import {Router} from "../src/v1_0_0/Router.sol";
+import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
-import {Reader} from "../src/v1_0_0/utility/Reader.sol";
-import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
+import {console} from "forge-std/console.sol";
+import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
+import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
 
 /// @title ICoordinatorEvents
 /// @notice Events emitted by Coordinator
@@ -124,7 +126,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
 
     Router internal ROUTER;
 
-    Coordinator internal COORDINATOR;
+    EIP712Coordinator internal COORDINATOR;
 
     /// @notice Inbox
 //    Inbox internal INBOX;
@@ -177,21 +179,15 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) = LibDeploy.deployContracts(
+        (Router router, EIP712Coordinator coordinator, Reader reader, WalletFactory walletFactory) = LibDeploy.deployContracts(
             address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(TOKEN)
         );
         ROUTER = router;
         COORDINATOR = coordinator;
         WALLET_FACTORY = walletFactory;
 
-        // Complete deployment by setting the WalletFactory address in the Router.
-        // This breaks the circular dependency during deployment.
         router.setWalletFactory(address(walletFactory));
-
-        // Initialize mock protocol wallet
         PROTOCOL = new MockProtocol(coordinator);
-
-        // Create mock token
         TOKEN = new MockToken();
 
         // Initalize mock nodes
@@ -208,11 +204,6 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         // Add only Alice as initially allowed node
         address[] memory initialAllowed = new address[](1);
         initialAllowed[0] = address(ALICE);
-//        ALLOWLIST_SUBSCRIPTION = new MockAllowlistSubscriptionConsumer(address(registry), initialAllowed);
-
-        // Initialize mock verifiers
-//        ATOMIC_VERIFIER = new MockAtomicVerifier(registry);
-//        OPTIMISTIC_VERIFIER = new MockOptimisticVerifier(registry);
 
         // --- Wallet Setup Example ---
         // 1. Create a wallet. The test contract will be the owner.
@@ -221,12 +212,6 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         aliceWalletAddress = WALLET_FACTORY.createWallet(address(this));
         bobWalletAddress = WALLET_FACTORY.createWallet(address(this));
         protocolWalletAddress = WALLET_FACTORY.createWallet(ownerProtocolWalletAddress);
-
-        // Fund protocol wallet with ETH
-//        vm.deal(protocolWalletAddress, 10 ether);
-//        vm.startPrank(ownerProtocolWalletAddress);
-//        Wallet(payable(protocolWalletAddress)).approve(address(COORDINATOR), address(0), 10 ether);
-//        vm.stopPrank();
 
         // Approve the coordinator to spend from the protocol wallet for native token
         LibDeploy.updateBillingConfig(coordinator, 1 weeks,
@@ -894,6 +879,10 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // --- Assertions for the next interval preparation ---
+        // 6. Deliver compute for interval 1, which triggers preparation for interval 2
+        vm.prank(address(BOB));
+        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, bobWallet);
+
         // Expect a new request to be started for interval 2
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
         // Expect funds to be locked for the second request
@@ -901,10 +890,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         emit Wallet.RequestLocked(
             requestId2, address(SUBSCRIPTION), address(TOKEN), paymentAmount * redundancy, redundancy
         );
-        // 6. Deliver compute for interval 1, which triggers preparation for interval 2
-        vm.prank(address(BOB));
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, bobWallet);
-
+        BOB.prepareNextInterval(subId, 2, address(BOB));
         // 7. Final assertions on wallet state
         assertEq(Wallet(payable(aliceWallet)).lockedOfRequest(requestId2), paymentAmount * redundancy, "Funds for interval 2 should be locked");
     }
@@ -930,7 +916,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 4. Deliver compute.
         vm.prank(address(BOB));
         BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-
+        BOB.prepareNextInterval(commitment1.subscriptionId, 2, address(BOB));
         // 5. Assert that no events related to preparing a next interval were emitted.
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 requestStartSelector = ICoordinatorEvents.RequestStart.selector;
@@ -970,7 +956,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // because hasSubscriptionNextInterval will return false due to insufficient funds.
         vm.prank(address(BOB));
         BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-
+        BOB.prepareNextInterval(subId, 2, address(BOB));
         // 7. Assert that no funds were locked for the next interval.
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
         assertEq(Wallet(payable(consumerWallet)).lockedOfRequest(requestId2), 0, "Should not lock funds for next interval");
@@ -1004,7 +990,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // because hasSubscriptionNextInterval will return false due to insufficient allowance.
         vm.prank(address(BOB));
         BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-
+        BOB.prepareNextInterval(commitment1.subscriptionId, 2, address(BOB));
         // 7. Assert that no funds were locked for the next interval.
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
         assertEq(Wallet(payable(consumerWallet)).lockedOfRequest(requestId2), 0, "Should not lock funds for next interval due to allowance");
@@ -1048,7 +1034,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         bytes memory commitmentData1 = abi.encode(commitment);
         vm.prank(address(BOB));
         BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-
+        BOB.prepareNextInterval(commitment.subscriptionId, 2, nodeWallet);
         // 3. Assert: Check if the node wallet received the tick fee.
         uint256 computeFee = 0.8978 ether;
         uint256 finalNodeWalletBalance = expectedTickFee + computeFee;

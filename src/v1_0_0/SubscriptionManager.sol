@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
+import {ECDSA} from "solady/utils/ECDSA.sol";
+import {EIP712} from "solady/utils/EIP712.sol";
+//import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {BaseConsumer} from "./consumer/BaseConsumer.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {ISubscriptionsManager} from "./interfaces/ISubscriptionManager.sol";
@@ -10,11 +13,33 @@ import {Wallet} from "./wallet/Wallet.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {console} from "forge-std/console.sol";
+import {Delegator} from "./utility/Delegator.sol";
 
-abstract contract SubscriptionsManager is ISubscriptionsManager {
+abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice EIP-712 signing domain major version
+    string public constant EIP712_VERSION = "1";
+
+    /// @notice EIP-712 signing domain name
+    string public constant EIP712_NAME = "noosphere";
+
+    /// @notice EIP-712 struct(Subscription) typeHash.
+    /// @dev The fields must exactly match the order and types in the `Subscription` struct.
+    bytes32 private constant EIP712_SUBSCRIPTION_TYPEHASH =
+        keccak256(
+            "Subscription(address owner,uint32 activeAt,uint32 period,uint32 frequency,uint16 redundancy,bytes32 containerId,bool lazy,address verifier,uint256 paymentAmount,address paymentToken,address wallet,bytes32 routeId)"
+        );
+
+    /// @notice EIP-712 struct(DelegateSubscription) typeHash.
+    /// @dev The `nonce` prevents signature replay for a given subscriber.
+    /// @dev The `expiry` defines when the delegated subscription signature expires.
+    bytes32 private constant EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH =
+        keccak256(
+            "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address owner,uint32 activeAt,uint32 period,uint32 frequency,uint16 redundancy,bytes32 containerId,bool lazy,address verifier,uint256 paymentAmount,address paymentToken,address wallet,bytes32 routeId)"
+        );
 
     /// @dev Mapping of subscription IDs to `Subscription` objects.
     mapping(uint64 /* subscriptionId */ => Subscription) internal subscriptions;
@@ -24,9 +49,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
     /// This allows tracking pending requests for a given subscription and interval.
     mapping(bytes32 /* requestId */ => bytes32 /* commitmentHash */) internal requestCommitments;
 
+    /// @notice Mapping from a subscribing contract to the maximum nonce seen.
+    mapping(address => uint32) public maxSubscriberNonce;
+
+    /// @notice Mapping from a hash of (subscriber, nonce) to a subscription ID.
+    /// @dev Allows lookup of atomically created subscriptions to prevent duplicates.
+    mapping(bytes32 => uint64) public delegateCreatedIds;
+
     // Keep a count of the number of subscriptions so that its possible to
     // loop through all the current subscriptions via .getSubscription().
-    uint64 private currentSubscriptionId;
+    uint64 internal currentSubscriptionId;
 
     /// @notice Emitted when a new subscription is created
     /// @param id subscription ID
@@ -57,6 +89,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
     error NoSuchCommitment();
     error CommitmentNotTimeoutable();
     error InvalidWallet();
+
+    error SignerMismatch();
+    error SignatureExpired();
 
     // ================================================================
     // |                       Initialization                         |
@@ -119,6 +154,101 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
 
         emit SubscriptionCreated(subscriptionId);
         return subscriptionId;
+    }
+
+    /**
+     * @notice Creates a subscription from a pre-filled Subscription struct.
+     * @dev This is an internal implementation. Access control should be handled by the inheriting contract (e.g., Router).
+     * @param sub The subscription data.
+     * @return The ID of the newly created subscription.
+     */
+    function createSubscriptionFor(Subscription calldata sub) public virtual returns (uint64) {
+        uint64 subscriptionId = ++currentSubscriptionId;
+        subscriptions[subscriptionId] = sub;
+        emit SubscriptionCreated(subscriptionId);
+        return subscriptionId;
+    }
+
+    /**
+     * @notice Creates a subscription via an EIP-712 signature.
+     * @dev Validates the signature and then creates the subscription.
+     */
+    function createSubscriptionDelegatee(
+        uint32 nonce,
+        uint32 expiry,
+        Subscription calldata sub,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public virtual returns (uint64) {
+        // Check if this delegated subscription has already been created.
+        bytes32 key = keccak256(abi.encodePacked(sub.owner, nonce));
+        uint64 subscriptionId = delegateCreatedIds[key];
+        // If it exists, return the ID, preventing replay.
+        if (subscriptionId != 0) {
+            return subscriptionId;
+        }
+
+        // If it's a new creation, verify the signature has not expired.
+        if (block.timestamp >= expiry) {
+            revert SignatureExpired();
+        }
+
+        // Hash the subscription struct.
+        bytes32 subHash = _hashSubscription(sub);
+
+        // Hash the full delegated subscription data.
+        bytes32 digest = _hashTypedData(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
+
+        // Recover the signer from the signature.
+        address recoveredSigner = ECDSA.recover(digest, v, r, s);
+
+        // Collect delegated signer from subscribing contract
+        address delegatedSigner = Delegator(sub.owner).getSigner();
+
+        // The signer must be the owner of the subscription being created.
+        if (recoveredSigner != delegatedSigner) {
+            revert SignerMismatch();
+        }
+
+        // At this point, the signature is valid. Create the subscription.
+        subscriptionId = createSubscriptionFor(sub);
+
+        // Store the link between the delegate creation parameters and the new ID.
+        delegateCreatedIds[key] = subscriptionId;
+
+        // Update the max known nonce for the subscriber to help off-chain clients.
+        if (nonce > maxSubscriberNonce[sub.owner]) {
+            maxSubscriberNonce[sub.owner] = nonce;
+        }
+
+        return subscriptionId;
+    }
+
+    /**
+     * @dev Hashes the `Subscription` struct for EIP-712 signing.
+      * @param sub The subscription struct to hash.
+      * @return The EIP-712 hash of the struct.
+      */
+    function _hashSubscription(Subscription calldata sub) internal pure returns (bytes32) {
+        return
+            keccak256(
+            abi.encode(
+                EIP712_SUBSCRIPTION_TYPEHASH,
+                sub.owner,
+                sub.activeAt,
+                sub.period,
+                sub.frequency,
+                sub.redundancy,
+                sub.containerId,
+                sub.lazy,
+                sub.verifier,
+                sub.paymentAmount,
+                sub.paymentToken,
+                sub.wallet,
+                sub.routeId
+            )
+        );
     }
 
     function cancelSubscription(uint64 subscriptionId) external override {
@@ -354,7 +484,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager {
         if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].frequency) {
             return false;
         }
-
         Subscription storage sub = subscriptions[subscriptionId];
 
         // If a payment is required for the subscription, check for sufficient funds and allowance.

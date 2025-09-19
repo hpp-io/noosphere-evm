@@ -96,6 +96,57 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         bytes memory proof,
         bytes memory commitmentData,
         address nodeWallet) external override nonReentrant {
+        _deliverCompute(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
+    }
+
+    /**
+     * @inheritdoc ICoordinator
+     */
+    function cancelRequest(bytes32 requestId) external override onlyRouter {
+        _cancelRequest(requestId);
+    }
+
+    /**
+     * @inheritdoc ICoordinator
+     */
+    function finalizeProofVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address node,
+        bool valid
+    ) external override {
+        revert("Not implemented");
+    }
+
+    /**
+     * @inheritdoc ICoordinator
+     */
+    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override {
+        if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
+            _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        INTERNAL LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal {
+        _getRouter().sendRequest(subscriptionId, nextInterval);
+        _calculateNextTickFee(subscriptionId, nextInterval, nodeWallet);
+    }
+
+    function _onlyOwner() internal view override {
+        _validateOwnership();
+    }
+
+    function _deliverCompute(
+        uint32 deliveryInterval,
+        bytes memory input,
+        bytes memory output,
+        bytes memory proof,
+        bytes memory commitmentData,
+        address nodeWallet) internal {
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
         uint32 interval = _getRouter().getSubscriptionInterval(commitment.subscriptionId);
         if (interval != deliveryInterval) {
@@ -131,52 +182,5 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         );
 
         emit ComputeDelivered(commitment.requestId, nodeWallet, redundancyCount[commitment.requestId]);
-
-        // If the subscription has a next interval, prepare it.
-        if (_getRouter().hasSubscriptionNextInterval(commitment.subscriptionId, interval)) {
-            _prepareNextInterval(commitment.subscriptionId, interval + 1, nodeWallet);
-        }
     }
-
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function cancelRequest(bytes32 requestId) external override onlyRouter {
-        _cancelRequest(requestId);
-    }
-
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function finalizeProofVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address node,
-        bool valid
-    ) external override {
-        revert("Not implemented");
-    }
-
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override {
-        if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval) == true) {
-            _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        INTERNAL LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal {
-        _getRouter().sendRequest(subscriptionId, nextInterval);
-        _calculateNextTickFee(subscriptionId, nextInterval, nodeWallet);
-    }
-
-    function _onlyOwner() internal view override {
-        _validateOwnership();
-    }
-
 }

@@ -257,7 +257,9 @@ abstract contract Billing is IBilling, Routable {
         address nodeWallet
     ) internal virtual {
         Payment[] memory payments = new Payment[](1);
-        payments[0] = Payment(nodeWallet, billingConfig.tickNodeFeeToken, billingConfig.tickNodeFee);
+        if (billingConfig.tickNodeFee > 0) {
+            payments[0] = Payment(nodeWallet, billingConfig.tickNodeFeeToken, billingConfig.tickNodeFee);
+        }
         _getRouter().payFromCoordinator(subscriptionId, nextInterval, billingConfig.protocolFeeRecipient, payments);
     }
 
