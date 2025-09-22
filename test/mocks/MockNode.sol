@@ -4,6 +4,8 @@ pragma solidity ^0.8.4;
 import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
+import {EIP712Coordinator} from "../../src/v1_0_0/EIP712Coordinator.sol";
+import {Subscription} from "../../src/v1_0_0/types/Subscription.sol";
 
 /// @title MockNode
 /// @notice Mocks the functionality of an off-chain Infernet node
@@ -14,7 +16,7 @@ contract MockNode is StdAssertions {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Coordinator
-    Coordinator private immutable COORDINATOR;
+    EIP712Coordinator private immutable COORDINATOR;
 
     /// @notice Inbox
 //    Inbox private immutable INBOX;
@@ -28,7 +30,7 @@ contract MockNode is StdAssertions {
     constructor(Router router) {
         bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
         address coordinatorAddress = router.getContractById(coordinatorId);
-        Coordinator coordinator = Coordinator(coordinatorAddress);
+        EIP712Coordinator coordinator = EIP712Coordinator(coordinatorAddress);
         COORDINATOR = coordinator;
     }
 
@@ -58,24 +60,24 @@ contract MockNode is StdAssertions {
 
     receive() external payable {}
 
-    /// @dev Wrapper function (calling Coordinator with msg.sender == node)
-//    function deliverComputeDelegatee(
-//        uint32 nonce,
-//        uint32 expiry,
-//        Subscription calldata sub,
-//        uint8 v,
-//        bytes32 r,
-//        bytes32 s,
-//        uint32 deliveryInterval,
-//        bytes calldata input,
-//        bytes calldata output,
-//        bytes calldata proof,
-//        address nodeWallet
-//    ) external {
-//        COORDINATOR.deliverComputeDelegatee(
-//            nonce, expiry, sub, v, r, s, deliveryInterval, input, output, proof, nodeWallet
-//        );
-//    }
+    // @dev Wrapper function (calling Coordinator with msg.sender == node)
+    function deliverComputeDelegatee(
+        uint32 nonce,
+        uint32 expiry,
+        Subscription calldata sub,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint32 deliveryInterval,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
+        address nodeWallet
+    ) external {
+        COORDINATOR.deliverComputeDelegatee(
+            nonce, expiry, sub, v, r, s, deliveryInterval, input, output, proof, nodeWallet
+        );
+    }
 
 //    /// @dev Wrapper function (calling Inbox with msg.sender == node)
 //    function write(bytes32 containerId, bytes calldata input, bytes calldata output, bytes calldata proof)

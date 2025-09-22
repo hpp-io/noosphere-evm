@@ -155,7 +155,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         // Revert if redundancy requirements for this interval have been met
         uint16 numRedundantDeliveries = redundancyCount[commitment.requestId];
         if (numRedundantDeliveries == commitment.redundancy) {
-            revert RequestCompleted(commitment.requestId);
+            revert IntervalCompleted();
         }
         if (_getRouter().isValidWallet(nodeWallet) == false) {
             revert InvalidWallet();

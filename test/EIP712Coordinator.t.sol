@@ -4,24 +4,26 @@ pragma solidity ^0.8.4;
 import {ICoordinatorEvents} from "./Coordinator.t.sol";
 import {CoordinatorConstants} from "./Coordinator.t.sol";
 import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
+import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {LibDeploy} from "./lib/LibDeploy.sol";
 import {MockDelegatorCallbackConsumer} from "../src/v1_0_0/consumer/DelegatorCallbackConsumer.sol";
 import {MockDelegatorSubscriptionConsumer} from "../src/v1_0_0/consumer/DelegatorSubscriptionConsumer.sol";
 import {MockNode} from "./mocks/MockNode.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {Reader} from "../src/v1_0_0/utility/Reader.sol";
 import {LibSign} from "./lib/LibSign.sol";
 import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
 import {Delegator} from "../src/v1_0_0/utility/Delegator.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
+import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
 
 contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents {
     /*//////////////////////////////////////////////////////////////
@@ -132,7 +134,6 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
 
         // Initialize mock callback consumer w/ assigned delegatee
         CALLBACK = new MockDelegatorCallbackConsumer(address(router), DELEGATEE_ADDRESS);
-        console.log("DELEGATEE_ADDRESS: ", DELEGATEE_ADDRESS);
 
         // Initialize mock subscription consumer w/ assigned delegatee
         SUBSCRIPTION = new MockDelegatorSubscriptionConsumer(address(router), DELEGATEE_ADDRESS);
@@ -232,7 +233,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
                                  TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function testCannotCreateDelegatedSubscriptionWhereSignatureExpired() public {
+    function test_RevertsIf_CreateDelegatedSubscription_WithExpiredSignature() public {
         // Create new dummy subscription
         Subscription memory sub = getMockSubscription();
 
@@ -254,7 +255,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
     }
 
     /// @notice Cannot create delegated subscription where signature does not match
-    function testFuzzCannotCreateDelegatedSubscriptionWhereSignatureMismatch(uint256 privateKey) public {
+    function testFuzz_RevertsIf_CreateDelegatedSubscription_WithMismatchedSignature(uint256 privateKey) public {
         // Ensure signer private key is not actual delegatee private key
         vm.assume(privateKey != DELEGATEE_PRIVATE_KEY);
         // Ensure signer private key < secp256k1 curve order
@@ -280,7 +281,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
     }
 
     /// @notice Can create new subscription via EIP712 signature
-    function testCanCreateNewSubscriptionViaEIP712() public {
+    function test_Succeeds_When_CreatingNewSubscription_ViaEIP712() public {
         // Create new dummy subscription
         Subscription memory sub = getMockSubscription();
 
@@ -317,7 +318,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
     }
 
     /// @notice Cannot use valid delegated subscription from old signer
-    function testCannotUseValidDelegatedSubscriptionFromOldSigner() public {
+    function test_RevertsIf_CreateDelegatedSubscription_FromOldSigner() public {
         // Create new dummy subscription
         Subscription memory sub = getMockSubscription();
 
@@ -340,7 +341,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
     }
 
     /// @notice Can use existing subscription created by old signer
-    function testCanUseExistingDelegatedSubscriptionFromOldSigner() public {
+    function test_ReplaysExistingDelegatedSubscription_FromOldSigner() public {
         // Create new dummy subscription
         Subscription memory sub = getMockSubscription();
 
@@ -369,4 +370,322 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
         assertEq(subscriptionId, 1);
     }
 
+    /// @notice Cannot create delegated subscription where nonce is reused
+    function test_CreateDelegatedSubscription_IsIdempotent_ForReusedNonce() public {
+        // Setup nonce
+        uint32 nonce = 0;
+
+        // Create new dummy subscription
+        Subscription memory sub = getMockSubscription();
+
+        // Generate signature expiry
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+
+        // Get EIP-712 typed message
+        bytes32 message = getMessage(nonce, expiry, sub);
+
+        // Sign message
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription
+        uint64 subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+        assertEq(subscriptionId, 1);
+
+        // Create second dummy subscription and set redundancy to 5 (identifier param)
+        sub = getMockSubscription();
+        uint16 oldRedundancy = sub.redundancy;
+        sub.redundancy = 5;
+
+        // Get EIP-712 typed message
+        message = getMessage(nonce, expiry, sub);
+
+        // Sign message
+        (v, r, s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription (notice, with the same nonce)
+        subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+
+        // Assert that we are instead simply returned the existing subscription
+        assertEq(subscriptionId, 1);
+        // Also, assert that the redundancy has not changed
+        Subscription memory actual = ROUTER.getSubscription(subscriptionId);
+        assertEq(actual.redundancy, oldRedundancy);
+
+        // Now, ensure that we can't resign with a new delegatee and force nonce replay
+        // Change the signing delegatee to the backup delegatee
+        CALLBACK.updateMockSigner(BACKUP_DELEGATEE_ADDRESS);
+        assertEq(CALLBACK.getSigner(), BACKUP_DELEGATEE_ADDRESS);
+
+        // Use same summy subscription with redundancy == 5, but sign with backup delegatee
+        (v, r, s) = vm.sign(BACKUP_DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription (notice, with the same nonce)
+        subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+
+        // Assert that we are instead simply returned the existing subscription
+        assertEq(subscriptionId, 1);
+        // Also, assert that the redundancy has not changed
+        actual = ROUTER.getSubscription(subscriptionId);
+        assertEq(actual.redundancy, oldRedundancy);
+    }
+    /// @notice Can create delegated subscription with out of order nonces
+    function test_Succeeds_When_CreatingDelegatedSubscription_WithUnorderedNonces() public {
+        // Create subscription with nonce 10
+        uint32 nonce = 10;
+        Subscription memory sub = getMockSubscription();
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+        bytes32 message = getMessage(nonce, expiry, sub);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+        uint64 subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+        assertEq(subscriptionId, 1);
+
+        // Ensure maximum subscriber nonce is 10
+        assertEq(ROUTER.maxSubscriberNonce(sub.owner), 10);
+
+        // Create subscription with nonce 1
+        nonce = 1;
+        sub = getMockSubscription();
+        expiry = uint32(block.timestamp) + 30 minutes;
+        message = getMessage(nonce, expiry, sub);
+        (v, r, s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+        subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+        assertEq(subscriptionId, 2);
+
+        // Ensure maximum subscriber nonce is still 10
+        assertEq(ROUTER.maxSubscriberNonce(sub.owner), 10);
+
+        // Attempt to replay tx with nonce 10
+        nonce = 10;
+        sub = getMockSubscription();
+        expiry = uint32(block.timestamp) + 30 minutes;
+        message = getMessage(nonce, expiry, sub);
+        (v, r, s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+        subscriptionId = ROUTER.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
+
+        // Ensure that instead of a new subscription, existing subscription (ID: 1) is returned
+        assertEq(subscriptionId, 1);
+    }
+
+    /// @notice Can cancel subscription created via delegate
+    function test_Succeeds_When_CancellingSubscription_CreatedViaDelegate() public {
+        // Create mock subscription via delegate, nonce 0
+        uint64 subscriptionId = createMockSubscriptionEIP712(0);
+
+        // Attempt to cancel from Callback contract
+        vm.startPrank(address(CALLBACK));
+        ROUTER.cancelSubscription(subscriptionId);
+
+        // Assert cancelled status
+        Subscription memory actual = ROUTER.getSubscription(1);
+        assertEq(actual.activeAt, type(uint32).max);
+    }
+
+    /// @notice Can delegated deliver compute response, while creating new subscription
+    function test_Succeeds_When_AtomicallyCreatingSubscriptionAndDeliveringOutput() public {
+        // Starting nonce
+        uint32 nonce = ROUTER.maxSubscriberNonce(address(CALLBACK));
+
+        // Create new dummy subscription
+        Subscription memory sub = getMockSubscription();
+
+        // Generate signature expiry
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+
+        // Get EIP-712 typed message
+        bytes32 message = getMessage(nonce, expiry, sub);
+
+        // Sign message from delegatee private key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription and deliver response, via deliverComputeDelegatee
+        uint32 subscriptionId = 1;
+        uint32 deliveryInterval = 1;
+        ALICE.deliverComputeDelegatee( //
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            aliceWalletAddress
+        );
+
+        // Get response
+        DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subscriptionId, deliveryInterval, 1);
+        assertEq(out.subscriptionId, subscriptionId);
+        assertEq(out.interval, deliveryInterval);
+        assertEq(out.redundancy, 1);
+        assertEq(out.input, MOCK_INPUT);
+        assertEq(out.output, MOCK_OUTPUT);
+        assertEq(out.proof, MOCK_PROOF);
+
+        // Ensure subscription completion is tracked
+        bytes32 key = keccak256(abi.encode(subscriptionId, deliveryInterval, address(ALICE)));
+        assertEq(COORDINATOR.nodeResponded(key), true);
+    }
+
+    /// @notice Cannot delegated deliver compute response for completed subscription
+    function test_RevertsIf_AtomicallyDeliveringOutput_ForCompletedSubscription() public {
+        // Starting nonce
+        uint32 nonce = ROUTER.maxSubscriberNonce(address(CALLBACK));
+
+        // Create new dummy subscription
+        Subscription memory sub = getMockSubscription();
+
+        // Generate signature expiry
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+
+        // Get EIP-712 typed message
+        bytes32 message = getMessage(nonce, expiry, sub);
+
+        // Sign message from delegatee private key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription and deliver response, via deliverComputeDelegatee
+        uint64 subscriptionId = 1;
+        uint32 deliveryInterval = 1;
+
+        // To capture the event, we need to record logs before the transaction
+        vm.recordLogs();
+
+        ALICE.deliverComputeDelegatee(
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            aliceWalletAddress
+        );
+
+        // Retrieve the Commitment value from the RequestStarted event
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestStartedTopic = keccak256(
+            "RequestStarted(uint64,bytes32,bytes32,(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address))"
+        );
+        Commitment memory commitment;
+        bool eventFound;
+
+        for (uint i = 0; i < entries.length; i++) {
+            if (entries[i].topics[0] == requestStartedTopic) {
+                commitment = abi.decode(entries[i].data, (Commitment));
+                eventFound = true;
+                break;
+            }
+        }
+        assertTrue(eventFound, "RequestStarted event not found");
+        // You can now use the `commitment` variable, for example:
+        assertEq(commitment.subscriptionId, subscriptionId);
+
+        // Attempt to deliver from Bob via delegatee
+        vm.expectRevert(Coordinator.IntervalCompleted.selector);
+        BOB.deliverComputeDelegatee(
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            bobWalletAddress
+        );
+        bytes memory commitmentData1 = abi.encode(commitment);
+        // Attempt to delivery from Bob direct
+        vm.expectRevert(Coordinator.IntervalCompleted.selector);
+        BOB.deliverCompute(
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            commitmentData1,
+            bobWalletAddress
+        );
+    }
+
+    /// @notice Can delegated deliver compute response for existing subscription
+    function test_Succeeds_When_DeliveringDelegatedComputeResponse_ForExistingSubscription() public {
+        // Starting nonce
+        uint32 nonce = ROUTER.maxSubscriberNonce(address(CALLBACK));
+
+        // Create new dummy subscription
+        Subscription memory sub = getMockSubscription();
+        // Modify dummy subscription to allow > 1 redundancy
+        sub.redundancy = 2;
+
+        // Generate signature expiry
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+
+        // Get EIP-712 typed message
+        bytes32 message = getMessage(nonce, expiry, sub);
+
+        // Sign message from delegatee private key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Delivery from Alice
+        uint32 subscriptionId = 1;
+        uint32 deliveryInterval = 1;
+        ALICE.deliverComputeDelegatee( //
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            aliceWalletAddress
+        );
+
+        // Ensure subscription completion is tracked
+        bytes32 key = keccak256(abi.encode(subscriptionId, deliveryInterval, address(ALICE)));
+        assertEq(COORDINATOR.nodeResponded(key), true);
+
+        // Deliver from Bob
+        BOB.deliverComputeDelegatee( //
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            bobWalletAddress
+        );
+
+        // Ensure subscription completion is tracked
+        key = keccak256(abi.encode(subscriptionId, deliveryInterval, address(BOB)));
+        assertEq(COORDINATOR.nodeResponded(key), true);
+
+        // Expect revert if trying to deliver again
+        vm.expectRevert(Coordinator.IntervalCompleted.selector);
+        BOB.deliverComputeDelegatee( //
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            bobWalletAddress
+        );
+    }
 }

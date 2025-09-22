@@ -416,42 +416,62 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32, Commitment memory) {
+    function _sendRequest(
+        uint64 subscriptionId,
+        uint32 interval
+    ) private returns (bytes32, Commitment memory) {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
+
         Subscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
         require(coordinatorAddr != address(0), "Coordinator not found");
-        ICoordinator coordinator = ICoordinator(coordinatorAddr);
+
         bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+        Commitment memory commitment;
 
         if (requestCommitments[requestId] != bytes32(0)) {
-            revert DuplicateRequestId(requestId);
+            // Request already exists, reconstruct the commitment to make the call idempotent.
+            commitment = Commitment({
+                requestId: requestId,
+                subscriptionId: subscriptionId,
+                containerId: subscription.containerId,
+                interval: interval,
+                lazy: subscription.lazy,
+                redundancy: subscription.redundancy,
+                walletAddress: subscription.wallet,
+                paymentAmount: subscription.paymentAmount,
+                paymentToken: subscription.paymentToken,
+                verifier: subscription.verifier,
+                coordinator: coordinatorAddr
+            });
+        } else {
+            // New request, mark it and start it in the coordinator.
+            _markRequestInFlight(
+                requestId,
+                payable(subscription.wallet),
+                subscriptionId,
+                interval,
+                subscription.redundancy,
+                subscription.paymentToken,
+                subscription.paymentAmount
+            );
+
+            ICoordinator coordinator = ICoordinator(coordinatorAddr);
+            commitment = coordinator.startRequest(
+                requestId,
+                subscriptionId,
+                subscription.containerId,
+                interval,
+                subscription.redundancy,
+                subscription.lazy,
+                subscription.paymentToken,
+                subscription.paymentAmount,
+                subscription.wallet,
+                subscription.verifier
+            );
+            requestCommitments[requestId] = keccak256(abi.encode(commitment));
         }
-
-        _markRequestInFlight(
-            requestId,
-            payable(subscription.wallet),
-            subscriptionId,
-            interval,
-            subscription.redundancy,
-            subscription.paymentToken,
-            subscription.paymentAmount
-        );
-
-        Commitment memory commitment = coordinator.startRequest(
-            requestId,
-            subscriptionId,
-            subscription.containerId,
-            interval,
-            subscription.redundancy,
-            subscription.lazy,
-            subscription.paymentToken,
-            subscription.paymentAmount,
-            subscription.wallet,
-            subscription.verifier
-        );
-        requestCommitments[requestId] = keccak256(abi.encode(commitment));
 
         emit RequestStart(
             requestId,
@@ -463,8 +483,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscription.paymentAmount,
             subscription.paymentToken,
             commitment.verifier,
-            address(coordinator)
+            coordinatorAddr
         );
+
         return (requestId, commitment);
     }
 
