@@ -173,7 +173,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
                                  SETUP
     //////////////////////////////////////////////////////////////*/
 
-    function setUp() public {
+    function setUp() public virtual {
         // Create mock protocol wallet
         uint256 initialNonce = vm.getNonce(address(this));
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);

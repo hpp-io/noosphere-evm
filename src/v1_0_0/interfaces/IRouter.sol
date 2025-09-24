@@ -50,6 +50,15 @@ interface IRouter {
         Commitment memory commitment
     ) external returns (FulfillResult resultCode);
 
+
+    function payFromCoordinator(
+        uint64 subscriptionId,
+        uint32 interval,
+        address spenderWallet,
+        address spenderAddress,
+        Payment[] memory payments
+    ) external;
+
     /**
      * @notice Locks funds in the consumer's wallet for proof verification.
      * @dev This is called by a Coordinator before a potentially costly verification process.
@@ -57,6 +66,13 @@ interface IRouter {
      * @param commitment The original request commitment object, proving the request's validity.
      */
     function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external;
+
+    /**
+     * @notice Unlocks funds in the consumer's wallet after proof verification.
+     * @dev This is called by a Coordinator after the verification process is complete.
+     * @param proofRequest The details of the proof verification request.
+     */
+    function unlockForVerification(ProofVerificationRequest calldata proofRequest) external;
 
     /**
      * @notice Write data to the inbox
@@ -157,13 +173,6 @@ interface IRouter {
      * @param requestId The id of requests to timeout.
      */
     function timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) external;
-
-    function payFromCoordinator(
-        uint64 subscriptionId,
-        uint32 interval,
-        address spenderWallet,
-        Payment[] memory payments
-    ) external;
 
     /**
      * @notice Creates a subscription via an EIP-712 signature.

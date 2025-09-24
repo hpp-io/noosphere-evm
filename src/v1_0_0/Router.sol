@@ -85,6 +85,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /// @notice Emitted when funds are locked for verification.
     event VerificationFundsLocked(bytes32 indexed requestId, address indexed spender, uint256 amount);
 
+    /// @notice Emitted when funds are unlocked for verification.
+    event VerificationFundsUnlocked(bytes32 indexed requestId, address indexed spender, uint256 amount);
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -162,6 +164,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         uint64 subscriptionId,
         uint32 interval,
         address spenderWallet,
+        address spenderAddress,
         Payment[] memory payments
     ) external override {
         if (_isExistingSubscription(subscriptionId) == false) {
@@ -171,8 +174,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         if (msg.sender != getContractById(sub.routeId)) {
             revert OnlyCallableFromCoordinator();
         }
-        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
-        _pay(requestId, spenderWallet, msg.sender, payments);
+        _pay(spenderWallet, spenderAddress, payments);
     }
 
     /**
@@ -200,7 +202,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             return resultCode;
         }
 
-        //        Subscription memory subscription = subscriptions[subscriptionId];
         _payForFulfillment(commitment.requestId, commitment.walletAddress, payments);
 
         if (numRedundantDeliveries == commitment.redundancy) {
@@ -236,9 +237,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
-        external override
-    {
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external override {
         if (msg.sender != commitment.coordinator) {
             revert OnlyCallableFromCoordinator();
         }
@@ -252,6 +251,19 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
         _lockForVerification(proofRequest);
         emit VerificationFundsLocked(proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount);
+    }
+
+    /**
+     * @notice Unlocks funds after verification.
+     * @param proofRequest The proof verification request details.
+     */
+    function unlockForVerification(ProofVerificationRequest calldata proofRequest) external override {
+        address coordinatorAddress = getContractById(subscriptions[proofRequest.subscriptionId].routeId);
+        if (msg.sender != coordinatorAddress) {
+            revert OnlyCallableFromCoordinator();
+        }
+        _unlockForVerification(proofRequest);
+        emit VerificationFundsUnlocked(proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount);
     }
 
     function hasSubscriptionNextInterval(

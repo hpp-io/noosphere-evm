@@ -210,9 +210,6 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
 
         // Fund protocol wallet with ETH
         vm.deal(protocolWallet, 10 ether);
-        vm.startPrank(address(this));
-        Wallet(payable(protocolWallet)).approve(address(COORDINATOR), address(0), 10 ether);
-        vm.stopPrank();
         LibDeploy.updateBillingConfig(
             COORDINATOR,
             1 weeks,
@@ -222,6 +219,11 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
             expectedTickFee,
             address(0)
         );
+
+        // The protocol wallet is its own spender for tick fees.
+        vm.startPrank(address(this));
+        Wallet(payable(protocolWallet)).approve(protocolWallet, address(0), 10 ether);
+        vm.stopPrank();
 
         // Fund the consumer wallet for the subscription payments
         vm.deal(consumerWallet, paymentAmount * 2); // Fund for two intervals

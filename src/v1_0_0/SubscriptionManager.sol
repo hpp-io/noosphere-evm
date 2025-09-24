@@ -373,8 +373,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @param proofRequest The details of the proof verification request.
     function _lockForVerification(ProofVerificationRequest calldata proofRequest) internal {
         Wallet submitterWallet = Wallet(payable(proofRequest.submitterWallet));
-        submitterWallet.cLock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.escrowedAmount);
+        submitterWallet.cLock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
     }
+
+    /// @notice Unlocks funds in the consumer's wallet after proof verification.
+    /// @param proofRequest The details of the proof verification request.
+    function _unlockForVerification(ProofVerificationRequest calldata proofRequest) internal {
+        Wallet submitterWallet = Wallet(payable(proofRequest.submitterWallet));
+        submitterWallet.cUnlock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
+    }
+
 
     function _payForFulfillment(
         bytes32 requestId,
@@ -392,14 +400,10 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _pay(
-        bytes32 requestId,
         address walletAddress,
         address spenderAddress,
         Payment[] memory payments
     ) internal {
-        if (requestCommitments[requestId] == bytes32(0)) {
-            revert NoSuchCommitment();
-        }
         Wallet wallet = Wallet(payable(walletAddress));
         if (_getWalletFactory().isValidWallet(address(wallet)) == false) {
             revert InvalidWallet();

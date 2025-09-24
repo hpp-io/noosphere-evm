@@ -9,6 +9,7 @@ import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {IWalletFactory} from "./wallet/IWalletFactory.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
 /**
  * @title Coordinator
@@ -36,11 +37,19 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         bytes32 indexed containerId,
         Commitment commitment
     );
+
+    event ProofVerified(
+        uint64 indexed id, uint32 indexed interval, address indexed node, bool active, address verifier, bool valid
+    );
+
+
     error IntervalMismatch(uint32 deliveryInterval);
     error RequestCompleted(bytes32 requestId);
     error IntervalCompleted();
     error NodeRespondedAlready();
     error InvalidWallet();
+
+    error ProofRequestNotFound();
 
     /**
      * @param _routerAddress The address of the main Router contract.
@@ -115,7 +124,14 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         address node,
         bool valid
     ) external override {
-        revert("Not implemented");
+        bytes32 key = keccak256(abi.encode(subscriptionId, interval, node));
+        ProofVerificationRequest memory request = proofRequests[key];
+        delete proofRequests[key];
+        if (request.expiry == 0) {
+            revert ProofRequestNotFound();
+        }
+        _finalizeVerification(request, valid, interval);
+        emit ProofVerified(subscriptionId, interval, node, valid, msg.sender, valid);
     }
 
     /**
