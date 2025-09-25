@@ -3,13 +3,12 @@ pragma solidity ^0.8.23;
 
 import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
 import {Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
-import {MockCallbackConsumer} from "./mocks/consumer/MockCallbackConsumer.sol";
-import {BaseConsumer} from "../src/v1_0_0/consumer/BaseConsumer.sol";
-import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
+import {MockTransientComputeClient} from "./mocks/client/MockTransientComputeClient.sol";
+import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {LibDeploy} from "./lib/LibDeploy.sol";
 import {MockNode} from "./mocks/MockNode.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
-import {MockSubscriptionConsumer} from "./mocks/consumer/MockSubscriptionConsumer.sol";
+import {MockSubscriptionComputeClient} from "./mocks/client/MockSubscriptionComputeClient.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {Reader} from "../src/v1_0_0/utility/Reader.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
@@ -147,10 +146,10 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
     MockNode internal CHARLIE;
 
     /// @notice Mock callback consumer
-    MockCallbackConsumer internal CALLBACK;
+    MockTransientComputeClient internal CALLBACK;
 
     /// @notice Mock subscription consumer
-    MockSubscriptionConsumer internal SUBSCRIPTION;
+    MockSubscriptionComputeClient internal SUBSCRIPTION;
 
     address internal userWalletAddress;
 
@@ -195,10 +194,10 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         BOB = new MockNode(router);
         CHARLIE = new MockNode(router);
         // Initialize mock callback consumer
-        CALLBACK = new MockCallbackConsumer(address(router));
+        CALLBACK = new MockTransientComputeClient(address(router));
 
         // Initialize mock subscription consumer
-        SUBSCRIPTION = new MockSubscriptionConsumer(address(router));
+        SUBSCRIPTION = new MockSubscriptionComputeClient(address(router));
 
         // Initialize mock subscription consumer w/ Allowlist
         // Add only Alice as initially allowed node

@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import {CoordinatorTest} from "./Coordinator.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {BaseConsumer} from "../src/v1_0_0/consumer/BaseConsumer.sol";
+import {ComputeClient} from "../src/v1_0_0/client/ComputeClient.sol";
 
 /// @title CoordinatorGeneralTest
 /// @notice General coordinator tests
@@ -39,7 +39,7 @@ contract CoordinatorGeneralTest is CoordinatorTest {
     /// @notice Cannot receive response from non-coordinator contract
     function test_RevertIf_ReceivingResponse_FromNonCoordinator() public {
         // Expect revert sending from address(this)
-        vm.expectRevert(BaseConsumer.NotRouter.selector);
+        vm.expectRevert(ComputeClient.NotRouter.selector);
         CALLBACK.rawReceiveCompute(1, 1, 1, false, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0));
     }
 }

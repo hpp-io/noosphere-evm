@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import {MockCallbackConsumer} from "../../../test/mocks/consumer/MockCallbackConsumer.sol";
-import {Delegator} from "../utility/Delegator.sol";
+import "../../../src/v1_0_0/utility/Delegator.sol";
+import "./MockTransientComputeClient.sol";
 
-/// @title MockDelegatorCallbackConsumer
-/// @notice Mocks CallbackConsumer w/ delegator set to an address
-contract MockDelegatorCallbackConsumer is Delegator, MockCallbackConsumer {
+/// @title MockDelegatorTransientComputeClient.sol
+/// @notice Mocks TransientComputeClient.sol w/ delegator set to an address
+contract MockDelegatorTransientComputeClient is Delegator, MockTransientComputeClient {
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Create new MockDelegatorCallbackConsumer
+    /// @notice Create new MockDelegatorTransientComputeClient.sol
     /// @param router router address
     /// @param signer delegated signer address
-    constructor(address router, address signer) MockCallbackConsumer(router) Delegator(signer) {}
+    constructor(address router, address signer) MockTransientComputeClient(router) Delegator(signer) {}
 
     /*//////////////////////////////////////////////////////////////
                            INHERITED FUNCTIONS

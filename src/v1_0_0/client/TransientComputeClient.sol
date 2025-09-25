@@ -2,12 +2,12 @@
 pragma solidity ^0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
-import {BaseConsumer} from "./BaseConsumer.sol";
+import {ComputeClient} from "./ComputeClient.sol";
 
-/// @title CallbackConsumer
+/// @title TransientComputeClient.sol
 /// @notice Allows creating one-time requests for off-chain container compute, delivered via callback
-/// @dev Inherits `BaseConsumer` to inherit functions to receive container compute responses and emit container inputs
-abstract contract CallbackConsumer is BaseConsumer {
+/// @dev Inherits `ComputeClient.sol` to inherit functions to receive container compute responses and emit container inputs
+abstract contract TransientComputeClient is ComputeClient {
     /*//////////////////////////////////////////////////////////////
                                 MUTABLE
     //////////////////////////////////////////////////////////////*/
@@ -20,9 +20,9 @@ abstract contract CallbackConsumer is BaseConsumer {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initialize new CallbackConsumer
+    /// @notice Initialize new TransientComputeClient.sol
     /// @param router router address
-    constructor(address router) BaseConsumer(router) {}
+    constructor(address router) ComputeClient(router) {}
 
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
@@ -60,7 +60,7 @@ abstract contract CallbackConsumer is BaseConsumer {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice View function to broadcast dynamic container inputs to off-chain Infernet nodes
-    /// @dev Modified from `BaseConsumer` to expose callback input data, indexed by subscriptionId
+    /// @dev Modified from `ComputeClient.sol` to expose callback input data, indexed by subscriptionId
     /// @param subscriptionId subscription ID to collect container inputs for
     /// @param interval subscription interval to collect container inputs for
     /// @param timestamp timestamp at which container inputs are collected

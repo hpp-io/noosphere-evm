@@ -2,29 +2,29 @@
 pragma solidity ^0.8.23;
 
 import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
-import {CallbackConsumer} from "../../../src/v1_0_0/consumer/CallbackConsumer.sol";
-import {MockBaseConsumer, DeliveredOutput} from "./MockBaseConsumer.sol";
+import {TransientComputeClient} from "../../../src/v1_0_0/client/TransientComputeClient.sol";
+import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
 
-/// @title MockCallbackConsumer
-/// @notice Mocks CallbackConsumer
-contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertions {
+/// @title MockTransientComputeClient.sol
+/// @notice Mocks TransientComputeClient.sol
+contract MockTransientComputeClient is MockComputeClient, TransientComputeClient, StdAssertions {
     event DeliverOutput(uint64 subscriptionId, uint32 interval, uint16 redundancy, bytes32 containerId, address node);
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Create new MockCallbackConsumer
+    /// @notice Create new MockTransientComputeClient.sol
     /// @param router router address
-    constructor(address router) CallbackConsumer(router) {}
+    constructor(address router) TransientComputeClient(router) {}
 
     /*//////////////////////////////////////////////////////////////
                            UTILITY FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Create new mock callback request
-    /// @dev Parameter interface conforms to same as `CallbackConsumer._requestCompute`
+    /// @dev Parameter interface conforms to same as `TransientComputeClient.sol._requestCompute`
     /// @dev Augmented with checks
     /// @dev Checks returned subscription ID is serially conforming
     /// @dev Checks subscription stored in coordinator storage conforms to expected, given inputs

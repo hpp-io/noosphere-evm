@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import {ICoordinatorEvents} from "./Coordinator.t.sol";
+import {MockDelegatorTransientComputeClient} from "./mocks/client/MockDelegatorTransientComputeClient.sol";
+import {MockDelegatorSubscriptionConsumer} from "./mocks/client/MockDelegatorSubscriptionConsumer.sol";
+import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Coordinator.t.sol";
-import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
+import {Delegator} from "../src/v1_0_0/utility/Delegator.sol";
+import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
+import {ECDSA} from "solady/utils/ECDSA.sol";
+import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
+import {ICoordinatorEvents} from "./Coordinator.t.sol";
 import {LibDeploy} from "./lib/LibDeploy.sol";
-import {MockDelegatorCallbackConsumer} from "../src/v1_0_0/consumer/DelegatorCallbackConsumer.sol";
-import {MockDelegatorSubscriptionConsumer} from "../src/v1_0_0/consumer/DelegatorSubscriptionConsumer.sol";
+import {LibSign} from "./lib/LibSign.sol";
 import {MockNode} from "./mocks/MockNode.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
+import {MockToken} from "./mocks/MockToken.sol";
+import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
+import {Reader} from "../src/v1_0_0/utility/Reader.sol";
+import {Router} from "../src/v1_0_0/Router.sol";
+import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
-import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {MockToken} from "./mocks/MockToken.sol";
-import {Reader} from "../src/v1_0_0/utility/Reader.sol";
-import {LibSign} from "./lib/LibSign.sol";
-import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
-import {Delegator} from "../src/v1_0_0/utility/Delegator.sol";
-import {ECDSA} from "solady/utils/ECDSA.sol";
-import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
-import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 
 contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents {
     /*//////////////////////////////////////////////////////////////
@@ -58,7 +58,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
 
 
     /// @notice Mock callback consumer (w/ assigned delegatee)
-    MockDelegatorCallbackConsumer private CALLBACK;
+    MockDelegatorTransientComputeClient private CALLBACK;
 
     /// @notice Mock subscription consumer (w/ assigned delegatee)
     MockDelegatorSubscriptionConsumer private SUBSCRIPTION;
@@ -134,7 +134,7 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
         BACKUP_DELEGATEE_ADDRESS = vm.addr(BACKUP_DELEGATEE_PRIVATE_KEY);
 
         // Initialize mock callback consumer w/ assigned delegatee
-        CALLBACK = new MockDelegatorCallbackConsumer(address(router), DELEGATEE_ADDRESS);
+        CALLBACK = new MockDelegatorTransientComputeClient(address(router), DELEGATEE_ADDRESS);
 
         // Initialize mock subscription consumer w/ assigned delegatee
         SUBSCRIPTION = new MockDelegatorSubscriptionConsumer(address(router), DELEGATEE_ADDRESS);

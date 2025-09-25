@@ -2,19 +2,19 @@
 pragma solidity ^0.8.4;
 
 import {Commitment} from "../types/Commitment.sol";
-import {BaseConsumer} from "./BaseConsumer.sol";
+import {ComputeClient} from "./ComputeClient.sol";
 
-/// @title SubscriptionConsumer
+/// @title SubscriptionComputeClient.sol
 /// @notice Allows creating recurring subscriptions for off-chain container compute
-/// @dev Inherits `BaseConsumer` to inherit functions to receive container compute responses and emit container inputs
-abstract contract SubscriptionConsumer is BaseConsumer {
+/// @dev Inherits `ComputeClient.sol` to inherit functions to receive container compute responses and emit container inputs
+abstract contract SubscriptionComputeClient is ComputeClient {
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initialize new SubscriptionConsumer
+    /// @notice Initialize new SubscriptionComputeClient.sol
     /// @param router router address
-    constructor(address router) BaseConsumer(router) {}
+    constructor(address router) ComputeClient(router) {}
 
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS

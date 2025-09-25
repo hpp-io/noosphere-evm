@@ -3,13 +3,13 @@ pragma solidity ^0.8.23;
 
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
 import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
-import {SubscriptionConsumer} from "../../../src/v1_0_0/consumer/SubscriptionConsumer.sol";
-import "./MockBaseConsumer.sol";
+import {SubscriptionComputeClient} from "../../../src/v1_0_0/client/SubscriptionComputeClient.sol";
+import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
 
-/// @title MockSubscriptionConsumer
-/// @notice Mocks SubscriptionConsumer
-contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, StdAssertions {
+/// @title MockSubscriptionComputeClient.sol
+/// @notice Mocks SubscriptionComputeClient.sol
+contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionComputeClient, StdAssertions {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -21,9 +21,9 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Create new MockSubscriptionConsumer
+    /// @notice Create new MockSubscriptionComputeClient.sol
     /// @param router The address of the Router contract.
-    constructor(address router) SubscriptionConsumer(router) {}
+    constructor(address router) SubscriptionComputeClient(router) {}
 
     /*//////////////////////////////////////////////////////////////
                            UTILITY FUNCTIONS
@@ -39,7 +39,7 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
     //    }
 
     /// @notice Create new mock subscription
-    /// @dev Parameter interface conforms to same as `SubscriptionConsumer._createComputeSubscription`
+    /// @dev Parameter interface conforms to same as `SubscriptionComputeClient.sol._createComputeSubscription`
     /// @dev Augmented with checks
     /// @dev Checks returned subscription ID is serially conforming.
     /// @dev Checks subscription stored in coordinator storage conforms to expected, given inputs

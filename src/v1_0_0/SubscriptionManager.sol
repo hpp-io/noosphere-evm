@@ -4,7 +4,6 @@ pragma solidity ^0.8.23;
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 //import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
-import {BaseConsumer} from "./consumer/BaseConsumer.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {ISubscriptionsManager} from "./interfaces/ISubscriptionManager.sol";
 import {Payment} from "./types/Payment.sol";
@@ -14,6 +13,7 @@ import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {console} from "forge-std/console.sol";
 import {Delegator} from "./utility/Delegator.sol";
+import {ComputeClient} from "./client/ComputeClient.sol";
 
 abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -423,7 +423,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 containerId
     ) internal {
         Subscription memory subscription = subscriptions[subscriptionId];
-        BaseConsumer(subscription.owner).rawReceiveCompute(subscriptionId, interval, numRedundantDeliveries, lazy, node,
+        ComputeClient(subscription.owner).rawReceiveCompute(subscriptionId, interval, numRedundantDeliveries, lazy, node,
             input, output, proof, bytes32(0));
     }
 

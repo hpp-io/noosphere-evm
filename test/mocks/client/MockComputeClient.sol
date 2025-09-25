@@ -27,9 +27,9 @@ struct DeliveredOutput {
     bytes32 containerId;
 }
 
-/// @title MockBaseConsumer
-/// @notice Mocks BaseConsumer contract
-abstract contract MockBaseConsumer {
+/// @title MockComputeClient.sol
+/// @notice Mocks ComputeClient.sol contract
+abstract contract MockComputeClient {
     /*//////////////////////////////////////////////////////////////
                                 MUTABLE
     //////////////////////////////////////////////////////////////*/

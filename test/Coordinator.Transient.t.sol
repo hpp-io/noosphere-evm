@@ -4,13 +4,13 @@ pragma solidity ^0.8.23;
 import {CoordinatorTest, ICoordinatorEvents} from "./Coordinator.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
-import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
+import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 
 // @title CoordinatorCallbackTest
-// @notice Coordinator tests specific to usage by CallbackConsumer
-contract CoordinatorCallbackTest is CoordinatorTest {
+// @notice Coordinator tests specific to usage by TransientComputeClient.sol
+contract CoordinatorTransientTest is CoordinatorTest {
     /// @notice Can create callback (one-time subscription)
     function test_Succeeds_When_CreatingCallback() public {
         vm.warp(0);

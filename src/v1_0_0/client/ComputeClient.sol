@@ -4,14 +4,14 @@ pragma solidity ^0.8.23;
 import "../utility/Routable.sol";
 import "./PendingDeliveries.sol";
 
-/// @title BaseConsumer
+/// @title ComputeClient.sol
 /// @notice Handles receiving container compute responses from  coordinator
 /// @notice Handles exposing container inputs to  nodes via `getContainerInputs()`
 /// @notice Declares internal `INBOX` reference to allow downstream consumers to read from `Inbox`
 /// @dev Contains a single public entrypoint `rawReceiveCompute` callable only by the  coordinator.
 ///      Once msg.sender is verified, parameters are proxied to internal function `_receiveCompute`
 /// @dev Does not inherit `Coordinated` for `rawReceiveCompute` coordinator-permissioned check to keep error scope localized
-abstract contract BaseConsumer is Routable, PendingDeliveries{
+abstract contract ComputeClient is Routable, PendingDeliveries{
     /*//////////////////////////////////////////////////////////////
                                IMMUTABLE
     //////////////////////////////////////////////////////////////*/
@@ -31,7 +31,7 @@ abstract contract BaseConsumer is Routable, PendingDeliveries{
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes a new BaseConsumer.
+    /// @notice Initializes a new ComputeClient.sol.
     /// @param router The address of the router contract.
     constructor(address router) Routable(router) {}
 
