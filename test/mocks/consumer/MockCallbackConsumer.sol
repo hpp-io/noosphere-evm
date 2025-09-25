@@ -10,7 +10,6 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 /// @title MockCallbackConsumer
 /// @notice Mocks CallbackConsumer
 contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertions {
-
     event DeliverOutput(uint64 subscriptionId, uint32 interval, uint16 redundancy, bytes32 containerId, address node);
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -18,7 +17,7 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
 
     /// @notice Create new MockCallbackConsumer
     /// @param router router address
-    constructor(address router) CallbackConsumer(router) { }
+    constructor(address router) CallbackConsumer(router) {}
 
     /*//////////////////////////////////////////////////////////////
                            UTILITY FUNCTIONS
@@ -43,15 +42,57 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         // Request off-chain container compute
         bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
 
-        uint64 subId = _createComputeSubscription(
-            containerId, redundancy, false, paymentToken, paymentAmount, wallet, verifier, bytes32("Coordinator_v1.0.0")
-        );
+        uint64 subId =
+            _createComputeSubscription(
+                containerId,
+                redundancy,
+                false,
+                paymentToken,
+                paymentAmount,
+                wallet,
+                verifier,
+                bytes32("Coordinator_v1.0.0")
+            );
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID, containerId, inputs, redundancy, paymentToken, paymentAmount, wallet, verifier, currentTimestamp
+            actualSubscriptionID, containerId, inputs, redundancy, false, paymentToken, paymentAmount, wallet, verifier, currentTimestamp
         );
+
+        return (actualSubscriptionID, commitment);
+    }
+
+    /// @notice Create new lazy mock callback request
+    function createLazyMockRequest(
+        string memory containerId,
+        bytes memory inputs,
+        uint16 redundancy,
+        address paymentToken,
+        uint256 paymentAmount,
+        address wallet,
+        address verifier
+    ) external returns (uint64, Commitment memory) {
+        // Get current block timestamp
+        uint256 currentTimestamp = block.timestamp;
+        // Request off-chain container compute
+        bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
+
+        uint64 subId =
+            _createComputeSubscription(
+                containerId,
+                redundancy,
+                true, // lazy = true
+                paymentToken,
+                paymentAmount,
+                wallet,
+                verifier,
+                bytes32("Coordinator_v1.0.0")
+            );
+
+        (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
+
+        _assertSubscription(actualSubscriptionID, containerId, inputs, redundancy, true, paymentToken, paymentAmount, wallet, verifier, currentTimestamp);
 
         return (actualSubscriptionID, commitment);
     }
@@ -66,6 +107,7 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         string memory containerId,
         bytes memory inputs,
         uint16 redundancy,
+        bool expectedLazy, // Add this parameter
         address paymentToken,
         uint256 paymentAmount,
         address wallet,
@@ -80,7 +122,7 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         assertEq(sub.frequency, 1);
         assertEq(sub.period, 0);
         assertEq(sub.containerId, keccak256(abi.encode(containerId)));
-        assertEq(sub.lazy, false);
+        assertEq(sub.lazy, expectedLazy); // Use the passed lazy parameter
         assertEq(sub.paymentToken, paymentToken);
         assertEq(sub.paymentAmount, paymentAmount);
         assertEq(sub.wallet, wallet);
@@ -93,23 +135,23 @@ contract MockCallbackConsumer is MockBaseConsumer, CallbackConsumer, StdAssertio
         uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
+        bool lazy,
         address node,
         bytes calldata input,
         bytes calldata output,
         bytes calldata proof,
-        bytes32 containerId,
-        uint256 index
+        bytes32 containerId
     ) internal override {
         outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
             subscriptionId: subscriptionId,
             interval: interval,
             redundancy: redundancy,
+            lazy: lazy,
             node: node,
             input: input,
             output: output,
             proof: proof,
-            containerId: containerId,
-            index: index
+            containerId: containerId
         });
         emit DeliverOutput(subscriptionId, interval, redundancy, containerId, node);
     }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {ITypeAndVersion} from "./interfaces/ITypeAndVersion.sol";
-import {IOwnableRouter} from "./interfaces/IOwnableRouter.sol";
+import {ITypeAndVersion} from "../interfaces/ITypeAndVersion.sol";
+import {IOwnableRouter} from "../interfaces/IOwnableRouter.sol";
 
 abstract contract Routable is ITypeAndVersion {
     IOwnableRouter private immutable I_ROUTER;

@@ -213,6 +213,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.subscriptionId,
             commitment.interval,
             numRedundantDeliveries,
+            commitment.lazy,
             nodeWallet,
             input,
             output,

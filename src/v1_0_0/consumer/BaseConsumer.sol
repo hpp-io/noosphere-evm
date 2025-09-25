@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
-import {Routable} from "../Routable.sol";
+
+import "../utility/Routable.sol";
+import "./PendingDeliveries.sol";
 
 /// @title BaseConsumer
 /// @notice Handles receiving container compute responses from  coordinator
@@ -9,7 +11,7 @@ import {Routable} from "../Routable.sol";
 /// @dev Contains a single public entrypoint `rawReceiveCompute` callable only by the  coordinator.
 ///      Once msg.sender is verified, parameters are proxied to internal function `_receiveCompute`
 /// @dev Does not inherit `Coordinated` for `rawReceiveCompute` coordinator-permissioned check to keep error scope localized
-abstract contract BaseConsumer is Routable {
+abstract contract BaseConsumer is Routable, PendingDeliveries{
     /*//////////////////////////////////////////////////////////////
                                IMMUTABLE
     //////////////////////////////////////////////////////////////*/
@@ -48,17 +50,16 @@ abstract contract BaseConsumer is Routable {
     /// @param output optional off-chain container output (empty, hashed output, processed output, both, or fallback: all encodeable data), empty for lazy subscriptions
     /// @param proof optional off-chain container execution proof (or arbitrary metadata), empty for lazy subscriptions
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
-    /// @param index if lazy subscription, `Inbox` lazy store index, else empty
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
         uint16 numRedundantDeliveries,
+        bool lazy,
         address node,
         bytes calldata input,
         bytes calldata output,
         bytes calldata proof,
-        bytes32 containerId,
-        uint256 index
+        bytes32 containerId
     ) internal virtual {}
 
     /// @notice View function to broadcast dynamic container inputs to off-chain  nodes
@@ -89,17 +90,16 @@ abstract contract BaseConsumer is Routable {
     /// @param output optional off-chain container output (empty, hashed output, processed output, both, or fallback: all encodeable data), empty for lazy subscriptions
     /// @param proof optional off-chain container execution proof (or arbitrary metadata), empty for lazy subscriptions
     /// @param containerId if lazy subscription, subscription compute container ID, else empty
-    /// @param index if lazy subscription, `Inbox` lazy store index, else empty
     function rawReceiveCompute(
         uint64 subscriptionId,
         uint32 interval,
         uint16 numRedundantDeliveries,
+        bool lazy,
         address node,
         bytes calldata input,
         bytes calldata output,
         bytes calldata proof,
-        bytes32 containerId,
-        uint256 index
+        bytes32 containerId
     ) external {
         // Note: The original check was against a `COORDINATOR` variable that is no longer defined.
         // This check should be updated to reflect the current authorization mechanism, likely via the router.
@@ -107,8 +107,30 @@ abstract contract BaseConsumer is Routable {
             revert NotRouter();
         }
 
-        // Call internal receive function, since caller is validated
-        _receiveCompute(subscriptionId, interval, numRedundantDeliveries, node, input, output, proof, containerId, index);
+        if (lazy) {
+            bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+            _enqueuePendingDelivery(
+                requestId,
+                node,
+                subscriptionId,
+                interval,
+                input,
+                output,
+                proof
+            );
+        } else {
+            // Call internal receive function, since caller is validated
+            _receiveCompute(
+                subscriptionId,
+                interval,
+                numRedundantDeliveries,
+                lazy,
+                node,
+                input,
+                output,
+                proof,
+                containerId);
+        }
     }
 
     /// @notice Creates a new compute subscription.

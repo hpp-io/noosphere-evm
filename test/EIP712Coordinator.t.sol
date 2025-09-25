@@ -24,6 +24,7 @@ import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
 import {Delegator} from "../src/v1_0_0/utility/Delegator.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {DeliveredOutput} from "./mocks/consumer/MockBaseConsumer.sol";
+import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 
 contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents {
     /*//////////////////////////////////////////////////////////////
@@ -527,6 +528,63 @@ contract EIP712CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents
         bytes32 key = keccak256(abi.encode(subscriptionId, deliveryInterval, address(ALICE)));
         assertEq(COORDINATOR.nodeResponded(key), true);
     }
+
+    /// @notice Can delegated deliver compute response for a lazy subscription, while creating new subscription
+    function test_Succeeds_When_AtomicallyCreatingLazySubscriptionAndDeliveringOutput() public {
+        // Starting nonce
+        uint32 nonce = ROUTER.maxSubscriberNonce(address(SUBSCRIPTION));
+
+        // Create new dummy subscription
+        Subscription memory sub = getMockSubscription();
+        sub.owner = address(SUBSCRIPTION); // lazy subscription의 owner를 SUBSCRIPTION으로 설정
+        sub.lazy = true;
+//        sub.period = 1 minutes;
+
+        // Generate signature expiry
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+
+        // Get EIP-712 typed message
+        bytes32 message = getMessage(nonce, expiry, sub);
+
+        // Sign message from delegatee private key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DELEGATEE_PRIVATE_KEY, message);
+
+        // Create subscription and deliver response, via deliverComputeDelegatee
+        uint64 subscriptionId = 1;
+        uint32 deliveryInterval = 1;
+
+        // Warp time to make the subscription active
+        vm.warp(block.timestamp + 1 minutes);
+
+        ALICE.deliverComputeDelegatee(
+            nonce,
+            expiry,
+            sub,
+            v,
+            r,
+            s,
+            deliveryInterval,
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            aliceWalletAddress
+        );
+
+        // Assert that the delivery is stored in PendingDeliveries within the SUBSCRIPTION contract
+        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, deliveryInterval));
+        (bool exists, PendingDelivery memory pd) = SUBSCRIPTION.getDelivery(requestId, aliceWalletAddress);
+        assertTrue(exists, "Pending delivery should exist");
+        assertEq(pd.subscriptionId, subscriptionId, "Pending delivery subscriptionId mismatch");
+        assertEq(pd.interval, deliveryInterval, "Pending delivery interval mismatch");
+        assertEq(pd.input, MOCK_INPUT, "Pending delivery input mismatch");
+        assertEq(pd.output, MOCK_OUTPUT, "Pending delivery output mismatch");
+        assertEq(pd.proof, MOCK_PROOF, "Pending delivery proof mismatch");
+
+        // Ensure subscription completion is tracked
+        bytes32 key = keccak256(abi.encode(subscriptionId, deliveryInterval, address(ALICE)));
+        assertEq(COORDINATOR.nodeResponded(key), true);
+    }
+
 
     /// @notice Cannot delegated deliver compute response for completed subscription
     function test_RevertsIf_AtomicallyDeliveringOutput_ForCompletedSubscription() public {

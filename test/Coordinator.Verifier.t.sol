@@ -12,6 +12,7 @@ import {ProofVerificationRequest} from "src/v1_0_0/types/ProofVerificationReques
 import {Subscription} from "src/v1_0_0/types/Subscription.sol";
 import {Wallet} from "src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
+import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 
 interface ICoordinatorErrors {
     error UnauthorizedVerifier();
@@ -195,6 +196,73 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), address(TOKEN)), 50e6);
     }
 
+    function test_Succeeds_When_FulfillingLazySubscription_WithValidProof() public {
+        // Create new wallets
+        address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
+        address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
+
+        // Mint 50 tokens to wallets
+        TOKEN.mint(aliceWallet, 50e6);
+        TOKEN.mint(bobWallet, 50e6);
+
+        // Allow SUBSCRIPTION consumer to spend alice wallet balance up to 50e6 tokens
+        vm.prank(address(ALICE));
+        Wallet(payable(aliceWallet)).approve(address(SUBSCRIPTION), address(TOKEN), 50e6);
+
+        // Allow Bob to spend bob wallet balance up to 50e6 tokens
+        vm.prank(address(BOB));
+        Wallet(payable(bobWallet)).approve(address(BOB), address(TOKEN), 50e6);
+
+        // Setup atomic verifier approved token + fee (5 tokens)
+        ATOMIC_VERIFIER.updateSupportedToken(address(TOKEN), true);
+        ATOMIC_VERIFIER.updateFee(address(TOKEN), 5e6);
+
+        // Create new one-time lazy subscription with 40e6 payout
+        (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription(
+            MOCK_CONTAINER_ID,
+            1, // frequency
+            1 minutes, // period
+            1, // redundancy
+            true, // lazy
+            address(TOKEN),
+            40e6,
+            aliceWallet,
+            // Specify atomic verifier
+            address(ATOMIC_VERIFIER)
+        );
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // Verify initial balances and allowances
+        assertEq(TOKEN.balanceOf(aliceWallet), 50e6);
+        assertEq(TOKEN.balanceOf(bobWallet), 50e6);
+
+        // Ensure that atomic verifier will return true for proof verification
+        ATOMIC_VERIFIER.setNextValidityTrue();
+
+        // Warp to the exact time the subscription becomes active
+        vm.warp(1 minutes + 1);
+
+        // Execute response fulfillment from Bob
+        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+
+        // Assert new balances (same as eager subscription)
+        assertEq(TOKEN.balanceOf(aliceWallet), 10e6); // -40
+        assertEq(TOKEN.balanceOf(bobWallet), 80_912_000); // 50 (initial) + (40 - (40 * 5.11% * 2) - (5))
+        assertEq(TOKEN.balanceOf(address(ATOMIC_VERIFIER)), 4_744_500); // (5 - (5 * 5.11%))
+        assertEq(TOKEN.balanceOf(protocolWalletAddress), 4_343_500);
+
+        // Assert consumed allowance
+        assertEq(Wallet(payable(aliceWallet)).allowance(address(SUBSCRIPTION), address(TOKEN)), 10e6);
+        assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), address(TOKEN)), 50e6);
+
+        // Assert that the delivery is stored in PendingDeliveries within the SUBSCRIPTION contract
+        (bool exists, PendingDelivery memory pd) = SUBSCRIPTION.getDelivery(commitment.requestId, bobWallet);
+        assertTrue(exists, "Pending delivery should exist");
+        assertEq(pd.subscriptionId, subId, "Pending delivery subscriptionId mismatch");
+        assertEq(pd.output, MOCK_OUTPUT, "Pending delivery output mismatch");
+        assertEq(pd.proof, MOCK_PROOF, "Pending delivery proof mismatch");
+    }
+
     function test_Succeeds_When_SlashingNode_WithInvalidProof() public {
         // Create new wallets
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
@@ -255,8 +323,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), ZERO_ADDRESS), 0 ether);
     }
 
-    /// @notice Node operator is slashed when proof validates incorrectly
-    function testLazySubscriptionWithProofCanBeFulfilledWhenNodeIsSlashedInTime() public {
+    function test_Succeeds_When_SlashingNode_InOptimisticFlow_WithInvalidProof() public {
         // Create new wallets
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));

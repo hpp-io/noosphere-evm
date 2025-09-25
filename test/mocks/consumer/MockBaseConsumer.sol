@@ -19,12 +19,12 @@ struct DeliveredOutput {
     uint64 subscriptionId;
     uint32 interval;
     uint16 redundancy;
+    bool lazy;
     address node;
     bytes input;
     bytes output;
     bytes proof;
     bytes32 containerId;
-    uint256 index;
 }
 
 /// @title MockBaseConsumer

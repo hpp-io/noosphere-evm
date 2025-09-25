@@ -415,6 +415,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint64 subscriptionId,
         uint32 interval,
         uint16 numRedundantDeliveries,
+        bool lazy,
         address node,
         bytes memory input,
         bytes memory output,
@@ -422,8 +423,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 containerId
     ) internal {
         Subscription memory subscription = subscriptions[subscriptionId];
-        BaseConsumer(subscription.owner).rawReceiveCompute(subscriptionId, interval, numRedundantDeliveries, node,
-            input, output, proof, bytes32(0), 0);
+        BaseConsumer(subscription.owner).rawReceiveCompute(subscriptionId, interval, numRedundantDeliveries, lazy, node,
+            input, output, proof, bytes32(0));
     }
 
     function _cancelSubscriptionHelper(uint64 subscriptionId) internal {

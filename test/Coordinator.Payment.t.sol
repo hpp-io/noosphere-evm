@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {CoordinatorTest} from "./Coordinator.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 
 /// @title CoordinatorEagerPaymentNoProofTest
 /// @notice Coordinator tests specific to eager subscriptions with payments but no proofs
@@ -49,6 +50,58 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
         // Assert consumed allowance
         assertEq(Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS), 0 ether);
+    }
+
+    /// @notice Lazy subscription can be fulfilled with ETH payment
+    function test_Succeeds_When_FulfillingLazySubscription_WithEthPayment() public {
+        // Create new wallet with Alice as owner
+        address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
+
+        // Create new wallet with Bob as owner
+        address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
+
+        // Fund alice wallet with 1 ether
+        vm.deal(aliceWallet, 1 ether);
+
+        // Allow SUBSCRIPTION consumer to spend alice wallet balance up to 1 ether
+        vm.prank(address(ALICE));
+        Wallet(payable(aliceWallet)).approve(address(SUBSCRIPTION), ZERO_ADDRESS, 1 ether);
+
+        (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription(
+            MOCK_CONTAINER_ID, 1, 1 minutes, 1, true, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+        );
+        assertEq(subId, 1);
+
+        // Verify initial balances and allowances
+        assertEq(aliceWallet.balance, 1 ether);
+
+        // Warp to the exact time the subscription becomes active.
+        // activeAt is calculated as block.timestamp (which is 1 at creation) + period (1 minute/60 seconds).
+        vm.warp(1 minutes + 1);
+
+        bytes memory commitmentData = abi.encode(commitment);
+        vm.prank(address(BOB));
+        BOB.deliverCompute(
+            1, // interval
+            MOCK_INPUT,
+            MOCK_OUTPUT,
+            MOCK_PROOF,
+            commitmentData,
+            bobWallet
+        );
+
+        // Assert new balances
+        assertEq(aliceWallet.balance, 0 ether);
+        assertEq(bobWallet.balance, 0.8978 ether);
+        assertEq(protocolWalletAddress.balance, 0.1022 ether);
+
+        // Assert that the delivery is stored in PendingDeliveries within the SUBSCRIPTION contract
+        (bool exists, PendingDelivery memory pd) = SUBSCRIPTION.getDelivery(commitment.requestId, bobWallet);
+        assertTrue(exists, "Pending delivery should exist");
+        assertEq(pd.subscriptionId, subId, "Pending delivery subscriptionId mismatch");
+        assertEq(pd.interval, 1, "Pending delivery interval mismatch");
+        assertEq(pd.input, MOCK_INPUT, "Pending delivery input mismatch");
+        assertEq(pd.output, MOCK_OUTPUT, "Pending delivery output mismatch");
     }
 
     /// @notice Subscription can be fulfilled with ERC20 payment

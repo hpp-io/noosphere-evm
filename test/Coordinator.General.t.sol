@@ -40,6 +40,6 @@ contract CoordinatorGeneralTest is CoordinatorTest {
     function test_RevertIf_ReceivingResponse_FromNonCoordinator() public {
         // Expect revert sending from address(this)
         vm.expectRevert(BaseConsumer.NotRouter.selector);
-        CALLBACK.rawReceiveCompute(1, 1, 1, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0), 0);
+        CALLBACK.rawReceiveCompute(1, 1, 1, false, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0));
     }
 }

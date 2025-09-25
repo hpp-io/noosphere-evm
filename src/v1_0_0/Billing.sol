@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {Routable} from "./Routable.sol";
+import {Routable} from "./utility/Routable.sol";
 import {IBilling} from "./interfaces/IBilling.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";

@@ -6,7 +6,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "openzeppelin-contracts/contracts/utils/Address.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import {Routable} from "../Routable.sol";
+import {Routable} from "../utility/Routable.sol";
 import {Payment} from "../types/Payment.sol";
 
 /// @title Wallet

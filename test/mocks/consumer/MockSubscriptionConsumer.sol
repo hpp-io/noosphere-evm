@@ -34,14 +34,14 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
     /// @param node delivering node address
     /// @param index item index
     /// @return inbox item
-//    function readMockInbox(bytes32 containerId, address node, uint256 index) external view returns (InboxItem memory) {
-//        return INBOX.read(containerId, node, index);
-//    }
+    //    function readMockInbox(bytes32 containerId, address node, uint256 index) external view returns (InboxItem memory) {
+    //        return INBOX.read(containerId, node, index);
+    //    }
 
     /// @notice Create new mock subscription
     /// @dev Parameter interface conforms to same as `SubscriptionConsumer._createComputeSubscription`
     /// @dev Augmented with checks
-    /// @dev Checks returned subscription ID is serially conforming
+    /// @dev Checks returned subscription ID is serially conforming.
     /// @dev Checks subscription stored in coordinator storage conforms to expected, given inputs
     function createMockSubscription(
         string calldata containerId,
@@ -55,7 +55,8 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         address verifier
     ) external returns (uint64, Commitment memory) {
         uint256 creationTimestamp = block.timestamp;
-        uint64 actualSubscriptionID = _createComputeSubscription(
+        uint64 actualSubscriptionID =
+            _createComputeSubscription(
             containerId,
             frequency,
             period,
@@ -97,7 +98,8 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         address wallet,
         address verifier
     ) external returns (uint64) {
-        uint64 actualSubscriptionID = _createComputeSubscription(
+        uint64 actualSubscriptionID =
+            _createComputeSubscription(
             containerId,
             frequency,
             period,
@@ -154,7 +156,6 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         assertEq(sub.paymentAmount, paymentAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
-
     }
 
     /// @notice Allows cancelling subscription
@@ -190,24 +191,24 @@ contract MockSubscriptionConsumer is MockBaseConsumer, SubscriptionConsumer, Std
         uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
+        bool lazy,
         address node,
         bytes calldata input,
         bytes calldata output,
         bytes calldata proof,
-        bytes32 containerId,
-        uint256 index
+        bytes32 containerId
     ) internal virtual override {
         // Log delivered output
         outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
             subscriptionId: subscriptionId,
             interval: interval,
             redundancy: redundancy,
+            lazy: lazy,
             node: node,
             input: input,
             output: output,
             proof: proof,
-            containerId: containerId,
-            index: index
+            containerId: containerId
         });
     }
 
