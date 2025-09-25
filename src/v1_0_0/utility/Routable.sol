@@ -31,7 +31,7 @@ abstract contract Routable is ITypeAndVersion {
     }
 
     modifier onlyRouterOwner() {
-        if (msg.sender != I_ROUTER.owner()) {
+        if (msg.sender != I_ROUTER.client()) {
             revert OnlyCallableByRouterOwner();
         }
         _;

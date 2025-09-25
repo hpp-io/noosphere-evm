@@ -1,25 +1,21 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.23;
 
-import "./verifier/Atomic.sol";
-import "./verifier/Optimistic.sol";
+import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol";
+import {MockDeferredVerifier} from "./mocks/verifier/MockDeferredVerifier.sol";
 import {Commitment} from "src/v1_0_0/types/Commitment.sol";
-import {CoordinatorTest, ICoordinatorEvents} from "./Coordinator.t.sol";
+import {ComputeTest} from "./Compute.t.sol";
 import {IRouter} from "src/v1_0_0/interfaces/IRouter.sol";
 import {IVerifier} from "src/v1_0_0/interfaces/IVerifier.sol";
+import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {Payment} from "src/v1_0_0/types/Payment.sol";
 import {ProofVerificationRequest} from "src/v1_0_0/types/ProofVerificationRequest.sol";
-import {Subscription} from "src/v1_0_0/types/Subscription.sol";
+import {ComputeSubscription} from "src/v1_0_0/types/ComputeSubscription.sol";
 import {Wallet} from "src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
 import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 
-interface ICoordinatorErrors {
-    error UnauthorizedVerifier();
-    error ProofRequestNotFound();
-}
-
-contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
+contract ComputeVerifierTest is ComputeTest {
     address verifier;
     address consumerWallet;
     address node;
@@ -27,23 +23,23 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
 
     uint64 subId = 1;
     uint32 interval = 1;
-    uint256 paymentAmount = 1000 ether;
+    uint256 feeAmount = 1000 ether;
     bytes32 containerId = "test-container";
 
     bytes32 constant COORDINATOR_ID = "coordinator_v1.0.0";
     /// @notice Mock atomic verifier
-    MockAtomicVerifier internal ATOMIC_VERIFIER;
+    MockImmediateVerifier internal IMMEDIATE_VERIFIER;
 
     /// @notice Mock optimistic verifier
-    MockOptimisticVerifier internal OPTIMISTIC_VERIFIER;
+    MockDeferredVerifier internal DEFERRED_VERIFIER;
 
     Commitment commitment;
-    Subscription sub;
+    ComputeSubscription sub;
 
     function setUp() public override {
         super.setUp();
-        ATOMIC_VERIFIER = new MockAtomicVerifier(ROUTER);
-        OPTIMISTIC_VERIFIER = new MockOptimisticVerifier(ROUTER);
+        IMMEDIATE_VERIFIER = new MockImmediateVerifier(ROUTER);
+        DEFERRED_VERIFIER = new MockDeferredVerifier(ROUTER);
     }
 
     function test_RevertIf_DeliveringCompute_When_NodeWalletNotApproved() public {
@@ -55,9 +51,9 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         TOKEN.mint(aliceWallet, 50e6);
 
         // Setup atomic verifier approved token + fee (5 tokens)
-        // This must be done BEFORE createMockRequest, as createMockRequest calls _startBilling which checks verifier.isSupportedToken
-        ATOMIC_VERIFIER.updateSupportedToken(address(TOKEN), true);
-        ATOMIC_VERIFIER.updateFee(address(TOKEN), 5e6);
+        // This must be done BEFORE createMockRequest, as createMockRequest calls _startBilling which checks verifier.isPaymentTokenSupported
+        IMMEDIATE_VERIFIER.updateSupportedToken(address(TOKEN), true);
+        IMMEDIATE_VERIFIER.updateFee(address(TOKEN), 5e6);
 
         // Mint 50 tokens to bob wallet (ensuring node has sufficient funds to put up for escrow)
         TOKEN.mint(bobWallet, 50e6);
@@ -76,7 +72,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
             50e6,
             aliceWallet,
             // Specify atomic verifier
-            address(ATOMIC_VERIFIER)
+            address(IMMEDIATE_VERIFIER)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -85,13 +81,13 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(TOKEN.balanceOf(bobWallet), 50e6);
 
         // Ensure that atomic verifier will return true for proof verification
-        ATOMIC_VERIFIER.setNextValidityTrue();
+        IMMEDIATE_VERIFIER.setNextValidityTrue();
 
         // Execute response fulfillment from Charlie expecting it to fail given no authorization to Bob's wallet
         vm.warp(1 minutes);
         vm.expectRevert(Wallet.InsufficientAllowance.selector);
         vm.prank(address(CHARLIE));
-        CHARLIE.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        CHARLIE.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
     }
 
     function test_RevertIf_DeliveringCompute_When_NodeWalletHasInsufficientFundsForEscrow() public {
@@ -111,8 +107,8 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         Wallet(payable(bobWallet)).approve(address(BOB), address(TOKEN), 50e6);
 
         // Setup atomic verifier approved token + fee (5 tokens)
-        ATOMIC_VERIFIER.updateSupportedToken(address(TOKEN), true);
-        ATOMIC_VERIFIER.updateFee(address(TOKEN), 5e6);
+        IMMEDIATE_VERIFIER.updateSupportedToken(address(TOKEN), true);
+        IMMEDIATE_VERIFIER.updateFee(address(TOKEN), 5e6);
 
         // Create new one-time subscription with 40e6 payout
         (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
@@ -123,7 +119,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
             50e6,
             aliceWallet,
             // Specify atomic verifier
-            address(ATOMIC_VERIFIER)
+            address(IMMEDIATE_VERIFIER)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -132,12 +128,12 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(TOKEN.balanceOf(bobWallet), 0e6);
 
         // Ensure that atomic verifier will return true for proof verification
-        ATOMIC_VERIFIER.setNextValidityTrue();
+        IMMEDIATE_VERIFIER.setNextValidityTrue();
 
         // Execute response fulfillment expecting it to fail given not enough unlocked funds
         vm.warp(1 minutes);
         vm.expectRevert(Wallet.InsufficientFunds.selector);
-        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
     }
 
     function test_Succeeds_When_FulfillingSubscription_WithValidProof() public {
@@ -158,8 +154,8 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         Wallet(payable(bobWallet)).approve(address(BOB), address(TOKEN), 50e6);
 
         // Setup atomic verifier approved token + fee (5 tokens)
-        ATOMIC_VERIFIER.updateSupportedToken(address(TOKEN), true);
-        ATOMIC_VERIFIER.updateFee(address(TOKEN), 5e6);
+        IMMEDIATE_VERIFIER.updateSupportedToken(address(TOKEN), true);
+        IMMEDIATE_VERIFIER.updateFee(address(TOKEN), 5e6);
 
         // Create new one-time subscription with 40e6 payout
         (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
@@ -170,7 +166,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
             40e6,
             aliceWallet,
             // Specify atomic verifier
-            address(ATOMIC_VERIFIER)
+            address(IMMEDIATE_VERIFIER)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -179,16 +175,16 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(TOKEN.balanceOf(bobWallet), 50e6);
 
         // Ensure that atomic verifier will return true for proof verification
-        ATOMIC_VERIFIER.setNextValidityTrue();
+        IMMEDIATE_VERIFIER.setNextValidityTrue();
 
         // Execute response fulfillment from Bob
         vm.warp(1 minutes);
-        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances
         assertEq(TOKEN.balanceOf(aliceWallet), 10e6); // -40
         assertEq(TOKEN.balanceOf(bobWallet), 80_912_000); // 50 (initial) + (40 - (40 * 5.11% * 2) - (5))
-        assertEq(TOKEN.balanceOf(address(ATOMIC_VERIFIER)), 4_744_500); // (5 - (5 * 5.11%))
+        assertEq(TOKEN.balanceOf(address(IMMEDIATE_VERIFIER)), 4_744_500); // (5 - (5 * 5.11%))
         assertEq(TOKEN.balanceOf(protocolWalletAddress), 4_343_500);
 
         // Assert consumed allowance
@@ -214,21 +210,21 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         Wallet(payable(bobWallet)).approve(address(BOB), address(TOKEN), 50e6);
 
         // Setup atomic verifier approved token + fee (5 tokens)
-        ATOMIC_VERIFIER.updateSupportedToken(address(TOKEN), true);
-        ATOMIC_VERIFIER.updateFee(address(TOKEN), 5e6);
+        IMMEDIATE_VERIFIER.updateSupportedToken(address(TOKEN), true);
+        IMMEDIATE_VERIFIER.updateFee(address(TOKEN), 5e6);
 
-        // Create new one-time lazy subscription with 40e6 payout
+        // Create new one-time useDeliveryInbox subscription with 40e6 payout
         (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription(
             MOCK_CONTAINER_ID,
-            1, // frequency
-            1 minutes, // period
+            1, // maxExecutions
+            1 minutes, // intervalSeconds
             1, // redundancy
-            true, // lazy
+            true, // useDeliveryInbox
             address(TOKEN),
             40e6,
             aliceWallet,
             // Specify atomic verifier
-            address(ATOMIC_VERIFIER)
+            address(IMMEDIATE_VERIFIER)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -237,25 +233,25 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(TOKEN.balanceOf(bobWallet), 50e6);
 
         // Ensure that atomic verifier will return true for proof verification
-        ATOMIC_VERIFIER.setNextValidityTrue();
+        IMMEDIATE_VERIFIER.setNextValidityTrue();
 
         // Warp to the exact time the subscription becomes active
         vm.warp(1 minutes + 1);
 
         // Execute response fulfillment from Bob
-        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances (same as eager subscription)
         assertEq(TOKEN.balanceOf(aliceWallet), 10e6); // -40
         assertEq(TOKEN.balanceOf(bobWallet), 80_912_000); // 50 (initial) + (40 - (40 * 5.11% * 2) - (5))
-        assertEq(TOKEN.balanceOf(address(ATOMIC_VERIFIER)), 4_744_500); // (5 - (5 * 5.11%))
+        assertEq(TOKEN.balanceOf(address(IMMEDIATE_VERIFIER)), 4_744_500); // (5 - (5 * 5.11%))
         assertEq(TOKEN.balanceOf(protocolWalletAddress), 4_343_500);
 
         // Assert consumed allowance
         assertEq(Wallet(payable(aliceWallet)).allowance(address(SUBSCRIPTION), address(TOKEN)), 10e6);
         assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), address(TOKEN)), 50e6);
 
-        // Assert that the delivery is stored in PendingDeliveries within the SUBSCRIPTION contract
+        // Assert that the delivery is stored in DeliveryInbox.sol within the SUBSCRIPTION contract
         (bool exists, PendingDelivery memory pd) = SUBSCRIPTION.getDelivery(commitment.requestId, bobWallet);
         assertTrue(exists, "Pending delivery should exist");
         assertEq(pd.subscriptionId, subId, "Pending delivery subscriptionId mismatch");
@@ -285,8 +281,8 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(bobWallet.balance, 1 ether);
 
         // Setup atomic verifier approved token + fee (0.111 ether)
-        ATOMIC_VERIFIER.updateSupportedToken(ZERO_ADDRESS, true);
-        ATOMIC_VERIFIER.updateFee(ZERO_ADDRESS, 111e15);
+        IMMEDIATE_VERIFIER.updateSupportedToken(ZERO_ADDRESS, true);
+        IMMEDIATE_VERIFIER.updateFee(ZERO_ADDRESS, 111e15);
 
         // Create new one-time subscription with 40e6 payout
         (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
@@ -297,16 +293,16 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
             1 ether,
             aliceWallet,
             // Specify atomic verifier
-            address(ATOMIC_VERIFIER)
+            address(IMMEDIATE_VERIFIER)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
         // Ensure that atomic verifier will return true for proof verification
-        ATOMIC_VERIFIER.setNextValidityFalse();
+        IMMEDIATE_VERIFIER.setNextValidityFalse();
 
         // Execute response fulfillment from Bob
         vm.warp(1 minutes);
-        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances
         // Alice --> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.111 ether) + slashed (1 ether) = 1.7868 ether
@@ -314,7 +310,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         // Bob --> -1 ether
         assertEq(bobWallet.balance, 0 ether);
         // verifier --> +0.111 * (1 - 0.0511) ether = 0.1053279 ether
-        assertEq(ATOMIC_VERIFIER.getEtherBalance(), 1_053_279e11);
+        assertEq(IMMEDIATE_VERIFIER.ethBalance(), 1_053_279e11);
         // Protocol --> feeFromConsumer (0.1022 ether) + feeFromVerifier (0.0056721 ether) = 0.1078721 ether
         assertEq(protocolWalletAddress.balance, 1_078_721e11);
 
@@ -345,8 +341,8 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(bobWallet.balance, 1 ether);
 
         // Setup optimistic verifier approved token + fee (0.1 ether)
-        OPTIMISTIC_VERIFIER.updateSupportedToken(ZERO_ADDRESS, true);
-        OPTIMISTIC_VERIFIER.updateFee(ZERO_ADDRESS, 1e17);
+        DEFERRED_VERIFIER.updateSupportedToken(ZERO_ADDRESS, true);
+        DEFERRED_VERIFIER.updateFee(ZERO_ADDRESS, 1e17);
 
         // Create new one-time subscription with 1 ether payout
         (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
@@ -357,12 +353,12 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
             1 ether,
             aliceWallet,
             // Specify optimistic verifier
-            address(OPTIMISTIC_VERIFIER)
+            address(DEFERRED_VERIFIER)
         );
 
         bytes memory commitmentData = abi.encode(commitment);
         // Execute response fulfillment from Bob
-        BOB.deliverCompute(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert immediate balances
         // Alice -> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.1 ether)
@@ -376,15 +372,15 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(bobWallet.balance, 1 ether);
         assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), ZERO_ADDRESS), 0);
         // verifier --> 0.1 * (1 - 0.0511) ether = 0.09489 ether
-        assertEq(OPTIMISTIC_VERIFIER.getEtherBalance(), 9489e13);
+        assertEq(DEFERRED_VERIFIER.ethBalance(), 9489e13);
         // Protocol --> feeFromConsumer (0.1022 ether) + feeFromVerifier (0.00511 ether) = 0.10731 ether
         assertEq(protocolWalletAddress.balance, 10_731e13);
 
         // Fast forward 1 day and trigger optimistic response with valid: false
         vm.warp(1 days);
         vm.expectEmit(address(COORDINATOR));
-        emit ProofVerified(subId, 1, address(BOB), false, address(OPTIMISTIC_VERIFIER), false);
-        OPTIMISTIC_VERIFIER.mockDeliverProof(subId, 1, address(BOB), false);
+        emit ICoordinator.ProofVerified(subId, 1, address(BOB), false, address(DEFERRED_VERIFIER));
+        DEFERRED_VERIFIER.mockFinalizeVerification(subId, 1, address(BOB), false);
 
         // Assert new balances
         // Alice --> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.1 ether) + 1 ether (slashed from node)
@@ -396,7 +392,7 @@ contract CoordinatorVerifierTest is CoordinatorTest, ICoordinatorErrors {
         assertEq(bobWallet.balance, 0);
         assertEq(Wallet(payable(bobWallet)).allowance(address(BOB), ZERO_ADDRESS), 0 ether);
         // verifier, protocol stay same
-        assertEq(OPTIMISTIC_VERIFIER.getEtherBalance(), 9489e13);
+        assertEq(DEFERRED_VERIFIER.ethBalance(), 9489e13);
         assertEq(protocolWalletAddress.balance, 10_731e13);
     }
 

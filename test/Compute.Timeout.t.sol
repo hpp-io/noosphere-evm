@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {CoordinatorTest, ICoordinatorEvents, ISubscriptionManagerErrors} from "./Coordinator.t.sol";
+import {ComputeTest, ISubscriptionManagerErrors} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
+import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
 
-contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerErrors {
+contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_Succeeds_When_TimingOutRequest() public {
         // 1. Create a recurring, paid subscription
         address consumerWallet = WALLET_FACTORY.createWallet(address(this));
-        uint256 paymentAmount = 40e6;
+        uint256 feeAmount = 40e6;
         uint16 redundancy = 2;
-        uint256 paymentForOneInterval = paymentAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount * redundancy;
         TOKEN.mint(consumerWallet, paymentForOneInterval * 2); // Fund for two intervals
 
         vm.prank(address(this));
@@ -20,12 +23,12 @@ contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerE
         // Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
             MOCK_CONTAINER_ID,
-            3, // frequency
-            1 minutes, // period
+            3, // maxExecutions
+            1 minutes, // intervalSeconds
             redundancy,
-            false, // lazy
+            false, // useDeliveryInbox
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -38,7 +41,7 @@ contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerE
 
         // 4. Expect the CommitmentTimedOut event from the Router
         vm.expectEmit(true, true, true, true, address(ROUTER));
-        emit ICoordinatorEvents.CommitmentTimedOut(commitment1.requestId, subId, 1);
+        emit ISubscriptionsManager.CommitmentTimedOut(commitment1.requestId, subId, 1);
 
         // 5. Call timeoutRequest for the first interval. Anyone can call this.
         ROUTER.timeoutRequest(commitment1.requestId, subId, 1);
@@ -98,9 +101,9 @@ contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerE
         // 1. Create a recurring, paid subscription and its first request
         address consumerWallet = WALLET_FACTORY.createWallet(address(this));
         address nodeWallet = WALLET_FACTORY.createWallet(address(BOB));
-        uint256 paymentAmount = 40e6;
+        uint256 feeAmount = 40e6;
         uint16 redundancy = 1;
-        uint256 paymentForOneInterval = paymentAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount * redundancy;
         TOKEN.mint(consumerWallet, paymentForOneInterval);
 
         vm.prank(address(this));
@@ -108,12 +111,12 @@ contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerE
 
         (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
             MOCK_CONTAINER_ID,
-            2, // frequency
-            1 minutes, // period
+            2, // maxExecutions
+            1 minutes, // intervalSeconds
             redundancy,
-            false, // lazy
+            false, // useDeliveryInbox
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -126,8 +129,8 @@ contract CoordinatorTimeoutRequestTest is CoordinatorTest, ISubscriptionManagerE
         // It should revert because the coordinator detects a mismatch between the
         // delivery interval (1) and the current system interval (2).
         bytes memory commitmentData1 = abi.encode(commitment1);
-        vm.expectRevert(abi.encodeWithSelector(ICoordinatorEvents.IntervalMismatch.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
         vm.prank(address(BOB));
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
     }
 }

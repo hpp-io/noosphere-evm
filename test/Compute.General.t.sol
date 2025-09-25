@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {CoordinatorTest} from "./Coordinator.t.sol";
+import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ComputeClient} from "../src/v1_0_0/client/ComputeClient.sol";
 
 /// @title CoordinatorGeneralTest
 /// @notice General coordinator tests
-contract CoordinatorGeneralTest is CoordinatorTest {
+contract GeneralComputeTest is ComputeTest {
     /// @notice Cannot be reassigned a subscription ID
     function test_SubscriptionId_IsNeverReassigned() public {
         // Create new callback subscription
@@ -27,7 +27,7 @@ contract CoordinatorGeneralTest is CoordinatorTest {
         // Delete subscriptions
         vm.startPrank(address(CALLBACK));
         ROUTER.timeoutRequest(commitment1.requestId, commitment1.subscriptionId, commitment1.interval);
-        ROUTER.cancelSubscription(1);
+        ROUTER.cancelComputeSubscription(1);
 
         // Create new subscription
         (uint64 id3,) = CALLBACK.createMockRequest(
@@ -40,6 +40,6 @@ contract CoordinatorGeneralTest is CoordinatorTest {
     function test_RevertIf_ReceivingResponse_FromNonCoordinator() public {
         // Expect revert sending from address(this)
         vm.expectRevert(ComputeClient.NotRouter.selector);
-        CALLBACK.rawReceiveCompute(1, 1, 1, false, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0));
+        CALLBACK.receiveRequestCompute(1, 1, 1, false, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0));
     }
 }

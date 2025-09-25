@@ -6,25 +6,15 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 /// @title MockToken
 /// @notice Mocks ERC20 token with exposed mint functionality
 contract MockToken is ERC20 {
-    /*//////////////////////////////////////////////////////////////
-                              CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the mock token with a name and symbol.
-    constructor() ERC20("TOKEN", "TKN") {}
+    constructor() ERC20("TOKEN", "TOKEN") {}
 
-    /*//////////////////////////////////////////////////////////////
-                           INHERITED FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     /// @notice Overrides ERC20.decimals
     /// @dev Purposefully selects a weird decimal implementation (WBTC) to test accurancy independent of standard
     function decimals() public pure override returns (uint8) {
         return 6;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                           UTILITY FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /// @notice Mints `amount` tokens to `to` address
     /// @param to address to mint tokens to

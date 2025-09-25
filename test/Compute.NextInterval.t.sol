@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {CoordinatorTest, ICoordinatorEvents, IWalletEvents} from "./Coordinator.t.sol";
+import {ComputeTest} from "./Compute.t.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
-import {LibDeploy} from "./lib/LibDeploy.sol";
+import {DeployUtils} from "./lib/DeployUtils.sol";
+import {Router} from "../src/v1_0_0/Router.sol";
 
-contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
+contract ComputeNextIntervalPrepareTest is ComputeTest {
     function test_Succeeds_When_PreparingNextInterval_OnDelivery() public {
         // 1. Create a recurring, paid subscription
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
 
-        uint256 paymentAmount = 40e6;
+        uint256 feeAmount = 40e6;
         uint16 redundancy = 2;
-        uint256 totalPaymentForTwoIntervals = paymentAmount * redundancy * 2;
+        uint256 totalPaymentForTwoIntervals = feeAmount * redundancy * 2;
 
         // 2. Fund the wallet
         TOKEN.mint(aliceWallet, totalPaymentForTwoIntervals + 10e6); // Mint extra
@@ -28,12 +29,12 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         vm.warp(0);
         (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription( //
             MOCK_CONTAINER_ID,
-            2, // frequency
-            1 minutes, // period
+            2, // maxExecutions
+            1 minutes, // intervalSeconds
             redundancy,
-            false, // lazy
+            false, // useDeliveryInbox
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             aliceWallet,
             NO_VERIFIER
         );
@@ -45,7 +46,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // --- Assertions for the next interval preparation ---
         // 6. Deliver compute for interval 1, which triggers preparation for interval 2
         vm.prank(address(BOB));
-        BOB.deliverCompute(
+        BOB.reportComputeResult(
             1,
             MOCK_INPUT,
             MOCK_OUTPUT,
@@ -58,33 +59,33 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
         // Expect funds to be locked for the second request
         vm.expectEmit(true, true, false, false, address(Wallet(payable(aliceWallet))));
-        emit IWalletEvents.RequestLocked(
-            requestId2, address(SUBSCRIPTION), address(TOKEN), paymentAmount * redundancy, redundancy
+        emit Wallet.RequestLocked(
+            requestId2, address(SUBSCRIPTION), address(TOKEN), feeAmount * redundancy, redundancy
         );
         BOB.prepareNextInterval(subId, 2, address(BOB));
         // 7. Final assertions on wallet state
         assertEq(
             Wallet(payable(aliceWallet)).lockedOfRequest(requestId2),
-            paymentAmount * redundancy,
+            feeAmount * redundancy,
             "Funds for interval 2 should be locked"
         );
     }
 
     function test_DoesNotPrepareNextInterval_OnFinalDelivery() public {
-        // 1. Create a subscription with a frequency of 1 (a single-shot request).
+        // 1. Create a subscription with a maxExecutions of 1 (a single-shot request).
         address consumerWallet = WALLET_FACTORY.createWallet(address(this));
         address nodeWallet = WALLET_FACTORY.createWallet(address(BOB));
-        uint256 paymentAmount = 40e6;
-        TOKEN.mint(consumerWallet, paymentAmount);
+        uint256 feeAmount = 40e6;
+        TOKEN.mint(consumerWallet, feeAmount);
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(CALLBACK), address(TOKEN), paymentAmount);
+        Wallet(payable(consumerWallet)).approve(address(CALLBACK), address(TOKEN), feeAmount);
 
         (, Commitment memory commitment1) = CALLBACK.createMockRequest( //
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,
             1,
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -97,12 +98,12 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
 
         // 4. Deliver compute.
         vm.prank(address(BOB));
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
         BOB.prepareNextInterval(commitment1.subscriptionId, 2, address(BOB));
         // 5. Assert that no events related to preparing a next interval were emitted.
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 requestStartSelector = ICoordinatorEvents.RequestStart.selector;
-        bytes32 requestLockedSelector = IWalletEvents.RequestLocked.selector;
+        bytes32 requestStartSelector = Router.RequestStart.selector;
+        bytes32 requestLockedSelector = Wallet.RequestLocked.selector;
 
         for (uint i = 0; i < logs.length; i++) {
             assertNotEq(logs[i].topics[0], requestStartSelector, "Should not emit RequestStart");
@@ -114,11 +115,11 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 1. Create a recurring subscription.
         address consumerWallet = WALLET_FACTORY.createWallet(address(this));
         address nodeWallet = WALLET_FACTORY.createWallet(address(BOB));
-        uint256 paymentAmount = 40e6;
+        uint256 feeAmount = 40e6;
         uint16 redundancy = 2;
 
         // 2. Fund the wallet with enough for ONLY the first interval
-        uint256 paymentForOneInterval = paymentAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount * redundancy;
         TOKEN.mint(consumerWallet, paymentForOneInterval);
 
         // 3. Approve for two intervals (even though funds are insufficient)
@@ -133,7 +134,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
             redundancy,
             false,
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -144,7 +145,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
         // because hasSubscriptionNextInterval will return false due to insufficient funds.
         vm.prank(address(BOB));
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
         BOB.prepareNextInterval(subId, 2, address(BOB));
         // 7. Assert that no funds were locked for the next interval.
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
@@ -155,11 +156,11 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 1. Create a recurring subscription.
         address consumerWallet = WALLET_FACTORY.createWallet(address(this));
         address nodeWallet = WALLET_FACTORY.createWallet(address(BOB));
-        uint256 paymentAmount = 40e6;
+        uint256 feeAmount = 40e6;
         uint16 redundancy = 2;
 
         // 2. Fund the wallet with enough for two intervals
-        uint256 paymentForOneInterval = paymentAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount * redundancy;
         TOKEN.mint(consumerWallet, paymentForOneInterval * 2);
 
         // 3. Approve for ONLY one interval
@@ -174,7 +175,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
             redundancy,
             false,
             address(TOKEN),
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -186,7 +187,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
         // because hasSubscriptionNextInterval will return false due to insufficient allowance.
         vm.prank(address(BOB));
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
         BOB.prepareNextInterval(commitment1.subscriptionId, 2, address(BOB));
         // 7. Assert that no funds were locked for the next interval.
         bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
@@ -206,11 +207,11 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         address nodeWallet = WALLET_FACTORY.createWallet(address(BOB)); // This wallet will receive the tick fee.
         address protocolWallet = WALLET_FACTORY.createWallet(address(this));
         uint16 redundancy = 1;
-        uint256 paymentAmount = 1 ether;
+        uint256 feeAmount = 1 ether;
 
         // Fund protocol wallet with ETH
         vm.deal(protocolWallet, 10 ether);
-        LibDeploy.updateBillingConfig(
+        DeployUtils.updateBillingConfig(
             COORDINATOR,
             1 weeks,
             protocolWallet,
@@ -226,11 +227,11 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         vm.stopPrank();
 
         // Fund the consumer wallet for the subscription payments
-        vm.deal(consumerWallet, paymentAmount * 2); // Fund for two intervals
+        vm.deal(consumerWallet, feeAmount * 2); // Fund for two intervals
 
         // Approve the SUBSCRIPTION consumer to spend from the wallet
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(SUBSCRIPTION), ZERO_ADDRESS, paymentAmount * 2);
+        Wallet(payable(consumerWallet)).approve(address(SUBSCRIPTION), ZERO_ADDRESS, feeAmount * 2);
 
         // Create the subscription
         (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription( //
@@ -240,7 +241,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
             redundancy,
             false,
             ZERO_ADDRESS,
-            paymentAmount,
+            feeAmount,
             consumerWallet,
             NO_VERIFIER
         );
@@ -250,7 +251,7 @@ contract CoordinatorNextIntervalPrepareTest is CoordinatorTest {
         vm.warp(block.timestamp + 1 minutes);
         bytes memory commitmentData1 = abi.encode(commitment);
         vm.prank(address(BOB));
-        BOB.deliverCompute(
+        BOB.reportComputeResult(
             1,
             MOCK_INPUT,
             MOCK_OUTPUT,

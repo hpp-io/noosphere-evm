@@ -2,10 +2,10 @@
 pragma solidity ^0.8.23;
 import {PendingDelivery} from "../types/PendingDelivery.sol";
 
-/// @title PendingDeliveries
+/// @title DeliveryInbox.sol
 /// @notice Request-centric pending delivery store: stores at most one PendingDelivery per (requestId, node).
-/// @dev Mixin to be inherited by consumer contracts. Use `_enqueuePendingDelivery` internally when lazy.
-abstract contract PendingDeliveries {
+/// @dev Mixin to be inherited by consumer contracts. Use `_enqueuePendingDelivery` internally when useDeliveryInbox.
+abstract contract DeliveryInbox {
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/

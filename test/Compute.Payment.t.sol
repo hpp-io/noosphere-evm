@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {CoordinatorTest} from "./Coordinator.t.sol";
+import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 
 /// @title CoordinatorEagerPaymentNoProofTest
 /// @notice Coordinator tests specific to eager subscriptions with payments but no proofs
-contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
+contract ComputePaymentNoProofTest is ComputeTest {
     /// @notice Subscription can be fulfilled with ETH payment
     function test_Succeeds_When_FulfillingSubscription_WithEthPayment() public {
-        // Create new wallet with Alice as owner
+        // Create new wallet with Alice as client
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
 
-        // Create new wallet with Bob as owner
+        // Create new wallet with Bob as client
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
 
         // Fund alice wallet with 1 ether
@@ -34,7 +34,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(BOB));
-        BOB.deliverCompute(
+        BOB.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
             MOCK_INPUT,
             MOCK_OUTPUT,
@@ -54,10 +54,10 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
     /// @notice Lazy subscription can be fulfilled with ETH payment
     function test_Succeeds_When_FulfillingLazySubscription_WithEthPayment() public {
-        // Create new wallet with Alice as owner
+        // Create new wallet with Alice as client
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
 
-        // Create new wallet with Bob as owner
+        // Create new wallet with Bob as client
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
 
         // Fund alice wallet with 1 ether
@@ -76,12 +76,12 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         assertEq(aliceWallet.balance, 1 ether);
 
         // Warp to the exact time the subscription becomes active.
-        // activeAt is calculated as block.timestamp (which is 1 at creation) + period (1 minute/60 seconds).
+        // activeAt is calculated as block.timestamp (which is 1 at creation) + intervalSeconds (1 minute/60 seconds).
         vm.warp(1 minutes + 1);
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(BOB));
-        BOB.deliverCompute(
+        BOB.reportComputeResult(
             1, // interval
             MOCK_INPUT,
             MOCK_OUTPUT,
@@ -95,7 +95,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         assertEq(bobWallet.balance, 0.8978 ether);
         assertEq(protocolWalletAddress.balance, 0.1022 ether);
 
-        // Assert that the delivery is stored in PendingDeliveries within the SUBSCRIPTION contract
+        // Assert that the delivery is stored in DeliveryInbox.sol within the SUBSCRIPTION contract
         (bool exists, PendingDelivery memory pd) = SUBSCRIPTION.getDelivery(commitment.requestId, bobWallet);
         assertTrue(exists, "Pending delivery should exist");
         assertEq(pd.subscriptionId, subId, "Pending delivery subscriptionId mismatch");
@@ -106,10 +106,10 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
     /// @notice Subscription can be fulfilled with ERC20 payment
     function test_Succeeds_When_FulfillingSubscription_WithErc20Payment() public {
-        // Create new wallet with Alice as owner
+        // Create new wallet with Alice as client
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
 
-        // Create new wallet with Bob as owner
+        // Create new wallet with Bob as client
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
 
         // Mint 100 tokens to alice wallet
@@ -128,7 +128,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(BOB));
-        BOB.deliverCompute(
+        BOB.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
             MOCK_INPUT,
             MOCK_OUTPUT,
@@ -148,10 +148,10 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
     // /// @notice Subscription can be fulfilled across intervals with ERC20 payment
     function test_Succeeds_When_FulfillingSubscription_AcrossIntervals_WithErc20Payment() public {
-        // Create new wallet with Alice as owner
+        // Create new wallet with Alice as client
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
 
-        // Create new wallet with Bob as owner
+        // Create new wallet with Bob as client
         address bobWallet = WALLET_FACTORY.createWallet(address(BOB));
 
         // Mint 100 tokens to alice wallet
@@ -174,11 +174,11 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         // Execute response fulfillment from Bob
         vm.warp(1 minutes);
         bytes memory commitmentData = abi.encode(commitment);
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Execute response fulfillment from Charlie (notice that for no proof submissions there is no collateral so we can use any wallet)
         vm.warp(2 minutes);
-        CHARLIE.deliverCompute(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        CHARLIE.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances
         assertEq(TOKEN.balanceOf(aliceWallet), 20e6);
@@ -197,7 +197,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         // Fund the wallet with tokens, as it's created empty.
         TOKEN.mint(address(aliceWallet), 100e6);
 
-        // The owner of the wallet (ALICE) must approve the consumer (CALLBACK) to spend funds.
+        // The client of the wallet (ALICE) must approve the consumer (CALLBACK) to spend funds.
         vm.prank(address(ALICE));
         aliceWallet.approve(address(CALLBACK), address(TOKEN), 50e6);
 
@@ -210,7 +210,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
 
     /// @notice Subscription cannot be fulfilled with an invalid `nodeWallet` not created by `WalletFactory`
     function test_RevertIf_FulfillingSubscription_WithInvalidNodeWallet() public {
-        // Create new wallet with Alice as owner
+        // Create new wallet with Alice as client
         address aliceWallet = WALLET_FACTORY.createWallet(address(ALICE));
         TOKEN.mint(address(aliceWallet), 100e6);
 
@@ -226,7 +226,7 @@ contract CoordinatorEagerPaymentNoProofTest is CoordinatorTest {
         // Execute response fulfillment from Bob using address(BOB) as nodeWallet
         vm.expectRevert(bytes("InvalidWallet()"));
         bytes memory commitmentData = abi.encode(commitment);
-        BOB.deliverCompute(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(bobWallet));
+        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(bobWallet));
     }
 
     /// @notice Subscription cannot be fulfilled if `Wallet` does not approve consumer

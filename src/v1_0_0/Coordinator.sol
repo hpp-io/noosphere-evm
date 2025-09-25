@@ -6,186 +6,193 @@ import {BillingConfig} from "./types/BillingConfig.sol";
 import {Billing} from "./Billing.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
-import {IWalletFactory} from "./wallet/IWalletFactory.sol";
+import {IWalletFactory} from "./interfaces/IWalletFactory.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
-/**
- * @title Coordinator
- * @notice A default implementation of the ICoordinator interface. This contract orchestrates
- * the lifecycle of computation requests between the Router and off-chain nodes.
- * @dev This implementation is a basic example. Production coordinators may have more
- * complex logic for node selection, payment distribution, and verification handling.
- */
+/// @title Coordinator
+/// @notice Orchestrates request lifecycle: start -> deliver -> verify -> settlement.
+/// @dev This is a straightforward coordinator example used in tests — production-grade logic
+///      (node selection, slashing, bonding, advanced settlement) is out of scope.
 contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
+    // ---------- TYPE & VERSION ----------
     // solhint-disable-next-line const-name-snakecase
     string public constant override typeAndVersion = "Coordinator_v1.0.0";
-    /// @dev Tracks the number of redundant deliveries for an interval. key: keccak256(subId, interval)
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                     STORAGE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Counts redundant deliveries for a request: key = keccak256(requestId)
     mapping(bytes32 => uint16) public redundancyCount;
 
-    /// @dev Tracks if a node has already responded for an interval. key: keccak256(subId, interval, node)
+    /// @notice Tracks whether a node has already responded for a given subscription/interval.
+    /// key = keccak256(subscriptionId, interval, nodeAddress)
     mapping(bytes32 => bool) public nodeResponded;
 
-    /// @notice Emitted when a node delivers a computation result.
-    event ComputeDelivered(bytes32 indexed requestId, address nodeWallet, uint16 numRedundantDeliveries);
+    /*//////////////////////////////////////////////////////////////////////////
+                                  CONSTRUCTOR
+    //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when a new request is started and a commitment is created.
-    event RequestStarted(
-        uint64 indexed subscriptionId,
-        bytes32 indexed requestId,
-        bytes32 indexed containerId,
-        Commitment commitment
-    );
-
-    event ProofVerified(
-        uint64 indexed id, uint32 indexed interval, address indexed node, bool active, address verifier, bool valid
-    );
-
-
-    error IntervalMismatch(uint32 deliveryInterval);
-    error RequestCompleted(bytes32 requestId);
-    error IntervalCompleted();
-    error NodeRespondedAlready();
-    error InvalidWallet();
-
-    error ProofRequestNotFound();
-
-    /**
-     * @param _routerAddress The address of the main Router contract.
-     * @param _initialOwner The initial owner of this Coordinator.
-     */
+    /// @notice Initialize Coordinator with router address (via Billing) and initial owner.
+    /// @param _routerAddress Router contract address used by Billing to resolve contracts.
+    /// @param _initialOwner Owner of this Coordinator contract (ConfirmedOwner).
     constructor(address _routerAddress, address _initialOwner) ConfirmedOwner(_initialOwner) Billing(_routerAddress) {}
 
-    /**
-     * @notice Initializes the Coordinator with its billing configuration.
-     * @dev This is separate from the constructor to avoid owner-related issues during deployment.
-     */
+    /// @notice Initialize billing config (separate from constructor to simplify deployment ordering).
+    /// @param _config Billing configuration to initialize.
     function initialize(BillingConfig memory _config) public override onlyOwner {
         super.initialize(_config);
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
+    /*//////////////////////////////////////////////////////////////////////////
+                                EXTERNAL API (CALLED BY ROUTER / NODES / VERIFIERS)
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ICoordinator
+    /// @dev Creates and stores a Commitment via Billing._startBilling and emits RequestStarted.
     function startRequest(
         bytes32 requestId,
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
-        address verifier) external override onlyRouter returns (Commitment memory) {
+        address verifier
+    ) external override onlyRouter returns (Commitment memory) {
         Commitment memory commitment = _startBilling(
             requestId,
             subscriptionId,
             containerId,
             interval,
             redundancy,
-            lazy,
-            paymentToken,
-            paymentAmount,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
             wallet,
             verifier
         );
-        emit RequestStarted(subscriptionId, requestId, containerId, commitment);
+
+        emit RequestStarted(requestId, subscriptionId, containerId, commitment);
         return commitment;
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function deliverCompute(
+    /// @inheritdoc ICoordinator
+    /// @dev Entrypoint for nodes to submit compute outputs. Non-reentrant to protect settlement paths.
+    function reportComputeResult(
         uint32 deliveryInterval,
         bytes memory input,
         bytes memory output,
         bytes memory proof,
         bytes memory commitmentData,
-        address nodeWallet) external override nonReentrant {
-        _deliverCompute(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
+        address nodeWallet
+    ) external override nonReentrant {
+        _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
+    /// @inheritdoc ICoordinator
+    /// @dev Cancel a pending request (router-only). Delegates to internal helper.
     function cancelRequest(bytes32 requestId) external override onlyRouter {
         _cancelRequest(requestId);
+        emit RequestCancelled(requestId);
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
-    function finalizeProofVerification(
+    /// @inheritdoc ICoordinator
+    /// @dev Called by verifier adapters (mocks or real) to publish verification outcome.
+    function reportVerificationResult(
         uint64 subscriptionId,
         uint32 interval,
         address node,
         bool valid
     ) external override {
+        // Lookup the proof request entry keyed by (subscriptionId, interval, node)
         bytes32 key = keccak256(abi.encode(subscriptionId, interval, node));
         ProofVerificationRequest memory request = proofRequests[key];
+
+        // Remove the stored request to avoid replay
         delete proofRequests[key];
+
+        // If no request existed (expiry == 0), treat as error
         if (request.expiry == 0) {
-            revert ProofRequestNotFound();
+            revert ProofVerificationRequestNotFound();
         }
+
+        // finalize verification (internal handles settlement/state update)
         _finalizeVerification(request, valid, interval);
-        emit ProofVerified(subscriptionId, interval, node, valid, msg.sender, valid);
+
+        // emit a high-level event for observability
+        emit ProofVerified(subscriptionId, interval, node, valid, msg.sender);
     }
 
-    /**
-     * @inheritdoc ICoordinator
-     */
+    /// @inheritdoc ICoordinator
+    /// @dev Prepare next interval for subscription if previous interval indicates a next exists.
     function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override {
+        // ask router whether subscription should advance (guard)
         if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
             _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
         }
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        INTERNAL LOGIC
-    //////////////////////////////////////////////////////////////*/
+    /*//////////////////////////////////////////////////////////////////////////
+                                  INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////////////////*/
 
+    /// @dev Internal: prepare the next interval by sending a request via Router and calculating fees.
     function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal {
+        // instruct router to create/send the request for the next interval
         _getRouter().sendRequest(subscriptionId, nextInterval);
+
+        // pre-calculate and reserve any next-tick fees needed for nodes (Billing helper)
         _calculateNextTickFee(subscriptionId, nextInterval, nodeWallet);
     }
 
-    function _onlyOwner() internal view override {
-        _validateOwnership();
-    }
-
-    function _deliverCompute(
+    /// @dev Internal: core logic for processing a compute delivery from a node.
+    ///      Validates interval, redundancy, node wallet, deduplicates per-node responses, then processes delivery.
+    function _reportComputeResult(
         uint32 deliveryInterval,
         bytes memory input,
         bytes memory output,
         bytes memory proof,
         bytes memory commitmentData,
-        address nodeWallet) internal {
+        address nodeWallet
+    ) internal {
+        // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
-        uint32 interval = _getRouter().getSubscriptionInterval(commitment.subscriptionId);
+
+        // verify the delivery interval matches subscription's current interval
+        uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
         if (interval != deliveryInterval) {
             revert IntervalMismatch(deliveryInterval);
         }
-        // Revert if redundancy requirements for this interval have been met
+
+        // check redundancy limit for this request: if already reached, revert
         uint16 numRedundantDeliveries = redundancyCount[commitment.requestId];
         if (numRedundantDeliveries == commitment.redundancy) {
             revert IntervalCompleted();
         }
+
+        // validate the nodeWallet is a recognized wallet produced by the WalletFactory
         if (_getRouter().isValidWallet(nodeWallet) == false) {
             revert InvalidWallet();
         }
+
+        // increment redundancy count (unchecked for gas; safe under normal operation)
         unchecked {
             redundancyCount[commitment.requestId] = numRedundantDeliveries + 1;
         }
 
+        // prevent the same node (msg.sender) from responding twice for the same subscription/interval
         bytes32 key = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
         if (nodeResponded[key]) {
             revert NodeRespondedAlready();
         }
         nodeResponded[key] = true;
 
+        // delegate to delivery processing routine (handles payments/settlement/notify)
         _processDelivery(
             commitment,
             msg.sender,
@@ -197,6 +204,12 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             numRedundantDeliveries == commitment.redundancy - 1
         );
 
+        // emit human-friendly event for off-chain indexing
         emit ComputeDelivered(commitment.requestId, nodeWallet, redundancyCount[commitment.requestId]);
+    }
+
+    /// @dev ConfirmedOwner abstract hook (required override).
+    function _onlyOwner() internal view override {
+        _validateOwnership();
     }
 }

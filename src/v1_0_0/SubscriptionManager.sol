@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {ECDSA} from "solady/utils/ECDSA.sol";
-import {EIP712} from "solady/utils/EIP712.sol";
-//import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
+//import {EIP712} from "solady/utils/EIP712.sol";
+import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {ISubscriptionsManager} from "./interfaces/ISubscriptionManager.sol";
 import {Payment} from "./types/Payment.sol";
-import {Subscription} from "./types/Subscription.sol";
+import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {Wallet} from "./wallet/Wallet.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import {console} from "forge-std/console.sol";
 import {Delegator} from "./utility/Delegator.sol";
 import {ComputeClient} from "./client/ComputeClient.sol";
@@ -30,7 +30,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @dev The fields must exactly match the order and types in the `Subscription` struct.
     bytes32 private constant EIP712_SUBSCRIPTION_TYPEHASH =
         keccak256(
-            "Subscription(address owner,uint32 activeAt,uint32 period,uint32 frequency,uint16 redundancy,bytes32 containerId,bool lazy,address verifier,uint256 paymentAmount,address paymentToken,address wallet,bytes32 routeId)"
+            "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
         );
 
     /// @notice EIP-712 struct(DelegateSubscription) typeHash.
@@ -38,11 +38,11 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @dev The `expiry` defines when the delegated subscription signature expires.
     bytes32 private constant EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH =
         keccak256(
-            "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address owner,uint32 activeAt,uint32 period,uint32 frequency,uint16 redundancy,bytes32 containerId,bool lazy,address verifier,uint256 paymentAmount,address paymentToken,address wallet,bytes32 routeId)"
+            "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
         );
 
     /// @dev Mapping of subscription IDs to `Subscription` objects.
-    mapping(uint64 /* subscriptionId */ => Subscription) internal subscriptions;
+    mapping(uint64 /* subscriptionId */ => ComputeSubscription) internal subscriptions;
 
     /// @dev A mapping storing request commitments. The key is `keccak256(abi.encode(subscriptionId, interval))`
     /// and the value is the commitment hash.
@@ -59,22 +59,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     // Keep a count of the number of subscriptions so that its possible to
     // loop through all the current subscriptions via .getSubscription().
     uint64 internal currentSubscriptionId;
-
-    /// @notice Emitted when a new subscription is created
-    /// @param id subscription ID
-    event SubscriptionCreated(uint64 indexed id);
-
-    /// @notice Emitted when a subscription is cancelled
-    /// @param id subscription ID
-    event SubscriptionCancelled(uint64 indexed id);
-
-    /// @notice Emitted when a subscription is fulfilled
-    /// @param id subscription ID
-    /// @param node address of fulfilling node
-    event SubscriptionFulfilled(uint64 indexed id, address indexed node);
-
-    /// @notice Emitted when a commitment times out and is cleaned up
-    event CommitmentTimedOut(bytes32 indexed requestId, uint64 indexed subscriptionId, uint32 indexed interval);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -96,18 +80,18 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     // ================================================================
     // |                       Initialization                         |
     // ================================================================
-    constructor() {}
+    constructor() EIP712(EIP712_NAME, EIP712_VERSION) {}
 
     /*//////////////////////////////////////////////////////////////
                          ISubscriptionsManager IMPLEMENTATION
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Get stored subscription (use uint64 to match mapping key)
-    function getSubscription(uint64 subscriptionId) external view returns (Subscription memory) {
+    function getComputeSubscription(uint64 subscriptionId) external view returns (ComputeSubscription memory) {
         return subscriptions[subscriptionId];
     }
 
-    function getSubscriptionInterval(uint64 subscriptionId) external view returns (uint32) {
+    function getComputeSubscriptionInterval(uint64 subscriptionId) external view returns (uint32) {
         return _getSubscriptionInterval(subscriptionId);
     }
 
@@ -123,31 +107,31 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 //        return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
 //    }
 
-    function createSubscription(
+    function createComputeSubscription(
         string memory containerId,
-        uint32 frequency,
-        uint32 period,
+        uint32 maxExecutions,
+        uint32 intervalSeconds,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier,
         bytes32 routeId
     ) external virtual override returns (uint64) {
         uint64 subscriptionId = ++currentSubscriptionId;
-        // If period is = 0 (one-time), active immediately
-        subscriptions[subscriptionId] = Subscription({
-            activeAt: uint32(block.timestamp) + period,
-            owner: msg.sender,
+        // If intervalSeconds is = 0 (one-time), active immediately
+        subscriptions[subscriptionId] = ComputeSubscription({
+            activeAt: uint32(block.timestamp) + intervalSeconds,
+            client: msg.sender,
             redundancy: redundancy,
-            frequency: frequency,
-            period: period,
+            maxExecutions: maxExecutions,
+            intervalSeconds: intervalSeconds,
             containerId: keccak256(abi.encode(containerId)),
-            lazy: lazy,
+            useDeliveryInbox: useDeliveryInbox,
             verifier: payable(verifier),
-            paymentAmount: paymentAmount,
-            paymentToken: paymentToken,
+            feeAmount: feeAmount,
+            feeToken: feeToken,
             wallet: payable(wallet),
             routeId: routeId
         });
@@ -162,7 +146,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
      * @param sub The subscription data.
      * @return The ID of the newly created subscription.
      */
-    function createSubscriptionFor(Subscription calldata sub) public virtual returns (uint64) {
+    function createSubscriptionFor(ComputeSubscription calldata sub) public virtual returns (uint64) {
         uint64 subscriptionId = ++currentSubscriptionId;
         subscriptions[subscriptionId] = sub;
         emit SubscriptionCreated(subscriptionId);
@@ -176,13 +160,11 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     function createSubscriptionDelegatee(
         uint32 nonce,
         uint32 expiry,
-        Subscription calldata sub,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
+        ComputeSubscription calldata sub,
+        bytes calldata signature
     ) public virtual returns (uint64) {
         // Check if this delegated subscription has already been created.
-        bytes32 key = keccak256(abi.encodePacked(sub.owner, nonce));
+        bytes32 key = keccak256(abi.encodePacked(sub.client, nonce));
         uint64 subscriptionId = delegateCreatedIds[key];
         // If it exists, return the ID, preventing replay.
         if (subscriptionId != 0) {
@@ -198,15 +180,15 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 subHash = _hashSubscription(sub);
 
         // Hash the full delegated subscription data.
-        bytes32 digest = _hashTypedData(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
+        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
 
         // Recover the signer from the signature.
-        address recoveredSigner = ECDSA.recover(digest, v, r, s);
+        address recoveredSigner = ECDSA.recover(digest, signature);
 
         // Collect delegated signer from subscribing contract
-        address delegatedSigner = Delegator(sub.owner).getSigner();
+        address delegatedSigner = Delegator(sub.client).getSigner();
 
-        // The signer must be the owner of the subscription being created.
+        // The signer must be the client of the subscription being created.
         if (recoveredSigner != delegatedSigner) {
             revert SignerMismatch();
         }
@@ -218,41 +200,15 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         delegateCreatedIds[key] = subscriptionId;
 
         // Update the max known nonce for the subscriber to help off-chain clients.
-        if (nonce > maxSubscriberNonce[sub.owner]) {
-            maxSubscriberNonce[sub.owner] = nonce;
+        if (nonce > maxSubscriberNonce[sub.client]) {
+            maxSubscriberNonce[sub.client] = nonce;
         }
 
         return subscriptionId;
     }
 
-    /**
-     * @dev Hashes the `Subscription` struct for EIP-712 signing.
-      * @param sub The subscription struct to hash.
-      * @return The EIP-712 hash of the struct.
-      */
-    function _hashSubscription(Subscription calldata sub) internal pure returns (bytes32) {
-        return
-            keccak256(
-            abi.encode(
-                EIP712_SUBSCRIPTION_TYPEHASH,
-                sub.owner,
-                sub.activeAt,
-                sub.period,
-                sub.frequency,
-                sub.redundancy,
-                sub.containerId,
-                sub.lazy,
-                sub.verifier,
-                sub.paymentAmount,
-                sub.paymentToken,
-                sub.wallet,
-                sub.routeId
-            )
-        );
-    }
-
-    function cancelSubscription(uint64 subscriptionId) external override {
-        if (subscriptions[subscriptionId].owner != msg.sender) {
+    function cancelComputeSubscription(uint64 subscriptionId) external override {
+        if (subscriptions[subscriptionId].client != msg.sender) {
             revert NotSubscriptionOwner();
         }
         if (_pendingRequestExists(subscriptionId)) {
@@ -271,7 +227,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @notice Batch timeout up to `uptoInterval` for a subscription; bounded by `maxIter`.
     /// @dev Uses Wallet.releaseForRequest for each timed-out request.
     function timeoutSubscriptionIntervalsUpTo(uint64 subscriptionId, uint32 uptoInterval, uint32 maxIter) external {
-        Subscription storage sub = subscriptions[subscriptionId];
+        ComputeSubscription storage sub = subscriptions[subscriptionId];
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
         if (currentInterval == 0) {
             return; // not active yet
@@ -287,7 +243,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
             bytes32 stored = requestCommitments[rid];
             if (stored != bytes32(0)) {
                 bool timeoutable;
-                if (sub.period == 0) {
+                if (sub.intervalSeconds == 0) {
                     timeoutable = uint32(block.timestamp) >= sub.activeAt;
                 } else {
                     timeoutable = i < currentInterval;
@@ -318,21 +274,47 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                             INTERNAL LOGIC HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    /** @dev Hashes the `Subscription` struct for EIP-712 signing.
+      * @param sub The subscription struct to hash.
+      * @return The EIP-712 hash of the struct.
+      */
+    function _hashSubscription(ComputeSubscription calldata sub) internal pure returns (bytes32) {
+        return
+            keccak256(
+            abi.encode(
+                EIP712_SUBSCRIPTION_TYPEHASH,
+                sub.client,
+                sub.activeAt,
+                sub.intervalSeconds,
+                sub.maxExecutions,
+                sub.redundancy,
+                sub.containerId,
+                sub.useDeliveryInbox,
+                sub.verifier,
+                sub.feeAmount,
+                sub.feeToken,
+                sub.wallet,
+                sub.routeId
+            )
+        );
+    }
+
     function _getSubscriptionInterval(uint64 subscriptionId) internal view returns (uint32) {
-        Subscription storage sub = subscriptions[subscriptionId];
+        ComputeSubscription storage sub = subscriptions[subscriptionId];
         if (!_isExistingSubscription(subscriptionId)) {
             revert SubscriptionNotFound();
         }
         uint32 activeAt = sub.activeAt;
-        uint32 period = sub.period;
+        uint32 intervalSeconds = sub.intervalSeconds;
         if (uint32(block.timestamp) < activeAt) {
-            revert SubscriptionNotActive();
+            return 0;
+//            revert SubscriptionNotActive();
         }
-        if (period == 0) {
+        if (intervalSeconds == 0) {
             return 1;
         }
         unchecked {
-            return ((uint32(block.timestamp) - activeAt) / period) + 1;
+            return ((uint32(block.timestamp) - activeAt) / intervalSeconds) + 1;
         }
     }
 
@@ -343,44 +325,44 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     /// @notice Lock funds (request-level). Coordinator will return/issue commitment externally.
-    /// @dev This locks `paymentAmount * redundancy` on the Wallet (via lockForRequest).
+    /// @dev This locks `feeAmount * redundancy` on the Wallet (via lockForRequest).
     /// @param walletAddr Wallet address (subscriptions[subscriptionId].wallet)
     /// @param subscriptionId subscription id
     /// @param interval interval for this request
     /// @param redundancy number of expected payouts
-    /// @param paymentToken token used for payment
-    /// @param paymentAmount per-response payment amount
+    /// @param feeToken token used for payment
+    /// @param feeAmount per-response payment amount
     function _markRequestInFlight(
         bytes32 requestId,
         address payable walletAddr,
         uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
-        address paymentToken,
-        uint256 paymentAmount
+        address feeToken,
+        uint256 feeAmount
     ) internal {
-        // compute total to lock (paymentAmount * redundancy)
-        uint256 total = paymentAmount * redundancy; // solhint-disable-line no-inline-assembly
+        // compute total to lock (feeAmount * redundancy)
+        uint256 total = feeAmount * redundancy; // solhint-disable-line no-inline-assembly
         // lock on wallet (this will revert if insufficient funds/allowance)
         Wallet consumer = Wallet(walletAddr);
         if (_getWalletFactory().isValidWallet(walletAddr) == false || address(consumer) == address(0)) {
             revert InvalidWallet();
         }
-        consumer.lockForRequest(subscriptions[subscriptionId].owner, paymentToken, total, requestId, redundancy);
+        consumer.lockForRequest(subscriptions[subscriptionId].client, feeToken, total, requestId, redundancy);
     }
 
     /// @notice Locks funds in the consumer's wallet for proof verification.
     /// @param proofRequest The details of the proof verification request.
     function _lockForVerification(ProofVerificationRequest calldata proofRequest) internal {
         Wallet submitterWallet = Wallet(payable(proofRequest.submitterWallet));
-        submitterWallet.cLock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
+        submitterWallet.lockEscrow(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
     }
 
     /// @notice Unlocks funds in the consumer's wallet after proof verification.
     /// @param proofRequest The details of the proof verification request.
     function _unlockForVerification(ProofVerificationRequest calldata proofRequest) internal {
         Wallet submitterWallet = Wallet(payable(proofRequest.submitterWallet));
-        submitterWallet.cUnlock(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
+        submitterWallet.releaseEscrow(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
     }
 
 
@@ -408,27 +390,27 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (_getWalletFactory().isValidWallet(address(wallet)) == false) {
             revert InvalidWallet();
         }
-        wallet.cTransfer(spenderAddress, payments);
+        wallet.transferByRouter(spenderAddress, payments);
     }
 
     function _callback(
         uint64 subscriptionId,
         uint32 interval,
         uint16 numRedundantDeliveries,
-        bool lazy,
+        bool useDeliveryInbox,
         address node,
         bytes memory input,
         bytes memory output,
         bytes memory proof,
         bytes32 containerId
     ) internal {
-        Subscription memory subscription = subscriptions[subscriptionId];
-        ComputeClient(subscription.owner).rawReceiveCompute(subscriptionId, interval, numRedundantDeliveries, lazy, node,
+        ComputeSubscription memory subscription = subscriptions[subscriptionId];
+        ComputeClient(subscription.client).receiveRequestCompute(subscriptionId, interval, numRedundantDeliveries, useDeliveryInbox, node,
             input, output, proof, bytes32(0));
     }
 
     function _cancelSubscriptionHelper(uint64 subscriptionId) internal {
-        Subscription memory subscription = subscriptions[subscriptionId];
+        ComputeSubscription memory subscription = subscriptions[subscriptionId];
         subscription.activeAt = type(uint32).max;
 
         // Attempt to release any request-level lock for the current interval (if exists).
@@ -459,16 +441,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint32 interval,
         address coordinator
     ) internal view returns (bytes32) {
-        Subscription storage s = subscriptions[subscriptionId];
+        ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
             abi.encode(
                 subscriptionId,
                 interval,
                 s.containerId,
-                s.lazy,
+                s.useDeliveryInbox,
                 s.verifier,
-                s.paymentAmount,
-                s.paymentToken,
+                s.feeAmount,
+                s.feeToken,
                 s.redundancy,
                 coordinator
             )
@@ -476,7 +458,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _isExistingSubscription(uint64 subscriptionId) internal view returns (bool) {
-        if (subscriptionId == 0 || subscriptions[subscriptionId].owner == address(0)) {
+        if (subscriptionId == 0 || subscriptions[subscriptionId].client == address(0)) {
             return false;
         }
         return subscriptions[subscriptionId].activeAt != type(uint32).max;
@@ -486,25 +468,25 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint64 subscriptionId,
         uint32 currentInterval
     ) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].frequency) {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
             return false;
         }
-        Subscription storage sub = subscriptions[subscriptionId];
+        ComputeSubscription storage sub = subscriptions[subscriptionId];
 
         // If a payment is required for the subscription, check for sufficient funds and allowance.
-        if (sub.paymentAmount > 0) {
+        if (sub.feeAmount > 0) {
             Wallet wallet = Wallet(sub.wallet);
-            uint256 requiredAmount = sub.paymentAmount * sub.redundancy;
+            uint256 requiredAmount = sub.feeAmount * sub.redundancy;
 
             // Check if the consumer has enough allowance from the wallet.
-            if (wallet.allowance(sub.owner, sub.paymentToken) < requiredAmount) {
+            if (wallet.allowance(sub.client, sub.feeToken) < requiredAmount) {
                 return false;
             }
 
             // Check if the wallet has enough unlocked balance.
             uint256 totalBalance =
-                (sub.paymentToken == address(0)) ? address(wallet).balance : IERC20(sub.paymentToken).balanceOf(address(wallet));
-            uint256 totalLocked = wallet.totalLockedFor(sub.paymentToken);
+                (sub.feeToken == address(0)) ? address(wallet).balance : IERC20(sub.feeToken).balanceOf(address(wallet));
+            uint256 totalLocked = wallet.totalLockedFor(sub.feeToken);
             if (totalBalance < totalLocked || (totalBalance - totalLocked) < requiredAmount) {
                 return false;
             }
@@ -527,12 +509,12 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 stored = requestCommitments[requestId];
         if (stored == bytes32(0)) revert NoSuchCommitment();
 
-        Subscription storage sub = subscriptions[subscriptionId];
+        ComputeSubscription storage sub = subscriptions[subscriptionId];
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
-        if (currentInterval == 0) revert CommitmentNotTimeoutable();
+        if (currentInterval == 0) revert SubscriptionNotActive();
 
         bool timeoutable;
-        if (sub.period == 0) {
+        if (sub.intervalSeconds == 0) {
             // one-shot: activeAt passed => timeout allowed
             timeoutable = uint32(block.timestamp) >= sub.activeAt;
         } else {

@@ -12,7 +12,7 @@ import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 import {Payment} from "./types/Payment.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {SubscriptionsManager} from "./SubscriptionManager.sol";
-import {Subscription} from "./types/Subscription.sol";
+import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
 
 /**
@@ -40,7 +40,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /// @notice WalletFactory instance
     WalletFactory private walletFactory;
 
-    /// @notice Pending owner address during ownership transfer
+    /// @notice Pending client address during ownership transfer
     address private pendingOwner;
 
     /*//////////////////////////////////////////////////////////////
@@ -56,27 +56,29 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /// @notice Emitted when the allow list ID is updated
     event AllowListIdSet(bytes32 indexed newAllowListId);
 
+    /// @notice Emitted when a request is started
     event RequestStart(
         bytes32 indexed requestId,
         uint64 indexed subscriptionId,
         bytes32 indexed containerId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
-        uint256 paymentAmount,
-        address paymentToken,
+        bool useDeliveryInbox,
+        uint256 feeAmount,
+        address feeToken,
         address verifier,
         address coordinator
     );
 
+    /// @notice Emitted when a request is processed
     event RequestProcessed(
         bytes32 indexed requestId,
         uint64 indexed subscriptionId,
         bytes32 indexed containerId,
         uint32 interval,
-        bool lazy,
-        uint256 paymentAmount,
-        address paymentToken,
+        bool useDeliveryInbox,
+        uint256 feeAmount,
+        address feeToken,
         address verifier,
         address coordinator,
         FulfillResult result
@@ -114,7 +116,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     }
     /**
      * @notice Sets the WalletFactory contract address.
-     * @dev Can only be called once by the owner to break the circular dependency at deployment.
+     * @dev Can only be called once by the client to break the circular dependency at deployment.
      * @param _walletFactory The address of the deployed WalletFactory contract.
      */
     function setWalletFactory(address _walletFactory) external onlyOwner {
@@ -170,7 +172,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         if (_isExistingSubscription(subscriptionId) == false) {
             revert InvalidSubscription();
         }
-        Subscription memory sub = subscriptions[subscriptionId];
+        ComputeSubscription memory sub = subscriptions[subscriptionId];
         if (msg.sender != getContractById(sub.routeId)) {
             revert OnlyCallableFromCoordinator();
         }
@@ -213,7 +215,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.subscriptionId,
             commitment.interval,
             numRedundantDeliveries,
-            commitment.lazy,
+            commitment.useDeliveryInbox,
             nodeWallet,
             input,
             output,
@@ -226,9 +228,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.subscriptionId,
             commitment.containerId,
             commitment.interval,
-            commitment.lazy,
-            commitment.paymentAmount,
-            commitment.paymentToken,
+            commitment.useDeliveryInbox,
+            commitment.feeAmount,
+            commitment.feeToken,
             commitment.verifier,
             commitment.coordinator,
             resultCode
@@ -277,26 +279,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function createSubscriptionDelegatee(
         uint32 nonce,
         uint32 expiry,
-        Subscription calldata sub,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public override(IRouter, SubscriptionsManager) returns (uint64)
-    {
-        return super.createSubscriptionDelegatee(nonce, expiry, sub, v, r, s);
-    }
-
-    /**
-     * @inheritdoc IRouter
-     */
-    function writeInbox(bytes32 containerId, bytes calldata input, bytes calldata output, bytes calldata proof)
-        external override whenNotPaused
-    {
-        // Call to inbox contract to write data
-        require(inbox != address(0), "Inbox not set");
-        (bool success, ) =
-            inbox.call(abi.encodeWithSignature("write(bytes32,bytes,bytes,bytes)", containerId, input, output, proof));
-        require(success, "Inbox write failed");
+        ComputeSubscription calldata sub,
+        bytes calldata signature
+    ) public override(IRouter, SubscriptionsManager) returns (uint64) {
+        return super.createSubscriptionDelegatee(nonce, expiry, sub, signature);
     }
 
     /**
@@ -436,7 +422,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
 
-        Subscription storage subscription = subscriptions[subscriptionId];
+        ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
         require(coordinatorAddr != address(0), "Coordinator not found");
 
@@ -450,11 +436,11 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscriptionId: subscriptionId,
                 containerId: subscription.containerId,
                 interval: interval,
-                lazy: subscription.lazy,
+                useDeliveryInbox: subscription.useDeliveryInbox,
                 redundancy: subscription.redundancy,
                 walletAddress: subscription.wallet,
-                paymentAmount: subscription.paymentAmount,
-                paymentToken: subscription.paymentToken,
+                feeAmount: subscription.feeAmount,
+                feeToken: subscription.feeToken,
                 verifier: subscription.verifier,
                 coordinator: coordinatorAddr
             });
@@ -466,8 +452,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscriptionId,
                 interval,
                 subscription.redundancy,
-                subscription.paymentToken,
-                subscription.paymentAmount
+                subscription.feeToken,
+                subscription.feeAmount
             );
 
             ICoordinator coordinator = ICoordinator(coordinatorAddr);
@@ -477,9 +463,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscription.containerId,
                 interval,
                 subscription.redundancy,
-                subscription.lazy,
-                subscription.paymentToken,
-                subscription.paymentAmount,
+                subscription.useDeliveryInbox,
+                subscription.feeToken,
+                subscription.feeAmount,
                 subscription.wallet,
                 subscription.verifier
             );
@@ -492,9 +478,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscription.containerId,
             interval,
             subscription.redundancy,
-            subscription.lazy,
-            subscription.paymentAmount,
-            subscription.paymentToken,
+            subscription.useDeliveryInbox,
+            subscription.feeAmount,
+            subscription.feeToken,
             commitment.verifier,
             coordinatorAddr
         );
@@ -503,7 +489,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     }
 
     function _timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) internal {
-        Subscription storage subscription = subscriptions[subscriptionId];
+        ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
         require(coordinatorAddr != address(0), "Coordinator not found");
         ICoordinator coordinator = ICoordinator(coordinatorAddr);
@@ -511,17 +497,4 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         coordinator.cancelRequest(requestId);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                                EIP712 LOGIC
-     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Overrides Solady.EIP712._domainNameAndVersion to return EIP712-compatible domain name, version
-    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return (EIP712_NAME, EIP712_VERSION);
-    }
-
-    /// @notice Overrides Solady.EIP712._domainNameAndVersionMayChange to always return false since the domain params are not updateable
-    function _domainNameAndVersionMayChange() internal pure override returns (bool) {
-        return false;
-    }
 }

@@ -3,42 +3,49 @@ pragma solidity ^0.8.4;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {LibDeploy} from "../test/lib/LibDeploy.sol";
-import {Reader} from "../src/v1_0_0/utility/Reader.sol";
+import {DeployUtils} from "../test/lib/DeployUtils.sol";
+import {Reader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 
 /// @title Deploy
-/// @notice Deploys Infernet SDK to destination chain defined in environment
+/// @notice Deploys noosphere SDK to destination chain defined in environment
 contract Deploy is Script {
-    function run() public { // solhint-disable-line ordering
-        // Setup wallet
+    function run() public {
+        // Read deployer private key from environment (required)
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        require(deployerPrivateKey != 0, "Deploy: PRIVATE_KEY env var required");
+
+        // Start broadcasting transactions using deployer key
         vm.startBroadcast(deployerPrivateKey);
 
-        // Log address
+        // Derive deployer address and current nonce
         address deployerAddress = vm.addr(deployerPrivateKey);
-        console.log("Loaded deployer: ", deployerAddress);
-
-        // Get deployer address nonce
         uint256 initialNonce = vm.getNonce(deployerAddress);
 
-        // Deploy contracts via LibDeploy
-        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) = LibDeploy
-            .deployContracts(deployerAddress, initialNonce, deployerAddress, 1);
+        // Log environment details for easier troubleshooting
+        console.log("=== Deploy: environment ===");
+        console.log("Deployer address:         ", deployerAddress);
+        console.log("Chain ID:                 ", block.chainid);
+        console.log("Deployer nonce (pre-deploy):", initialNonce);
 
-        // Complete the setup by linking the Router to the WalletFactory
+        // Deploy contracts via DeployUtils
+        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) =
+                            DeployUtils.deployContracts(deployerAddress, initialNonce, deployerAddress, 1, address(0));
+
+        // Wire the Router to the WalletFactory
         router.setWalletFactory(address(walletFactory));
 
-        // Log deployed contracts
-        console.log("Using protocol fee: 1%");
-        console.log("Deployed Router: ", address(router));
-        console.log("Deployed Coordinator: ", address(coordinator));
-        console.log("Deployed Reader: ", address(reader));
-        console.log("Deployed WalletFactory: ", address(walletFactory));
+        // Summary logs
+        console.log("=== Deploy: summary ===");
+        console.log("Router:        ", address(router));
+        console.log("Coordinator:   ", address(coordinator));
+        console.log("Reader:        ", address(reader));
+        console.log("WalletFactory: ", address(walletFactory));
+        console.log("=========================");
 
-        // Execute
+        // Stop broadcasting transactions
         vm.stopBroadcast();
     }
 }

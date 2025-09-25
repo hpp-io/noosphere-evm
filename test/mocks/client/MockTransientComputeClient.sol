@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
+import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
 import {TransientComputeClient} from "../../../src/v1_0_0/client/TransientComputeClient.sol";
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
@@ -32,8 +32,8 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         string memory containerId,
         bytes memory inputs,
         uint16 redundancy,
-        address paymentToken,
-        uint256 paymentAmount,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
     ) external returns (uint64, Commitment memory) {
@@ -47,8 +47,8 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
                 containerId,
                 redundancy,
                 false,
-                paymentToken,
-                paymentAmount,
+                feeToken,
+                feeAmount,
                 wallet,
                 verifier,
                 bytes32("Coordinator_v1.0.0")
@@ -57,19 +57,19 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID, containerId, inputs, redundancy, false, paymentToken, paymentAmount, wallet, verifier, currentTimestamp
+            actualSubscriptionID, containerId, inputs, redundancy, false, feeToken, feeAmount, wallet, verifier, currentTimestamp
         );
 
         return (actualSubscriptionID, commitment);
     }
 
-    /// @notice Create new lazy mock callback request
+    /// @notice Create new useDeliveryInbox mock callback request
     function createLazyMockRequest(
         string memory containerId,
         bytes memory inputs,
         uint16 redundancy,
-        address paymentToken,
-        uint256 paymentAmount,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
     ) external returns (uint64, Commitment memory) {
@@ -82,9 +82,9 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
             _createComputeSubscription(
                 containerId,
                 redundancy,
-                true, // lazy = true
-                paymentToken,
-                paymentAmount,
+                true, // useDeliveryInbox = true
+                feeToken,
+                feeAmount,
                 wallet,
                 verifier,
                 bytes32("Coordinator_v1.0.0")
@@ -92,7 +92,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
-        _assertSubscription(actualSubscriptionID, containerId, inputs, redundancy, true, paymentToken, paymentAmount, wallet, verifier, currentTimestamp);
+        _assertSubscription(actualSubscriptionID, containerId, inputs, redundancy, true, feeToken, feeAmount, wallet, verifier, currentTimestamp);
 
         return (actualSubscriptionID, commitment);
     }
@@ -108,23 +108,23 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         bytes memory inputs,
         uint16 redundancy,
         bool expectedLazy, // Add this parameter
-        address paymentToken,
-        uint256 paymentAmount,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier,
         uint256 creationTimestamp
     ) private {
-        Subscription memory sub = _getRouter().getSubscription(subId);
+        ComputeSubscription memory sub = _getRouter().getComputeSubscription(subId);
 
         assertEq(sub.activeAt, creationTimestamp);
-        assertEq(sub.owner, address(this));
+        assertEq(sub.client, address(this));
         assertEq(sub.redundancy, redundancy);
-        assertEq(sub.frequency, 1);
-        assertEq(sub.period, 0);
+        assertEq(sub.maxExecutions, 1);
+        assertEq(sub.intervalSeconds, 0);
         assertEq(sub.containerId, keccak256(abi.encode(containerId)));
-        assertEq(sub.lazy, expectedLazy); // Use the passed lazy parameter
-        assertEq(sub.paymentToken, paymentToken);
-        assertEq(sub.paymentAmount, paymentAmount);
+        assertEq(sub.useDeliveryInbox, expectedLazy); // Use the passed useDeliveryInbox parameter
+        assertEq(sub.feeToken, feeToken);
+        assertEq(sub.feeAmount, feeAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
         assertEq(subscriptionInputs[subId], inputs);
@@ -135,7 +135,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
+        bool useDeliveryInbox,
         address node,
         bytes calldata input,
         bytes calldata output,
@@ -146,7 +146,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
             subscriptionId: subscriptionId,
             interval: interval,
             redundancy: redundancy,
-            lazy: lazy,
+            useDeliveryInbox: useDeliveryInbox,
             node: node,
             input: input,
             output: output,

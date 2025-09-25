@@ -12,7 +12,7 @@ interface IBilling {
     function getConfig() external view returns (BillingConfig memory);
 
     /// @notice Updates the billing configuration.
-    /// @dev Should only be callable by the owner.
+    /// @dev Should only be callable by the client.
     /// @param config The new BillingConfig struct.
     function updateConfig(BillingConfig memory config) external;
 

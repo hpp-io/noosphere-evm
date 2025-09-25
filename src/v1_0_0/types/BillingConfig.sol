@@ -10,8 +10,6 @@ struct BillingConfig {
     address protocolFeeRecipient;
     // The fee charged by the protocol for each transaction, in basis points (1% = 100).
     uint16 protocolFee;
-    // The minimum gas price (in Wei) to be used for cost estimations.
-    uint256 minimumEstimateGasPriceWei;
     // The fee paid to the node that triggers a new interval tick.
     uint256 tickNodeFee;
     // The token used for the tick node fee.

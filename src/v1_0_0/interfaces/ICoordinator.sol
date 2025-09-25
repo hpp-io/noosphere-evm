@@ -3,58 +3,98 @@ pragma solidity ^0.8.23;
 
 import "../types/Commitment.sol";
 
-// Note: It's often better to define shared structs in a separate file
-// (e.g., ./types/Commitment.sol) and import them here.
-
-/**
- * @title ICoordinator
- * @notice Interface for the Coordinator contract, which is responsible for
- * managing the lifecycle of computation requests, from initiation to fulfillment
- * and verification.
- */
+/// @title ICoordinator
+/// @notice Coordinator interface for managing the lifecycle of compute requests:
+///         creation, cancellation, delivery, verification finalization and interval preparation.
+/// @dev Functions are grouped by responsibility and documented to clarify intent (mutating vs read-only).
 interface ICoordinator {
-    /**
-     * @notice Starts a new computation request and returns a commitment.
-     * @param containerId The identifier for the computation container.
-     * @param interval The interval for which the request is being made.
-     * @param redundancy The number of nodes required to fulfill the request.
-     * @param lazy A flag indicating if the request is lazy.
-     * @param paymentToken The address of the token used for payment.
-     * @param paymentAmount The amount of payment for the request.
-     * @param wallet The wallet address associated with the subscription.
-     * @param verifier The address of the verifier for this request.
-     * @return A Commitment struct containing details of the request.
-     */
+    /*//////////////////////////////////////////////////////////////////////////
+                                      EVENTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when a new request/commitment is started for a subscription interval.
+    /// @param subscriptionId Subscription that requested the work.
+    /// @param requestId Opaque request key assigned to this request.
+    /// @param containerId Identifier of the compute container.
+    /// @param commitment Full Commitment struct describing this request.
+    event RequestStarted(bytes32 indexed requestId, uint64 indexed subscriptionId, bytes32 indexed containerId, Commitment commitment);
+
+    /// @notice Emitted when a pending request is cancelled.
+    /// @param requestId Opaque request key that was cancelled.
+    event RequestCancelled(bytes32 indexed requestId);
+
+    /// @notice Emitted when a node delivers a compute result.
+    /// @param requestId Opaque request key for this delivery (ties to Commitment.requestId).
+    /// @param nodeWallet Node wallet address that submitted the delivery.
+    /// @param numRedundantDeliveries Number of redundant deliveries now recorded for the request.
+    event ComputeDelivered(bytes32 indexed requestId, address indexed nodeWallet, uint16 numRedundantDeliveries);
+
+    /// @notice Emitted when a proof verification outcome is processed.
+    /// @param subscriptionId Subscription identifier.
+    /// @param interval Interval index related to this verification.
+    /// @param node Node address whose proof was verified.
+    /// @param valid Whether the subscription / interval was considered active at verification time.
+    /// @param verifier Address of the verifier that reported the result (msg.sender).
+    event ProofVerified(uint64 indexed subscriptionId, uint32 indexed interval, address indexed node, bool valid, address verifier);
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    error IntervalMismatch(uint32 deliveryInterval);
+    error IntervalCompleted();
+    error NodeRespondedAlready();
+    error InvalidWallet();
+    error ProofVerificationRequestNotFound();
+
+    /*//////////////////////////////////////////////////////////////////////////
+                             REQUEST LIFECYCLE (CREATION/CANCELLATION)
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Start a new request for a subscription interval.
+    /// @dev This is a state-mutating operation. The Coordinator should persist a Commitment and emit RequestStarted.
+    /// @param requestId Opaque request key / identifier for this request (caller-supplied or derived).
+    /// @param subscriptionId Subscription the request belongs to.
+    /// @param containerId Container identifier describing the compute target.
+    /// @param interval Interval index (round) the request targets.
+    /// @param redundancy Number of redundant node responses expected for this request.
+    /// @param useDeliveryInbox If true, responses are saved to a delivery inbox rather than delivered immediately.
+    /// @param feeToken Token used for payment for this request (address(0) for native ETH).
+    /// @param feeAmount Fee amount associated with the request (in token base units).
+    /// @param wallet Wallet address funding the request (consumer wallet).
+    /// @param verifier Optional verifier address to be used for this request (address(0) if none).
+    /// @return commitment Commitment struct describing the stored request metadata.
     function startRequest(
         bytes32 requestId,
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
-    ) external returns (Commitment memory);
+    ) external returns (Commitment memory commitment);
 
-    /**
-     * @notice Cancels a pending request.
-     * @param requestId The ID of the request to be cancelled.
-     */
+    /// @notice Cancel a pending request.
+    /// @dev State-mutating. Coordinator should release any reserved state/escrow and emit RequestCancelled.
+    /// @param requestId Opaque request key identifying the pending request.
     function cancelRequest(bytes32 requestId) external;
 
-    /**
-     * @notice Delivers the result of a computation to the Coordinator.
-     * @param deliveryInterval The interval for which the computation was performed.
-     * @param input The input data used for the computation.
-     * @param output The output data resulting from the computation.
-     * @param proof The cryptographic proof of computation.
-     * @param commitmentData Additional data related to the commitment.
-     * @param nodeWallet The wallet address of the node delivering the compute.
-     * @dev This function is typically called by a compute node after completing a request.
-     */
-    function deliverCompute(
+    /*//////////////////////////////////////////////////////////////////////////
+                            DELIVERY & FULFILLMENT HANDLERS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Called by nodes to deliver compute outputs for a given interval.
+    /// @dev State-mutating. Coordinator will process the delivery, update commitment state and emit ComputeDelivered.
+    /// @param deliveryInterval Interval index this delivery corresponds to.
+    /// @param input Input bytes that were used for the compute (for auditing/verification).
+    /// @param output Output bytes produced by the node.
+    /// @param proof Proof bytes (protocol-specific) supporting the output.
+    /// @param commitmentData ABI-encoded Commitment data that ties this delivery to a request.
+    /// @param nodeWallet Wallet address of the delivering node (used for payment/escrow).
+    function reportComputeResult(
         uint32 deliveryInterval,
         bytes memory input,
         bytes memory output,
@@ -63,19 +103,27 @@ interface ICoordinator {
         address nodeWallet
     ) external;
 
-    /**
-     * @notice Finalizes the proof verification process for a specific node's work.
-     * @param subscriptionId The ID of the subscription.
-     * @param interval The interval of the computation.
-     * @param node The address of the node whose work was verified.
-     * @param valid A boolean indicating if the proof was valid.
-     */
-    function finalizeProofVerification(uint64 subscriptionId, uint32 interval, address node, bool valid) external;
+    /*//////////////////////////////////////////////////////////////////////////
+                                VERIFICATION
+    //////////////////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Prepares the system for the next computation interval of a subscription.
-     * @param subscriptionId The ID of the subscription to prepare.
-     * @param nextInterval The upcoming interval number.
-     */
+    /// @notice Finalize the result of a proof verification for a node's delivery.
+    /// @dev Called by verifier adapters (or mocks) after verification completes (sync or async).
+    ///      Coordinator should act on `valid` (settle payments, mark interval completion, etc.).
+    /// @param subscriptionId Subscription identifier.
+    /// @param interval Interval index whose verification is being finalized.
+    /// @param node Address of the node whose proof outcome is being reported.
+    /// @param valid Boolean indicating whether the proof was valid.
+    function reportVerificationResult(uint64 subscriptionId, uint32 interval, address node, bool valid) external;
+
+    /*//////////////////////////////////////////////////////////////////////////
+                            INTERVAL / SCHEDULING HELPERS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Prepare internal state for the next interval of a subscription.
+    /// @dev Used by nodes/tests to signal the coordinator to advance/prep interval scheduling.
+    /// @param subscriptionId Subscription identifier to prepare.
+    /// @param nextInterval Next interval index to prepare.
+    /// @param nodeWallet Node wallet address associated with the preparation call.
     function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external;
 }

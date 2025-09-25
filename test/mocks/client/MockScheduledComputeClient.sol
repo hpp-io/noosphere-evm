@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
+<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
 import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
 import {SubscriptionComputeClient} from "../../../src/v1_0_0/client/SubscriptionComputeClient.sol";
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
@@ -10,6 +11,15 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 /// @title MockSubscriptionComputeClient.sol
 /// @notice Mocks SubscriptionComputeClient.sol
 contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionComputeClient, StdAssertions {
+========
+import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
+import {ScheduledComputeClient} from "../../../src/v1_0_0/client/ScheduledComputeClient.sol";
+import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
+import {StdAssertions} from "forge-std/StdAssertions.sol";
+
+/// @notice Mocks ScheduledComputeClient.sol
+contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient, StdAssertions {
+>>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -21,9 +31,14 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
+<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
     /// @notice Create new MockSubscriptionComputeClient.sol
     /// @param router The address of the Router contract.
     constructor(address router) SubscriptionComputeClient(router) {}
+========
+    /// @param router The address of the Router contract.
+    constructor(address router) ScheduledComputeClient(router) {}
+>>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
 
     /*//////////////////////////////////////////////////////////////
                            UTILITY FUNCTIONS
@@ -39,18 +54,22 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
     //    }
 
     /// @notice Create new mock subscription
+<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
     /// @dev Parameter interface conforms to same as `SubscriptionComputeClient.sol._createComputeSubscription`
+========
+    /// @dev Parameter interface conforms to same as `ScheduledComputeClient.sol._createComputeSubscription`
+>>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
     /// @dev Augmented with checks
     /// @dev Checks returned subscription ID is serially conforming.
     /// @dev Checks subscription stored in coordinator storage conforms to expected, given inputs
     function createMockSubscription(
         string calldata containerId,
-        uint32 frequency,
-        uint32 period,
+        uint32 maxExecutions,
+        uint32 intervalSeconds,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
     ) external returns (uint64, Commitment memory) {
@@ -58,12 +77,12 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
         uint64 actualSubscriptionID =
             _createComputeSubscription(
             containerId,
-            frequency,
-            period,
+            maxExecutions,
+            intervalSeconds,
             redundancy,
-            lazy,
-            paymentToken,
-            paymentAmount,
+            useDeliveryInbox,
+                feeToken,
+            feeAmount,
             wallet,
             verifier,
             bytes32("Coordinator_v1.0.0")
@@ -72,12 +91,12 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
         _assertSubscription(
             actualSubscriptionID,
             containerId,
-            frequency,
-            period,
+            maxExecutions,
+            intervalSeconds,
             redundancy,
-            lazy,
-            paymentToken,
-            paymentAmount,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
             wallet,
             verifier,
             creationTimestamp
@@ -89,24 +108,24 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
     /// @notice Create new mock subscription without sending an initial request
     function createMockSubscriptionWithoutRequest(
         string calldata containerId,
-        uint32 frequency,
-        uint32 period,
+        uint32 maxExecutions,
+        uint32 intervalSeconds,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
     ) external returns (uint64) {
         uint64 actualSubscriptionID =
             _createComputeSubscription(
             containerId,
-            frequency,
-            period,
+            maxExecutions,
+            intervalSeconds,
             redundancy,
-            lazy,
-            paymentToken,
-            paymentAmount,
+            useDeliveryInbox,
+                feeToken,
+            feeAmount,
             wallet,
             verifier,
             bytes32("Coordinator_v1.0.0")
@@ -115,12 +134,12 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
         _assertSubscription(
             actualSubscriptionID,
             containerId,
-            frequency,
-            period,
+            maxExecutions,
+            intervalSeconds,
             redundancy,
-            lazy,
-            paymentToken,
-            paymentAmount,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
             wallet,
             verifier,
             block.timestamp
@@ -133,27 +152,27 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
     function _assertSubscription(
         uint64 subId,
         string calldata containerId,
-        uint32 frequency,
-        uint32 period,
+        uint32 maxExecutions,
+        uint32 intervalSeconds,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier,
         uint256 creationTimestamp
     ) private {
-        Subscription memory sub = _getRouter().getSubscription(subId);
+        ComputeSubscription memory sub = _getRouter().getComputeSubscription(subId);
 
-        assertEq(sub.activeAt, creationTimestamp + period);
-        assertEq(sub.owner, address(this));
+        assertEq(sub.activeAt, creationTimestamp + intervalSeconds);
+        assertEq(sub.client, address(this));
         assertEq(sub.redundancy, redundancy);
-        assertEq(sub.frequency, frequency);
-        assertEq(sub.period, period);
+        assertEq(sub.maxExecutions, maxExecutions);
+        assertEq(sub.intervalSeconds, intervalSeconds);
         assertEq(sub.containerId, keccak256(abi.encode(containerId)));
-        assertEq(sub.lazy, lazy);
-        assertEq(sub.paymentToken, paymentToken);
-        assertEq(sub.paymentAmount, paymentAmount);
+        assertEq(sub.useDeliveryInbox, useDeliveryInbox);
+        assertEq(sub.feeToken, feeToken);
+        assertEq(sub.feeAmount, feeAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
     }
@@ -161,22 +180,16 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
     /// @notice Allows cancelling subscription
     /// @param subscriptionId to cancel
     /// @dev Augmented with checks
-    /// @dev Asserts subscription owner is nullified after cancellation
+    /// @dev Asserts subscription client is nullified after cancellation
     function cancelMockSubscription(uint64 subscriptionId) external {
         _cancelComputeSubscription(subscriptionId);
         // Assert maxxed out subscription `activeAt`
         uint32 expected = type(uint32).max;
-        Subscription memory actual = _getRouter().getSubscription(subscriptionId);
+        ComputeSubscription memory actual = _getRouter().getComputeSubscription(subscriptionId);
         assertEq(actual.activeAt, expected);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                           INHERITED FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Override function to return container inputs
-    /// @return container inputs
-    function getContainerInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
+    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
         external
         pure
         override
@@ -191,7 +204,7 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
         uint64 subscriptionId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
+        bool useDeliveryInbox,
         address node,
         bytes calldata input,
         bytes calldata output,
@@ -203,7 +216,7 @@ contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionCompute
             subscriptionId: subscriptionId,
             interval: interval,
             redundancy: redundancy,
-            lazy: lazy,
+            useDeliveryInbox: useDeliveryInbox,
             node: node,
             input: input,
             output: output,

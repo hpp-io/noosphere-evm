@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {EIP712Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
-import {Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
+import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
+import {Coordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {MockTransientComputeClient} from "./mocks/client/MockTransientComputeClient.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
-import {LibDeploy} from "./lib/LibDeploy.sol";
-import {MockNode} from "./mocks/MockNode.sol";
+import {DeployUtils} from "./lib/DeployUtils.sol";
+import {MockAgent} from "./mocks/MockAgent.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
-import {MockSubscriptionComputeClient} from "./mocks/client/MockSubscriptionComputeClient.sol";
+import {MockScheduledComputeClient} from "./mocks/client/MockScheduledComputeClient.sol";
 import {MockToken} from "./mocks/MockToken.sol";
-import {Reader} from "../src/v1_0_0/utility/Reader.sol";
+import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -18,50 +18,8 @@ import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
-
-/// @title ICoordinatorEvents
-/// @notice Events emitted by Coordinator
-interface ICoordinatorEvents {
-    event SubscriptionCreated(uint64 indexed id);
-    event SubscriptionCancelled(uint64 indexed id);
-    event CommitmentTimedOut(bytes32 indexed requestId, uint64 indexed subscriptionId, uint32 indexed interval);
-    event ComputeDelivered(bytes32 indexed requestId, address nodeWallet, uint16 numRedundantDeliveries);
-    event ProofVerified(
-        uint64 indexed id, uint32 indexed interval, address indexed node, bool active, address verified, bool valid
-    );
-
-    event RequestStart(
-        bytes32 indexed requestId,
-        uint64 indexed subscriptionId,
-        bytes32 indexed containerId,
-        uint32 interval,
-        uint16 redundancy,
-        bool lazy,
-        uint256 paymentAmount,
-        address paymentToken,
-        address verifier,
-        address coordinator
-    );
-
-    error IntervalCompleted();
-    error IntervalMismatch(uint32 deliveryInterval);
-}
-
-/// @title IWalletEvents
-/// @notice Events emitted by Wallet
-interface IWalletEvents {
-    event Deposit(address indexed token, uint256 amount);
-    event Withdraw(address token, uint256 amount);
-    event Approval(address indexed spender, address indexed token, uint256 amount);
-    event RequestLocked(
-        bytes32 indexed requestId, address indexed spender, address token, uint256 totalAmount, uint16 redundancy
-    );
-    event RequestReleased(bytes32 indexed requestId, address indexed spender, address token, uint256 amountRefunded);
-    event RequestDisbursed(
-        bytes32 indexed requestId, address indexed to, address token, uint256 amount, uint16 paidCount
-    );
-}
+import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
+import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 
 /// @title ISubscriptionManagerErrors
 /// @notice Errors emitted by SubscriptionManager
@@ -115,7 +73,7 @@ abstract contract CoordinatorConstants {
 
 /// @title CoordinatorTest
 /// @notice Base setup to inherit for Coordinator subtests
-abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEvents {
+abstract contract ComputeTest is Test, CoordinatorConstants {
     /*//////////////////////////////////////////////////////////////
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
@@ -125,7 +83,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
 
     Router internal ROUTER;
 
-    EIP712Coordinator internal COORDINATOR;
+    DelegateeCoordinator internal COORDINATOR;
 
     /// @notice Inbox
 //    Inbox internal INBOX;
@@ -137,19 +95,19 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
     MockToken internal TOKEN;
 
     /// @notice Mock node (Alice)
-    MockNode internal ALICE;
+    MockAgent internal ALICE;
 
     /// @notice Mock node (Bob)
-    MockNode internal BOB;
+    MockAgent internal BOB;
 
     /// @notice Mock node (Charlie)
-    MockNode internal CHARLIE;
+    MockAgent internal CHARLIE;
 
     /// @notice Mock callback consumer
     MockTransientComputeClient internal CALLBACK;
 
     /// @notice Mock subscription consumer
-    MockSubscriptionComputeClient internal SUBSCRIPTION;
+    MockScheduledComputeClient internal SUBSCRIPTION;
 
     address internal userWalletAddress;
 
@@ -178,7 +136,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        (Router router, EIP712Coordinator coordinator, Reader reader, WalletFactory walletFactory) = LibDeploy.deployContracts(
+        (Router router, DelegateeCoordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) = DeployUtils.deployContracts(
             address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(TOKEN)
         );
         ROUTER = router;
@@ -190,14 +148,14 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         TOKEN = new MockToken();
 
         // Initalize mock nodes
-        ALICE = new MockNode(router);
-        BOB = new MockNode(router);
-        CHARLIE = new MockNode(router);
+        ALICE = new MockAgent(router);
+        BOB = new MockAgent(router);
+        CHARLIE = new MockAgent(router);
         // Initialize mock callback consumer
         CALLBACK = new MockTransientComputeClient(address(router));
 
         // Initialize mock subscription consumer
-        SUBSCRIPTION = new MockSubscriptionComputeClient(address(router));
+        SUBSCRIPTION = new MockScheduledComputeClient(address(router));
 
         // Initialize mock subscription consumer w/ Allowlist
         // Add only Alice as initially allowed node
@@ -205,7 +163,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         initialAllowed[0] = address(ALICE);
 
         // --- Wallet Setup Example ---
-        // 1. Create a wallet. The test contract will be the owner.
+        // 1. Create a wallet. The test contract will be the client.
         userWalletAddress = WALLET_FACTORY.createWallet(address(this));
         Wallet userWallet = Wallet(payable(userWalletAddress));
         aliceWalletAddress = WALLET_FACTORY.createWallet(address(this));
@@ -213,12 +171,12 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
         protocolWalletAddress = WALLET_FACTORY.createWallet(ownerProtocolWalletAddress);
 
         // Approve the coordinator to spend from the protocol wallet for native token
-        LibDeploy.updateBillingConfig(coordinator, 1 weeks,
+        DeployUtils.updateBillingConfig(coordinator, 1 weeks,
             protocolWalletAddress, MOCK_PROTOCOL_FEE,
             0, 0 ether, address(0));
 
         // 2. Define payment details for a paid request.
-        uint256 paymentAmount = 0.1 ether;
+        uint256 feeAmount = 0.1 ether;
 
         // 3. Fund the wallet with ETH to cover the payment.
         (bool success,) = userWalletAddress.call{value: 1 ether}("");
@@ -226,7 +184,7 @@ abstract contract CoordinatorTest is Test, CoordinatorConstants, ICoordinatorEve
 
         // 4. Approve the consumer contract (CALLBACK) to spend from the wallet.
         // The approval is for the native token (address(0)).
-        userWallet.approve(address(CALLBACK), address(0), paymentAmount);
+        userWallet.approve(address(CALLBACK), address(0), feeAmount);
         // --- End Wallet Setup ---
     }
 }

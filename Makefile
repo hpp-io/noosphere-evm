@@ -1,36 +1,67 @@
-# Use bash as shell
+# Use bash as the shell for enhanced scripting features
 SHELL := /bin/bash
 
-# Load environment variables
+# -----------------------------------------------------------------------------
+# 환경변수 로드 (.env가 있다면 읽어와서 Makefile에서 사용 가능하도록 export)
+# -----------------------------------------------------------------------------
 ifneq (,$(wildcard ./.env))
 	include .env
 	export
 endif
 
-# Phony targets
-.PHONY: install clean build test format docs snapshot diff deploy
+# -----------------------------------------------------------------------------
+# PHONY targets (파일과 이름이 겹치더라도 항상 실행되도록 함)
+# -----------------------------------------------------------------------------
+.PHONY: all install clean build test format docs snapshot diff deploy
 
-# Default: install deps, clean build outputs, format code, build code, run tests
+# -----------------------------------------------------------------------------
+# 기본 타깃: 의존 타깃을 차례로 실행
+# - 설치 -> 정리 -> 포맷 -> 빌드 -> 테스트
+# -----------------------------------------------------------------------------
 all: install clean format build test
 
-# Install dependencies
+# -----------------------------------------------------------------------------
+# 의존성 설치
+# - forge 의존성(라이브러리 등)을 가져옵니다.
+# -----------------------------------------------------------------------------
 install:
+	@echo "=> installing dependencies..."
 	@forge install
 
-# Clean build outputs
+# -----------------------------------------------------------------------------
+# 빌드 캐시/아티팩트 삭제
+# - 깨끗한 상태에서 빌드를 다시 하기 위해 사용
+# -----------------------------------------------------------------------------
 clean:
+	@echo "=> cleaning build artifacts..."
 	@forge clean
 
-# Build contracts + tests
+# -----------------------------------------------------------------------------
+# 컴파일/빌드
+# -----------------------------------------------------------------------------
 build:
+	@echo "=> building contracts and artifacts..."
 	@forge build
 
-# Run tests
+# -----------------------------------------------------------------------------
+# 모든 테스트 실행 (자세한 출력)
+# -----------------------------------------------------------------------------
 test:
+	@echo "=> running tests..."
 	@forge test -vvv
 
-# Execute scripts/deploy given environment variables
+# -----------------------------------------------------------------------------
+# 스크립트/배포 실행용 타깃
+# - 환경변수 RPC_URL 필요
+# - PRIVATE_KEY는 Deploy 스크립트(Forge Script)가 자체적으로 읽도록 설정되어야 함
+# - --skip-simulation 과 optimizer 옵션 등은 배포 정책에 따라 조정하세요.
+# -----------------------------------------------------------------------------
 deploy:
+	@if [ -z "$(RPC_URL)" ]; then \
+		echo "ERROR: RPC_URL environment variable is required for deploy"; \
+		exit 1; \
+	fi
+	@echo "=> running deploy script (broadcasting) to $(RPC_URL)..."
 	@forge script scripts/Deploy.sol:Deploy \
 		--broadcast \
 		--skip-simulation \
@@ -39,20 +70,34 @@ deploy:
 		--optimizer-runs 1000000 \
 		--extra-output-files abi \
 		--rpc-url $(RPC_URL)
-# Save gas snapshot
+
+# -----------------------------------------------------------------------------
+# gas snapshot 저장 (forge snapshot 사용)
+# -----------------------------------------------------------------------------
 snapshot:
+	@echo "=> saving current gas profile snapshot..."
 	@forge snapshot
 
-# Compare current gas profile to saved gas snapshot
+# -----------------------------------------------------------------------------
+# 저장된 스냅샷과 현재 프로파일 차이 출력
+# -----------------------------------------------------------------------------
 diff:
+	@echo "=> comparing gas snapshot (diff)..."
 	@forge snapshot --diff
 
-# Format contracts
+# -----------------------------------------------------------------------------
+# 코드 포맷팅
+# -----------------------------------------------------------------------------
 format:
+	@echo "=> formatting solidity files..."
 	@forge fmt
 
-# Generate and serve docs
+# -----------------------------------------------------------------------------
+# 문서 생성 및 로컬 서빙(브라우저 자동 오픈)
+# - 시스템에 `open` 커맨드가 없다면 주석 처리하세요 (Linux headless 환경 등)
+# -----------------------------------------------------------------------------
 docs:
+	@echo "=> building docs..."
 	@forge doc --build
-	@open http://localhost:4000
+	@echo "=> serving docs at http://localhost:4000"
 	@forge doc --serve --port 4000

@@ -1,101 +1,107 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
-import "../lib/LibDeploy.sol";
+import "../lib/DeployUtils.sol";
 import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-
-/// @title IWalletFactoryEvents
-/// @notice Events emitted by WalletFactory
-interface IWalletFactoryEvents {
-    event WalletCreated(address indexed caller, address indexed owner, address wallet);
-}
 
 /// @title WalletFactoryTest
-/// @notice Tests WalletFactory implementation
-contract WalletFactoryTest is Test, IWalletFactoryEvents {
+/// @notice Unit tests for WalletFactory deployment behavior and basic Router/Wallet integration.
+/// @dev Uses Forge vm utilities to deterministically predict addresses and impersonate callers.
+///      Tests assert provenance (factory-registered wallets) and Router-restricted wallet entrypoints.
+contract WalletFactoryTest is Test {
     /*//////////////////////////////////////////////////////////////
-                                INTERNAL
+                                 FIXTURE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Wallet factory
-    WalletFactory internal WALLET_FACTORY;
+    /// @notice WalletFactory under test
+    WalletFactory internal walletFactory;
 
-    Router internal ROUTER;
-    Coordinator internal COORDINATOR;
+    /// @notice Router instance deployed by LibDeploy
+    Router internal router;
+
+    /// @notice Coordinator instance deployed by LibDeploy (present for completeness)
+    Coordinator internal coordinator;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Deploy Router / Coordinator / WalletFactory via LibDeploy and wire Router -> WalletFactory.
     function setUp() public {
-        // Initialize contracts
+        // Use a deterministic nonce to allow create address prediction in tests
         uint256 initialNonce = vm.getNonce(address(this));
-        (Router router, Coordinator coordinator, , WalletFactory walletFactory) =
-                            LibDeploy.deployContracts(address(this), initialNonce, address(0), 1, address(0));
 
-        // Assign contracts
-        WALLET_FACTORY = walletFactory;
-        ROUTER = router;
-        COORDINATOR = coordinator;
+        // Deploy core contracts. LibDeploy returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
+        (Router deployedRouter, Coordinator deployedCoordinator, , WalletFactory deployedWalletFactory) =
+                            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
 
-        // Complete deployment by setting the WalletFactory address in the Router.
-        // This breaks the circular dependency during deployment.
+        router = deployedRouter;
+        coordinator = deployedCoordinator;
+        walletFactory = deployedWalletFactory;
+
+        // Complete wiring: inform Router about the WalletFactory address
         router.setWalletFactory(address(walletFactory));
     }
 
     /*//////////////////////////////////////////////////////////////
-                                 TESTS
+                                    TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Wallets created via `WalletFactory.createWallet()` are appropriately setup
-    function testFuzzWalletsAreCreatedCorrectly(address initialOwner) public {
+    /// @notice Creating a Wallet via the factory should:
+    ///         - deploy to the predictable CREATE address,
+    ///         - register the wallet as factory-created,
+    ///         - initialize the wallet owner,
+    ///         - and allow Router-only calls (we verify by impersonating Router and observing an expected InsufficientFunds revert).
+    function test_Succeeds_When_WalletCreatedByFactory_IsRegisteredAndRouterRestricted(address initialOwner) public {
+        // skip zero address owners — factory requires a non-zero initial owner
         vm.assume(initialOwner != address(0));
-        // Predict expected wallet address
-        uint256 nonce = vm.getNonce(address(WALLET_FACTORY));
-        address expected = vm.computeCreateAddress(address(WALLET_FACTORY), nonce);
-        bytes32 NAME = bytes32("Coordinator_v1.0.0");
-        // Create new wallet
-        vm.expectEmit(address(WALLET_FACTORY));
-        emit WalletCreated(address(this), initialOwner, expected);
-        address walletAddress = WALLET_FACTORY.createWallet(initialOwner);
 
-        // Verify wallet is deployed to correct address
-        assertEq(expected, walletAddress);
+        // predict next create address for factory
+        uint256 factoryNonce = vm.getNonce(address(walletFactory));
+        address expectedAddress = vm.computeCreateAddress(address(walletFactory), factoryNonce);
 
-        // Verify wallet is valid
-        assertTrue(WALLET_FACTORY.isValidWallet(walletAddress));
+        // expect WalletCreated event to be emitted by the factory
+        vm.expectEmit(true, true, false, false, address(walletFactory));
+        emit WalletFactory.WalletCreated(address(this), initialOwner, expectedAddress);
 
-        // Setup created wallet
-        Wallet wallet = Wallet(payable(walletAddress));
+        // create wallet via factory
+        address deployed = walletFactory.createWallet(initialOwner);
 
-        // Verify wallet owner is correctly set
-        assertEq(wallet.owner(), initialOwner);
-        // Verify router-only functions can be called by the router.
-        // We expect it to revert with InsufficientFunds, which confirms the auth check passed.
-        vm.startPrank(address(ROUTER));
+        // returned address must match predicted address
+        assertEq(deployed, expectedAddress, "deployed address mismatch");
+
+        // factory should mark the wallet as valid / provenance-known
+        assertTrue(walletFactory.isValidWallet(deployed), "factory did not register wallet");
+
+        // instantiate wallet for assertions
+        Wallet created = Wallet(payable(deployed));
+
+        // wallet owner should be set to initialOwner
+        assertEq(created.owner(), initialOwner, "wallet owner mismatch");
+
+        // impersonate Router and call a Router-only function to verify routing auth path works;
+        // since the wallet has no funds, the call should revert with InsufficientFunds (auth passed).
+        vm.startPrank(address(router));
         vm.expectRevert(Wallet.InsufficientFunds.selector);
-        wallet.cLock(address(0), address(0), 1);
-
+        created.lockEscrow(address(0), address(0), 1);
         vm.stopPrank();
     }
 
-    /// @notice Wallets not created via `WalletFactory` do not return as valid
-    function testFuzzWalletsCreatedDirectlyAreNotValid(address deployer) public {
+    /// @notice Wallets deployed directly (not created by the factory) must not be considered valid by the factory.
+    /// @dev Deploys a Wallet from an arbitrary EOA and checks that isValidWallet returns false.
+    function test_Succeeds_When_DirectlyDeployedWallet_IsNotRecognizedByFactory(address deployer) public {
         vm.assume(deployer != address(0));
-        // Deploy from a different address to increase entropy
+
+        // impersonate deployer to increase entropy of the deployed address
         vm.startPrank(deployer);
-
-        // Create wallet directly
-        Wallet wallet = new Wallet(address(ROUTER), deployer);
-
-        // Verify wallet is not valid
-        assertFalse(WALLET_FACTORY.isValidWallet(address(wallet)));
-
+        Wallet direct = new Wallet(address(router), deployer);
         vm.stopPrank();
+
+        // factory should not register this directly deployed wallet
+        assertFalse(walletFactory.isValidWallet(address(direct)), "directly deployed wallet incorrectly registered");
     }
 }

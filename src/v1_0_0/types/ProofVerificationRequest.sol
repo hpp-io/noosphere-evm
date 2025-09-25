@@ -6,8 +6,8 @@ struct ProofVerificationRequest {
     bytes32 requestId;
     address submitterAddress;
     address submitterWallet;
-    uint32 expiry;
     uint256 escrowedAmount;
     address escrowToken;
     uint256 slashAmount;
+    uint32 expiry;
 }

@@ -7,7 +7,7 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {Payment} from "./types/Payment.sol";
-import {Subscription} from "./types/Subscription.sol";
+import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
@@ -94,20 +94,20 @@ abstract contract Billing is IBilling, Routable {
         bytes32 containerId,
         uint32 interval,
         uint16 redundancy,
-        bool lazy,
-        address paymentToken,
-        uint256 paymentAmount,
+        bool useDeliveryInbox,
+        address feeToken,
+        uint256 feeAmount,
         address wallet,
         address verifier
     ) internal virtual returns (Commitment memory) {
         uint256 verifierFee = 0;
         if (verifier != address(0)) {
             IVerifier verifierContract = IVerifier(verifier);
-            if (verifierContract.isSupportedToken(paymentToken) == false) {
-                revert UnsupportedVerifierToken(paymentToken);
+            if (verifierContract.isPaymentTokenSupported(feeToken) == false) {
+                revert UnsupportedVerifierToken(feeToken);
             }
-            verifierFee = verifierContract.fee(paymentToken);
-            if (paymentAmount < verifierFee) {
+            verifierFee = verifierContract.fee(feeToken);
+            if (feeAmount < verifierFee) {
                 revert InsufficientForVerifierFee();
             }
         }
@@ -118,10 +118,10 @@ abstract contract Billing is IBilling, Routable {
             containerId: containerId,
             interval: interval,
             redundancy: redundancy,
-            lazy: lazy,
+            useDeliveryInbox: useDeliveryInbox,
             walletAddress: wallet,
-            paymentAmount: paymentAmount,
-            paymentToken: paymentToken,
+            feeAmount: feeAmount,
+            feeToken: feeToken,
             verifier: verifier, // Use the address of the verifier
             coordinator: address(this)
         });
@@ -174,7 +174,7 @@ abstract contract Billing is IBilling, Routable {
         _initiateVerification(commitment, proofSubmitter, nodeWallet, proof);
         _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         // Initiate verifier verification
-        IVerifier(commitment.verifier).requestProofVerification(
+        IVerifier(commitment.verifier).submitProofForVerification(
             commitment.subscriptionId, commitment.interval, proofSubmitter, proof
         );
     }
@@ -197,40 +197,40 @@ abstract contract Billing is IBilling, Routable {
         Commitment memory commitment,
         address nodeWallet
     ) internal view virtual returns (Payment[] memory) {
-        uint256 paymentAmount = commitment.paymentAmount;
+        uint256 feeAmount = commitment.feeAmount;
 
         // The original logic applies the fee twice, representing a fee on both
         // the consumer and the node from the total payment amount.
-        uint256 paidToProtocol = _calculateFee(paymentAmount, billingConfig.protocolFee * 2);
-        uint256 paidToNode = paymentAmount - paidToProtocol;
+        uint256 paidToProtocol = _calculateFee(feeAmount, billingConfig.protocolFee * 2);
+        uint256 paidToNode = feeAmount - paidToProtocol;
 
         Payment[] memory payments = new Payment[](2);
-        payments[0] = Payment(billingConfig.protocolFeeRecipient, commitment.paymentToken, paidToProtocol);
-        payments[1] = Payment(nodeWallet, commitment.paymentToken, paidToNode);
+        payments[0] = Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, paidToProtocol);
+        payments[1] = Payment(nodeWallet, commitment.feeToken, paidToNode);
 
         return payments;
     }
 
     /// @dev Prepares the immediate payment array for a verified fulfillment (pays protocol and verifier).
     function _prepareVerificationPayments(Commitment memory commitment) internal view virtual returns (Payment[] memory) {
-        uint256 tokenAvailable = commitment.paymentAmount;
+        uint256 tokenAvailable = commitment.feeAmount;
         IVerifier verifier = IVerifier(commitment.verifier);
-        if (!verifier.isSupportedToken(commitment.paymentToken)) {
-            revert UnsupportedVerifierToken(commitment.paymentToken);
+        if (!verifier.isPaymentTokenSupported(commitment.feeToken)) {
+            revert UnsupportedVerifierToken(commitment.feeToken);
         }
         uint256 baseProtocolFee = _calculateFee(tokenAvailable, billingConfig.protocolFee) * 2;
         tokenAvailable -= baseProtocolFee;
 
-        uint256 verifierFee = verifier.fee(commitment.paymentToken);
+        uint256 verifierFee = verifier.fee(commitment.feeToken);
         if (tokenAvailable < verifierFee) {
             revert InsufficientForVerifierFee();
         }
         uint256 verifierProtocolFee = _calculateFee(verifierFee, billingConfig.protocolFee);
         Payment[] memory immediatePayments = new Payment[](2);
         immediatePayments[0] =
-            Payment(billingConfig.protocolFeeRecipient, commitment.paymentToken, baseProtocolFee + verifierProtocolFee);
+            Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, baseProtocolFee + verifierProtocolFee);
         immediatePayments[1] = Payment(
-            verifier.getWallet(), commitment.paymentToken, verifierFee - verifierProtocolFee
+            verifier.paymentRecipient(), commitment.feeToken, verifierFee - verifierProtocolFee
         );
         return immediatePayments;
     }
@@ -244,10 +244,10 @@ abstract contract Billing is IBilling, Routable {
     ) internal virtual {
         // Calculate the final amount that will be paid to the node after fees.
         // This is the amount that will be escrowed and potentially slashed.
-        uint256 tokenAvailable = commitment.paymentAmount;
+        uint256 tokenAvailable = commitment.feeAmount;
         uint256 baseProtocolFee = _calculateFee(tokenAvailable, billingConfig.protocolFee) * 2;
         IVerifier verifier = IVerifier(commitment.verifier);
-        uint256 verifierFee = verifier.fee(commitment.paymentToken);
+        uint256 verifierFee = verifier.fee(commitment.feeToken);
         uint256 nodePaymentAmount = tokenAvailable - baseProtocolFee - verifierFee;
         bytes32 key = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, msg.sender));
         proofRequests[key] = ProofVerificationRequest({
@@ -257,7 +257,7 @@ abstract contract Billing is IBilling, Routable {
             submitterWallet: submitterWallet,
             expiry: uint32(block.timestamp + 1 weeks), // Example expiry
             escrowedAmount: nodePaymentAmount,
-            escrowToken: commitment.paymentToken,
+            escrowToken: commitment.feeToken,
             slashAmount: tokenAvailable
         });
         _getRouter().lockForVerification(proofRequests[key], commitment);
@@ -269,7 +269,7 @@ abstract contract Billing is IBilling, Routable {
     /// @param valid True if the proof was valid, false otherwise.
     function _finalizeVerification(ProofVerificationRequest memory request, bool valid, uint32 interval) internal virtual {
         bool expired = uint32(block.timestamp) >= request.expiry;
-        Subscription memory sub = _getRouter().getSubscription(request.subscriptionId);
+        ComputeSubscription memory sub = _getRouter().getComputeSubscription(request.subscriptionId);
         if (msg.sender != sub.verifier) {
             revert UnauthorizedVerifier();
         }
@@ -278,20 +278,20 @@ abstract contract Billing is IBilling, Routable {
         _getRouter().unlockForVerification(request);
 
         Payment[] memory payments = new Payment[](1);
-        // Pay the node if the proof is valid OR if the verification period has expired.
+        // Pay the node if the proof is valid OR if the verification intervalSeconds has expired.
         if (valid || expired) {
             payments[0] = Payment({
                 recipient: request.submitterWallet,
-                paymentToken: request.escrowToken,
-                paymentAmount: request.escrowedAmount
+                feeToken: request.escrowToken,
+                feeAmount: request.escrowedAmount
             });
-            _getRouter().payFromCoordinator(request.subscriptionId, interval, sub.wallet, sub.owner, payments);
+            _getRouter().payFromCoordinator(request.subscriptionId, interval, sub.wallet, sub.client, payments);
         } else {
-            // Slash the node if the proof is invalid AND the period has not expired.
+            // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({
                 recipient: sub.wallet,
-                paymentToken: sub.paymentToken,
-                paymentAmount: sub.paymentAmount
+                feeToken: sub.feeToken,
+                feeAmount: sub.feeAmount
             });
             _getRouter().payFromCoordinator(request.subscriptionId, interval, request.submitterWallet, request.submitterAddress, payments);
         }
@@ -308,8 +308,8 @@ abstract contract Billing is IBilling, Routable {
             payments = new Payment[](1);
             payments[0] = Payment({
                 recipient: nodeWallet,
-                paymentToken: billingConfig.tickNodeFeeToken,
-                paymentAmount: billingConfig.tickNodeFee
+                feeToken: billingConfig.tickNodeFeeToken,
+                feeAmount: billingConfig.tickNodeFee
             });
         }
 
