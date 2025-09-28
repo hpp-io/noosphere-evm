@@ -119,6 +119,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @dev Can only be called once by the client to break the circular dependency at deployment.
      * @param _walletFactory The address of the deployed WalletFactory contract.
      */
+
     function setWalletFactory(address _walletFactory) external onlyOwner {
         require(address(walletFactory) == address(0), "WalletFactory already set");
         require(_walletFactory != address(0), "Invalid WalletFactory address");
@@ -130,7 +131,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Implementation of abstract function in SubscriptionsManager
-    function _whenNotPaused() internal override view {
+    function _whenNotPaused() internal view override {
         _requireNotPaused();
     }
 
@@ -145,16 +146,18 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function getLastSubscriptionId() external override view returns (uint64)  {
+    function getLastSubscriptionId() external view override returns (uint64) {
         return currentSubscriptionId;
     }
     /**
      * @inheritdoc IRouter
      */
-    function sendRequest(
-        uint64 subscriptionId,
-        uint32 interval
-    ) external override returns (bytes32, Commitment memory) {
+
+    function sendRequest(uint64 subscriptionId, uint32 interval)
+        external
+        override
+        returns (bytes32, Commitment memory)
+    {
         return _sendRequest(subscriptionId, interval);
     }
 
@@ -240,7 +243,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external override {
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
+        external
+        override
+    {
         if (msg.sender != commitment.coordinator) {
             revert OnlyCallableFromCoordinator();
         }
@@ -266,13 +272,17 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             revert OnlyCallableFromCoordinator();
         }
         _unlockForVerification(proofRequest);
-        emit VerificationFundsUnlocked(proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount);
+        emit VerificationFundsUnlocked(
+            proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount
+        );
     }
 
-    function hasSubscriptionNextInterval(
-        uint64 subscriptionId,
-        uint32 currentInterval
-    ) external view override returns (bool) {
+    function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
+        external
+        view
+        override
+        returns (bool)
+    {
         return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
     }
 
@@ -304,7 +314,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function getContractById(bytes32 id) public view override returns (address) { // solhint-disable-line ordering
+    function getContractById(bytes32 id) public view override returns (address) {
+        // solhint-disable-line ordering
         return route[id];
     }
 
@@ -323,10 +334,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function proposeContractsUpdate(
-        bytes32[] calldata proposalSetIds,
-        address[] calldata proposalSetAddresses
-    ) external override {
+    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
+        external
+        override
+    {
         if (proposalSetIds.length != proposalSetAddresses.length || proposalSetIds.length == 0) {
             revert InvalidProposedUpdate();
         }
@@ -415,10 +426,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _sendRequest(
-        uint64 subscriptionId,
-        uint32 interval
-    ) private returns (bytes32, Commitment memory) {
+    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32, Commitment memory) {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
 
@@ -496,5 +504,4 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         _releaseTimeoutRequestLock(requestId, subscriptionId, interval);
         coordinator.cancelRequest(requestId);
     }
-
 }

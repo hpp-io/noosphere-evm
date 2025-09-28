@@ -86,7 +86,7 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
     DelegateeCoordinator internal COORDINATOR;
 
     /// @notice Inbox
-//    Inbox internal INBOX;
+    //    Inbox internal INBOX;
 
     /// @notice Wallet factory
     WalletFactory internal WALLET_FACTORY;
@@ -118,13 +118,13 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
     address internal protocolWalletAddress;
 
     /// @notice Mock subscription consumer w/ Allowlist
-//    MockAllowlistSubscriptionConsumer internal ALLOWLIST_SUBSCRIPTION;
+    //    MockAllowlistSubscriptionConsumer internal ALLOWLIST_SUBSCRIPTION;
 
     /// @notice Mock atomic verifier
-//    MockAtomicVerifier internal ATOMIC_VERIFIER;
+    //    MockAtomicVerifier internal ATOMIC_VERIFIER;
 
     /// @notice Mock optimistic verifier
-//    MockOptimisticVerifier internal OPTIMISTIC_VERIFIER;
+    //    MockOptimisticVerifier internal OPTIMISTIC_VERIFIER;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -136,7 +136,8 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        (Router router, DelegateeCoordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) = DeployUtils.deployContracts(
+        (Router router, DelegateeCoordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) =
+        DeployUtils.deployContracts(
             address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(TOKEN)
         );
         ROUTER = router;
@@ -171,9 +172,9 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         protocolWalletAddress = WALLET_FACTORY.createWallet(ownerProtocolWalletAddress);
 
         // Approve the coordinator to spend from the protocol wallet for native token
-        DeployUtils.updateBillingConfig(coordinator, 1 weeks,
-            protocolWalletAddress, MOCK_PROTOCOL_FEE,
-            0, 0 ether, address(0));
+        DeployUtils.updateBillingConfig(
+            coordinator, 1 weeks, protocolWalletAddress, MOCK_PROTOCOL_FEE, 0, 0 ether, address(0)
+        );
 
         // 2. Define payment details for a paid request.
         uint256 feeAmount = 0.1 ether;

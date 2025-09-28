@@ -15,9 +15,6 @@ import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
 
-
-
-
 /// @title SubscriptionBatchReaderTest
 /// @notice Tests SubscriptionBatchReader implementation
 /// @dev Inherits `ComputeTest` to borrow mocks and setup.
@@ -91,7 +88,10 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(SUBSCRIPTION), NO_PAYMENT_TOKEN, requiredFunds);
 
         console.log("User wallet balance before:", userWalletAddress.balance);
-        console.log("User wallet allowance for SUBSCRIPTION:", Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN));
+        console.log(
+            "User wallet allowance for SUBSCRIPTION:",
+            Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN)
+        );
 
         // Create normal subscriptions at ids {1, 2, 3, 4}
         for (uint32 i = 0; i < 4; i++) {
@@ -109,7 +109,10 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         }
 
         console.log("User wallet balance after creating subs:", userWalletAddress.balance);
-        console.log("User wallet allowance for SUBSCRIPTION after:", Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN));
+        console.log(
+            "User wallet allowance for SUBSCRIPTION after:",
+            Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN)
+        );
 
         // Cancel subscription id {4}
         vm.prank(address(SUBSCRIPTION));
@@ -173,9 +176,9 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Deliver (id: subOne, interval: 1) from Alice + Bob
         // Deliver (id: subTwo, interval: 1) from Alice
         vm.warp(1 minutes);
-        (, Commitment memory commitmentStruct1) = ROUTER.sendRequest(subOne, 1);
+        (, Commitment memory commitmentStruct1) = SUBSCRIPTION.sendRequest(subOne, 1);
         bytes memory commitment1 = abi.encode(commitmentStruct1);
-        (, Commitment memory commitmentStruct2) = ROUTER.sendRequest(subTwo, 1);
+        (, Commitment memory commitmentStruct2) = SUBSCRIPTION.sendRequest(subTwo, 1);
         bytes memory commitment2 = abi.encode(commitmentStruct2);
 
         ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment1, aliceWalletAddress);
@@ -184,7 +187,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
 
         // Deliver (id: subOne, interval: 2) from Alice
         vm.warp(2 minutes);
-        (, Commitment memory commitmentStruct3) = ROUTER.sendRequest(subOne, 2);
+        (, Commitment memory commitmentStruct3) = SUBSCRIPTION.sendRequest(subOne, 2);
         bytes memory commitment3 = abi.encode(commitmentStruct3);
         ALICE.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment3, aliceWalletAddress);
 
@@ -234,7 +237,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Deliver subscription
         vm.warp(1 minutes);
         uint32 interval = 1;
-        (, Commitment memory commitmentStruct) = ROUTER.sendRequest(subId, interval);
+        (, Commitment memory commitmentStruct) = SUBSCRIPTION.sendRequest(subId, interval);
         bytes memory commitment = abi.encode(commitmentStruct);
         ALICE.reportComputeResult(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment, aliceWalletAddress);
 
@@ -257,9 +260,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     }
 
     /// @notice Non-existent redundancy count returns `0`
-    function test_Fuzz_NonExistentInterval_ReturnsZeroRedundancy(uint64 subscriptionId, uint32 interval)
-        public
-    {
+    function test_Fuzz_NonExistentInterval_ReturnsZeroRedundancy(uint64 subscriptionId, uint32 interval) public {
         // Collect redundancy count
         uint64[] memory ids = new uint64[](1);
         uint32[] memory intervals = new uint32[](1);

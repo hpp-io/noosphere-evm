@@ -12,7 +12,6 @@ import {ComputeSubscription} from "../types/ComputeSubscription.sol";
 ///         adapters. Functions are grouped by responsibility (request lifecycle, fulfillment & payments,
 ///         verification escrow, subscription management, contract governance, and misc admin).
 interface IRouter {
-
     /*//////////////////////////////////////////////////////////////////////////
                               REQUEST LIFECYCLE - READ / SEND
     //////////////////////////////////////////////////////////////////////////*/
@@ -23,20 +22,19 @@ interface IRouter {
     /// @param interval Interval index (round) that the request targets.
     /// @return requestKey Opaque request key (e.g. keccak256 of relevant fields) used for lookup/timeouts.
     /// @return commitment Commitment struct describing the request's long-lived on-chain metadata.
-    function sendRequest(
-        uint64 subscriptionId,
-        uint32 interval
-    ) external returns (bytes32 requestKey, Commitment memory commitment);
+    function sendRequest(uint64 subscriptionId, uint32 interval)
+        external
+        returns (bytes32 requestKey, Commitment memory commitment);
 
     /// @notice Query whether the given subscription has a next interval after `currentInterval`.
     /// @dev Useful for nodes/planners to check if they should attempt to prepare/serve the next interval.
     /// @param subscriptionId Subscription identifier to check.
     /// @param currentInterval Current interval index.
     /// @return hasNext True if the subscription has another interval to process; false otherwise.
-    function hasSubscriptionNextInterval(
-        uint64 subscriptionId,
-        uint32 currentInterval
-    ) external view returns (bool hasNext);
+    function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
+        external
+        view
+        returns (bool hasNext);
 
     /*//////////////////////////////////////////////////////////////////////////
                          FULFILLMENT & PAYMENT HANDLERS
@@ -87,7 +85,8 @@ interface IRouter {
     ///      needed for verifier fees are reserved.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
     /// @param commitment Commitment that proves the original request context and pricing.
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external;
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
+        external;
 
     /// @notice Release/unlock previously locked funds after verification completes or is aborted.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
@@ -147,10 +146,8 @@ interface IRouter {
     /// @notice Propose an updated set of contracts (ids + new addresses) for governance review.
     /// @param proposalSetIds Array of contract ids to update.
     /// @param proposalSetAddresses Corresponding array of proposed addresses.
-    function proposeContractsUpdate(
-        bytes32[] calldata proposalSetIds,
-        address[] calldata proposalSetAddresses
-    ) external;
+    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
+        external;
 
     /// @notice Commit the previously proposed contracts set into active use.
     function updateContracts() external;

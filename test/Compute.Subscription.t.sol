@@ -8,7 +8,6 @@ import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
 contract ComputeSubscriptionTest is ComputeTest {
-
     event SubscriptionCreated(uint64 indexed subscriptionId);
 
     event SubscriptionCancelled(uint64 indexed subscriptionId);
@@ -38,7 +37,9 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.warp(block.timestamp + 1 minutes);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress);
+        ALICE.reportComputeResult(
+            commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
+        );
 
         // Cancel subscription
         vm.expectEmit(address(ROUTER));
@@ -85,7 +86,15 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.warp(blockTime);
 
         uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, maxExecutions, intervalSeconds, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID,
+            maxExecutions,
+            intervalSeconds,
+            1,
+            false,
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
         );
 
         // Subscription activeAt timestamp
@@ -102,7 +111,11 @@ contract ComputeSubscriptionTest is ComputeTest {
         // blockTime -> blockTime + intervalSeconds = underflow (this should never be called since we verify block.timestamp >= activeAt)
         // blockTime + N * intervalSeconds = N
         uint32 expected = 1;
-        for (uint32 start = blockTime + intervalSeconds; start < (blockTime) + (maxExecutions * intervalSeconds); start += intervalSeconds) {
+        for (
+            uint32 start = blockTime + intervalSeconds;
+            start < (blockTime) + (maxExecutions * intervalSeconds);
+            start += intervalSeconds
+        ) {
             // Set current time
             vm.warp(start);
 
@@ -166,7 +179,7 @@ contract ComputeSubscriptionTest is ComputeTest {
 
         // Warp to the first active interval and send the request
         vm.warp(1 minutes);
-        (, Commitment memory commitment1) = ROUTER.sendRequest(subId, 1);
+        (, Commitment memory commitment1) = SUBSCRIPTION.sendRequest(subId, 1);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // Successfully deliver for interval 1

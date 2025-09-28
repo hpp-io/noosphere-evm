@@ -30,13 +30,13 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
 
     /// @notice Per-request lock structure supporting redundancy and incremental payouts.
     struct RequestLock {
-        address spender;        // subscription client / spender
-        address token;          // token (address(0) == ETH)
-        uint256 totalAmount;    // total locked for the request (typically feeAmount * redundancy)
-        uint256 remainingAmount;// amount remaining to be disbursed for this request
-        uint16 redundancy;      // number of allowed payouts for this request
-        uint16 paidCount;       // number of payouts already executed
-        bool exists;            // existence flag
+        address spender; // subscription client / spender
+        address token; // token (address(0) == ETH)
+        uint256 totalAmount; // total locked for the request (typically feeAmount * redundancy)
+        uint256 remainingAmount; // amount remaining to be disbursed for this request
+        uint16 redundancy; // number of allowed payouts for this request
+        uint16 paidCount; // number of payouts already executed
+        bool exists; // existence flag
     }
 
     /// @notice Mapping from requestId (opaque bytes32) to RequestLock
@@ -56,13 +56,23 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
     event Approval(address indexed spender, address indexed token, uint256 amount);
 
     /// @notice Emitted when a new request-level lock is created.
-    event RequestLocked(bytes32 indexed requestId, address indexed spender, address indexed token, uint256 totalAmount, uint16 redundancy);
+    event RequestLocked(
+        bytes32 indexed requestId,
+        address indexed spender,
+        address indexed token,
+        uint256 totalAmount,
+        uint16 redundancy
+    );
 
     /// @notice Emitted when a request-level lock is released and leftover is refunded to allowance.
-    event RequestReleased(bytes32 indexed requestId, address indexed spender, address indexed token, uint256 amountRefunded);
+    event RequestReleased(
+        bytes32 indexed requestId, address indexed spender, address indexed token, uint256 amountRefunded
+    );
 
     /// @notice Emitted for each disbursement made as part of a request.
-    event RequestDisbursed(bytes32 indexed requestId, address indexed to, address indexed token, uint256 amount, uint16 paidCount);
+    event RequestDisbursed(
+        bytes32 indexed requestId, address indexed to, address indexed token, uint256 amount, uint16 paidCount
+    );
 
     /// @notice Emitted when router locks/unlocks escrow on behalf of a spender.
     /// @param spender spender whose balance was modified
@@ -219,13 +229,11 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
     /// @param totalAmount total amount reserved
     /// @param requestId opaque request identifier
     /// @param redundancy number of payouts allowed for this request
-    function lockForRequest(
-        address spender,
-        address token,
-        uint256 totalAmount,
-        bytes32 requestId,
-        uint16 redundancy
-    ) external onlyRouter nonReentrant {
+    function lockForRequest(address spender, address token, uint256 totalAmount, bytes32 requestId, uint16 redundancy)
+        external
+        onlyRouter
+        nonReentrant
+    {
         if (requestLocks[requestId].exists) revert RequestAlreadyLocked();
         if (totalAmount > _getUnlockedBalance(token)) revert InsufficientFunds();
         if (allowance[spender][token] < totalAmount) revert InsufficientAllowance();
@@ -388,24 +396,24 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
                                 DEPRECATED WRAPPERS
     //////////////////////////////////////////////////////////////*/
 
-//    /// @notice Deprecated compatibility wrapper for `lockEscrow`.
-//    /// @dev Kept for backwards compatibility with callers that still call `cLock`.
-//    function cLock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
-//        emit DeprecatedWrapperCalled(msg.sender, "cLock");
-//        lockEscrow(spender, token, amount);
-//    }
-//
-//    /// @notice Deprecated compatibility wrapper for `releaseEscrow`.
-//    function cUnlock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
-//        emit DeprecatedWrapperCalled(msg.sender, "cUnlock");
-//        releaseEscrow(spender, token, amount);
-//    }
-//
-//    /// @notice Deprecated compatibility wrapper for `transferByRouter`.
-//    function cTransfer(address spender, Payment[] calldata payments) external onlyRouter nonReentrant {
-//        emit DeprecatedWrapperCalled(msg.sender, "cTransfer");
-//        transferByRouter(spender, payments);
-//    }
+    //    /// @notice Deprecated compatibility wrapper for `lockEscrow`.
+    //    /// @dev Kept for backwards compatibility with callers that still call `cLock`.
+    //    function cLock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
+    //        emit DeprecatedWrapperCalled(msg.sender, "cLock");
+    //        lockEscrow(spender, token, amount);
+    //    }
+    //
+    //    /// @notice Deprecated compatibility wrapper for `releaseEscrow`.
+    //    function cUnlock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
+    //        emit DeprecatedWrapperCalled(msg.sender, "cUnlock");
+    //        releaseEscrow(spender, token, amount);
+    //    }
+    //
+    //    /// @notice Deprecated compatibility wrapper for `transferByRouter`.
+    //    function cTransfer(address spender, Payment[] calldata payments) external onlyRouter nonReentrant {
+    //        emit DeprecatedWrapperCalled(msg.sender, "cTransfer");
+    //        transferByRouter(spender, payments);
+    //    }
 
     /*//////////////////////////////////////////////////////////////
                                 FALLBACK

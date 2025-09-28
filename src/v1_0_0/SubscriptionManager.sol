@@ -28,18 +28,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
     /// @notice EIP-712 struct(Subscription) typeHash.
     /// @dev The fields must exactly match the order and types in the `Subscription` struct.
-    bytes32 private constant EIP712_SUBSCRIPTION_TYPEHASH =
-        keccak256(
-            "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
-        );
+    bytes32 private constant EIP712_SUBSCRIPTION_TYPEHASH = keccak256(
+        "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+    );
 
     /// @notice EIP-712 struct(DelegateSubscription) typeHash.
     /// @dev The `nonce` prevents signature replay for a given subscriber.
     /// @dev The `expiry` defines when the delegated subscription signature expires.
-    bytes32 private constant EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH =
-        keccak256(
-            "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
-        );
+    bytes32 private constant EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH = keccak256(
+        "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+    );
 
     /// @dev Mapping of subscription IDs to `Subscription` objects.
     mapping(uint64 /* subscriptionId */ => ComputeSubscription) internal subscriptions;
@@ -95,17 +93,17 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         return _getSubscriptionInterval(subscriptionId);
     }
 
-//    /**
-//     * @inheritdoc ISubscriptionsManager
-//     */
-//    function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
-//        external
-//        view
-//        virtual
-//        returns (bool)
-//    {
-//        return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
-//    }
+    //    /**
+    //     * @inheritdoc ISubscriptionsManager
+    //     */
+    //    function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
+    //        external
+    //        view
+    //        virtual
+    //        returns (bool)
+    //    {
+    //        return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
+    //    }
 
     function createComputeSubscription(
         string memory containerId,
@@ -180,7 +178,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 subHash = _hashSubscription(sub);
 
         // Hash the full delegated subscription data.
-        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
+        bytes32 digest =
+            _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
 
         // Recover the signer from the signature.
         address recoveredSigner = ECDSA.recover(digest, signature);
@@ -274,13 +273,13 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                             INTERNAL LOGIC HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /** @dev Hashes the `Subscription` struct for EIP-712 signing.
-      * @param sub The subscription struct to hash.
-      * @return The EIP-712 hash of the struct.
-      */
+    /**
+     * @dev Hashes the `Subscription` struct for EIP-712 signing.
+     * @param sub The subscription struct to hash.
+     * @return The EIP-712 hash of the struct.
+     */
     function _hashSubscription(ComputeSubscription calldata sub) internal pure returns (bytes32) {
-        return
-            keccak256(
+        return keccak256(
             abi.encode(
                 EIP712_SUBSCRIPTION_TYPEHASH,
                 sub.client,
@@ -308,7 +307,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint32 intervalSeconds = sub.intervalSeconds;
         if (uint32(block.timestamp) < activeAt) {
             return 0;
-//            revert SubscriptionNotActive();
+            //            revert SubscriptionNotActive();
         }
         if (intervalSeconds == 0) {
             return 1;
@@ -365,12 +364,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         submitterWallet.releaseEscrow(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
     }
 
-
-    function _payForFulfillment(
-        bytes32 requestId,
-        address walletAddress,
-        Payment[] memory payments
-    ) internal {
+    function _payForFulfillment(bytes32 requestId, address walletAddress, Payment[] memory payments) internal {
         if (requestCommitments[requestId] == bytes32(0)) {
             revert NoSuchCommitment();
         }
@@ -381,11 +375,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         consumer.disburseForFulfillment(requestId, payments);
     }
 
-    function _pay(
-        address walletAddress,
-        address spenderAddress,
-        Payment[] memory payments
-    ) internal {
+    function _pay(address walletAddress, address spenderAddress, Payment[] memory payments) internal {
         Wallet wallet = Wallet(payable(walletAddress));
         if (_getWalletFactory().isValidWallet(address(wallet)) == false) {
             revert InvalidWallet();
@@ -405,8 +395,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 containerId
     ) internal {
         ComputeSubscription memory subscription = subscriptions[subscriptionId];
-        ComputeClient(subscription.client).receiveRequestCompute(subscriptionId, interval, numRedundantDeliveries, useDeliveryInbox, node,
-            input, output, proof, bytes32(0));
+        ComputeClient(subscription.client).receiveRequestCompute(
+            subscriptionId, interval, numRedundantDeliveries, useDeliveryInbox, node, input, output, proof, bytes32(0)
+        );
     }
 
     function _cancelSubscriptionHelper(uint64 subscriptionId) internal {
@@ -436,11 +427,11 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         // Internal implementation placeholder
     }
 
-    function _computeCommitmentHash(
-        uint64 subscriptionId,
-        uint32 interval,
-        address coordinator
-    ) internal view returns (bytes32) {
+    function _computeCommitmentHash(uint64 subscriptionId, uint32 interval, address coordinator)
+        internal
+        view
+        returns (bytes32)
+    {
         ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
             abi.encode(
@@ -464,11 +455,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         return subscriptions[subscriptionId].activeAt != type(uint32).max;
     }
 
-    function _hasSubscriptionNextInterval(
-        uint64 subscriptionId,
-        uint32 currentInterval
-    ) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
+    function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions)
+        {
             return false;
         }
         ComputeSubscription storage sub = subscriptions[subscriptionId];

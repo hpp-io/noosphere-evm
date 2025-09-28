@@ -53,9 +53,9 @@ contract SubscriptionBatchReader {
     /// @param endId Exclusive end subscription id.
     /// @return subscriptions Array of ComputeSubscription for ids in [startId, endId).
     function getSubscriptions(uint64 startId, uint64 endId)
-    external
-    view
-    returns (ComputeSubscription[] memory subscriptions)
+        external
+        view
+        returns (ComputeSubscription[] memory subscriptions)
     {
         uint256 len = uint256(endId - startId);
         subscriptions = new ComputeSubscription[](len);
@@ -72,9 +72,9 @@ contract SubscriptionBatchReader {
     /// @param intervals Array of interval indices; intervals[i] corresponds to ids[i].
     /// @return statuses Array of IntervalStatus for each input pair.
     function getIntervalStatuses(uint64[] calldata ids, uint32[] calldata intervals)
-    external
-    view
-    returns (IntervalStatus[] memory statuses)
+        external
+        view
+        returns (IntervalStatus[] memory statuses)
     {
         uint256 n = ids.length;
         statuses = new IntervalStatus[](n);

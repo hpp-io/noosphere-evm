@@ -42,8 +42,8 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
         uint256 initialNonce = vm.getNonce(address(this));
 
         // LibDeploy.deployContracts returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
-        (Router deployedRouter, Coordinator deployedCoordinator, , WalletFactory deployedWalletFactory) =
-                            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
+        (Router deployedRouter, Coordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
+            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
 
         router = deployedRouter;
         coordinator = deployedCoordinator;
@@ -109,7 +109,9 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
         Wallet directWallet = new Wallet(address(router), deployer);
 
         // The factory should not mark this directly-deployed wallet as valid
-        assertFalse(walletFactory.isValidWallet(address(directWallet)), "directly deployed wallet incorrectly registered");
+        assertFalse(
+            walletFactory.isValidWallet(address(directWallet)), "directly deployed wallet incorrectly registered"
+        );
 
         vm.stopPrank();
     }

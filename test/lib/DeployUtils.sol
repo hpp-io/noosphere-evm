@@ -45,7 +45,15 @@ library DeployUtils {
         address initialFeeRecipient,
         uint16 initialFee,
         address tokenAddr
-    ) internal returns (Router router, DelegateeCoordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) {
+    )
+        internal
+        returns (
+            Router router,
+            DelegateeCoordinator coordinator,
+            SubscriptionBatchReader reader,
+            WalletFactory walletFactory
+        )
+    {
         // Deploy Router first (dependency for the other contracts).
         router = new Router();
 
@@ -53,7 +61,7 @@ library DeployUtils {
         coordinator = _deployCoordinator(address(router), deployerAddress, initialFeeRecipient, initialFee, tokenAddr);
 
         // Deploy lightweight reader and wallet factory wired to the router + coordinator.
-        reader = new SubscriptionBatchReader (address(router), address(coordinator));
+        reader = new SubscriptionBatchReader(address(router), address(coordinator));
         walletFactory = new WalletFactory(address(router));
 
         // Register Coordinator into the Router's contract registry so lookups succeed.

@@ -53,19 +53,18 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         address verifier
     ) external returns (uint64, Commitment memory) {
         uint256 creationTimestamp = block.timestamp;
-        uint64 actualSubscriptionID =
-                        _createComputeSubscription(
-                containerId,
-                maxExecutions,
-                intervalSeconds,
-                redundancy,
-                useDeliveryInbox,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                bytes32("Coordinator_v1.0.0")
-            );
+        uint64 actualSubscriptionID = _createComputeSubscription(
+            containerId,
+            maxExecutions,
+            intervalSeconds,
+            redundancy,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            bytes32("Coordinator_v1.0.0")
+        );
 
         _assertSubscription(
             actualSubscriptionID,
@@ -96,19 +95,18 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         address wallet,
         address verifier
     ) external returns (uint64) {
-        uint64 actualSubscriptionID =
-                        _createComputeSubscription(
-                containerId,
-                maxExecutions,
-                intervalSeconds,
-                redundancy,
-                useDeliveryInbox,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                bytes32("Coordinator_v1.0.0")
-            );
+        uint64 actualSubscriptionID = _createComputeSubscription(
+            containerId,
+            maxExecutions,
+            intervalSeconds,
+            redundancy,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            bytes32("Coordinator_v1.0.0")
+        );
 
         _assertSubscription(
             actualSubscriptionID,
@@ -169,10 +167,10 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     }
 
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-    external
-    pure
-    override
-    returns (bytes memory)
+        external
+        pure
+        override
+        returns (bytes memory)
     {
         return CONTAINER_INPUTS;
     }

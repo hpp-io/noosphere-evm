@@ -94,8 +94,14 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Deploy core contracts and supporting utilities via helper
-        (Router deployedRouter, DelegateeCoordinator deployedCoordinator, SubscriptionBatchReader reader, WalletFactory deployedWalletFactory) = DeployUtils
-            .deployContracts(address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token));
+        (
+            Router deployedRouter,
+            DelegateeCoordinator deployedCoordinator,
+            SubscriptionBatchReader reader,
+            WalletFactory deployedWalletFactory
+        ) = DeployUtils.deployContracts(
+            address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token)
+        );
         router = deployedRouter;
         coordinator = deployedCoordinator;
         walletFactory = deployedWalletFactory;
@@ -119,7 +125,9 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         protocolWalletAddr = walletFactory.createWallet(ownerProtocolWalletAddress);
 
         // configure billing settings for coordinator (protocol fee recipient / wallet)
-        DeployUtils.updateBillingConfig(coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0, 0 ether, address(0));
+        DeployUtils.updateBillingConfig(
+            coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0, 0 ether, address(0)
+        );
 
         // setup delegatee and backup keys/addresses
         delegateeKey = 0xA11CE;
@@ -164,8 +172,14 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
     /// @param expiry expiry timestamp of the signature
     /// @param sub subscription payload being signed
     /// @return typed EIP-712 digest that should be signed/off-chain recovered
-    function buildTypedMessage(uint32 nonce, uint32 expiry, ComputeSubscription memory sub) public view returns (bytes32) {
-        return EIP712Utils.buildTypedDataHash(router.EIP712_NAME(), router.EIP712_VERSION(), address(router), nonce, expiry, sub);
+    function buildTypedMessage(uint32 nonce, uint32 expiry, ComputeSubscription memory sub)
+        public
+        view
+        returns (bytes32)
+    {
+        return EIP712Utils.buildTypedDataHash(
+            router.EIP712_NAME(), router.EIP712_VERSION(), address(router), nonce, expiry, sub
+        );
     }
 
     /// @notice Convenience flow: create a delegated subscription via EIP-712 signature
@@ -208,7 +222,9 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         }
 
         // ensure delegate-created id mapping set
-        assertEq(router.delegateCreatedIds(keccak256(abi.encodePacked(address(transientClient), nonce))), subscriptionId);
+        assertEq(
+            router.delegateCreatedIds(keccak256(abi.encodePacked(address(transientClient), nonce))), subscriptionId
+        );
         return subscriptionId;
     }
 
@@ -416,7 +432,9 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         uint32 deliveryInterval = 1;
         // Alice delivers using the delegatee flow; this will create subscription and deliver output
-        nodeAlice.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+        );
 
         DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval, 1);
         assertEq(out.subscriptionId, 1);
@@ -446,7 +464,9 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         // make subscription active by advancing time
         vm.warp(block.timestamp + 1 minutes);
 
-        nodeAlice.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+        );
 
         // pending delivery should be stored in the subscription client's inbox
         bytes32 requestId = keccak256(abi.encodePacked(uint64(1), deliveryInterval));
@@ -475,14 +495,16 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         // record logs to extract events emitted by coordinator during atomic delivery
         vm.recordLogs();
-        nodeAlice.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+        );
 
         // find RequestStarted Commitment in recorded logs
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 requestStartedTopic = ICoordinator.RequestStarted.selector;
         Commitment memory commitment;
         bool found = false;
-        for (uint i = 0; i < logs.length; i++) {
+        for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == requestStartedTopic) {
                 commitment = abi.decode(logs[i].data, (Commitment));
                 found = true;
@@ -494,11 +516,15 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         // subsequent deliveries for the same interval should revert with IntervalCompleted
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr);
+        nodeBob.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
+        );
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportComputeResult(deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddr);
+        nodeBob.reportComputeResult(
+            deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddr
+        );
     }
 
     /// @notice Delegated delivery to an existing subscription should accept multiple distinct node responses up to redundancy.
@@ -514,17 +540,23 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         uint32 deliveryInterval = 1;
         // first node responds
-        nodeAlice.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+        );
         bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
         assertEq(coordinator.nodeResponded(key), true);
 
         // second node responds
-        nodeBob.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr);
+        nodeBob.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
+        );
         key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeBob)));
         assertEq(coordinator.nodeResponded(key), true);
 
         // a duplicate attempt from the same node should revert
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportDelegatedComputeResult(nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr);
+        nodeBob.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
+        );
     }
 }

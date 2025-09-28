@@ -90,15 +90,7 @@ contract MockAgent is StdAssertions {
         address nodeWallet
     ) external {
         delegateeCoordinator.reportDelegatedComputeResult(
-            nonce,
-            expiry,
-            sub,
-            signature,
-            deliveryInterval,
-            input,
-            output,
-            proof,
-            nodeWallet
+            nonce, expiry, sub, signature, deliveryInterval, input, output, proof, nodeWallet
         );
     }
 

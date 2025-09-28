@@ -11,7 +11,6 @@ import {ComputeClient} from "./ComputeClient.sol";
  * where the inputs for a computation are stored temporarily on-chain.
  */
 abstract contract TransientComputeClient is ComputeClient {
-
     mapping(uint64 => bytes) internal subscriptionInputs;
 
     constructor(address router) ComputeClient(router) {}
@@ -33,7 +32,7 @@ abstract contract TransientComputeClient is ComputeClient {
 
     function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
         subscriptionInputs[subscriptionId] = inputs;
-        (bytes32 requestId, Commitment memory commitment) =_getRouter().sendRequest(subscriptionId, 1);
+        (bytes32 requestId, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, 1);
         return (subscriptionId, commitment);
     }
 

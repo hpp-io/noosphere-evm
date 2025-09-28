@@ -103,12 +103,10 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
 
     /// @inheritdoc ICoordinator
     /// @dev Called by verifier adapters (mocks or real) to publish verification outcome.
-    function reportVerificationResult(
-        uint64 subscriptionId,
-        uint32 interval,
-        address node,
-        bool valid
-    ) external override {
+    function reportVerificationResult(uint64 subscriptionId, uint32 interval, address node, bool valid)
+        external
+        override
+    {
         // Lookup the proof request entry keyed by (subscriptionId, interval, node)
         bytes32 key = keccak256(abi.encode(subscriptionId, interval, node));
         ProofVerificationRequest memory request = proofRequests[key];

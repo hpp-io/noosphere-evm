@@ -17,7 +17,9 @@ interface ICoordinator {
     /// @param requestId Opaque request key assigned to this request.
     /// @param containerId Identifier of the compute container.
     /// @param commitment Full Commitment struct describing this request.
-    event RequestStarted(bytes32 indexed requestId, uint64 indexed subscriptionId, bytes32 indexed containerId, Commitment commitment);
+    event RequestStarted(
+        bytes32 indexed requestId, uint64 indexed subscriptionId, bytes32 indexed containerId, Commitment commitment
+    );
 
     /// @notice Emitted when a pending request is cancelled.
     /// @param requestId Opaque request key that was cancelled.
@@ -35,7 +37,9 @@ interface ICoordinator {
     /// @param node Node address whose proof was verified.
     /// @param valid Whether the subscription / interval was considered active at verification time.
     /// @param verifier Address of the verifier that reported the result (msg.sender).
-    event ProofVerified(uint64 indexed subscriptionId, uint32 indexed interval, address indexed node, bool valid, address verifier);
+    event ProofVerified(
+        uint64 indexed subscriptionId, uint32 indexed interval, address indexed node, bool valid, address verifier
+    );
 
     /*//////////////////////////////////////////////////////////////////////////
                                  ERRORS

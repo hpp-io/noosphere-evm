@@ -2,9 +2,9 @@
 pragma solidity ^0.8.23;
 
 interface IOwnable {
-  function client() external returns (address);
+    function client() external returns (address);
 
-  function transferOwnership(address recipient) external;
+    function transferOwnership(address recipient) external;
 
-  function acceptOwnership() external;
+    function acceptOwnership() external;
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
+
 import {PendingDelivery} from "../types/PendingDelivery.sol";
 
 /// @title DeliveryInbox.sol
@@ -79,11 +80,7 @@ abstract contract DeliveryInbox {
 
     /// @notice Internal: clear stored pending delivery for (requestId, node).
     /// @dev If `removeFromIndex` = true, node will also be removed from index (O(n)).
-    function _clearDelivery(
-        bytes32 requestId,
-        address node,
-        bool removeFromIndex
-    ) internal {
+    function _clearDelivery(bytes32 requestId, address node, bool removeFromIndex) internal {
         PendingDelivery storage pd = _deliveriesByRequest[requestId][node];
         // timestamp 0 indicates empty slot (we never store timestamp == 0)
         if (pd.timestamp == 0) return;
@@ -126,9 +123,9 @@ abstract contract DeliveryInbox {
     /// @notice Read stored pending delivery for (requestId, node).
     /// @return exists true if present, and the PendingDelivery payload (copied to memory).
     function getDelivery(bytes32 requestId, address node)
-    public
-    view
-    returns (bool exists, PendingDelivery memory pd)
+        public
+        view
+        returns (bool exists, PendingDelivery memory pd)
     {
         PendingDelivery storage r = _deliveriesByRequest[requestId][node];
         if (r.timestamp == 0) return (false, pd);

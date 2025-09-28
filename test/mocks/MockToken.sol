@@ -6,7 +6,6 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 /// @title MockToken
 /// @notice Mocks ERC20 token with exposed mint functionality
 contract MockToken is ERC20 {
-
     /// @notice Initializes the mock token with a name and symbol.
     constructor() ERC20("TOKEN", "TOKEN") {}
 

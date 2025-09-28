@@ -6,7 +6,6 @@ pragma solidity 0.8.23;
 struct ContractProposalSet {
     /// @notice Array of contract identifiers
     bytes32[] ids;
-
     /// @notice Array of corresponding contract addresses
     address[] to;
 }

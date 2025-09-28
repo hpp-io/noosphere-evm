@@ -15,7 +15,6 @@ import {MockVerifier} from "./MockVerifier.sol";
 ///      The contract stores lightweight submission metadata (no raw proof bytes — only a hash) so test
 ///      code can correlate later finalization with the original submission.
 contract MockDeferredVerifier is MockVerifier {
-
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -36,12 +35,11 @@ contract MockDeferredVerifier is MockVerifier {
     /// @param interval Interval index (round) this proof targets.
     /// @param node Address of the agent/node submitting the proof.
     /// @param proof Raw proof bytes (not stored on-chain; only hashed for correlation).
-    function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address node,
-        bytes calldata proof
-    ) external virtual override {
+    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
+        external
+        virtual
+        override
+    {
         // signal that the request was accepted
         emit VerificationRequested(subscriptionId, interval, node);
     }
@@ -58,7 +56,7 @@ contract MockDeferredVerifier is MockVerifier {
     /// @param node The address of the agent/node that submitted the proof.
     /// @param valid True if the proof is valid, false otherwise.
 
-    function mockFinalizeVerification(uint64 subscriptionId, uint32 interval, address node, bool valid)  external {
+    function mockFinalizeVerification(uint64 subscriptionId, uint32 interval, address node, bool valid) external {
         // call into the Coordinator to finalize the verification outcome
         coordinator.reportVerificationResult(subscriptionId, interval, node, valid);
     }

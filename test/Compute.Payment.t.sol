@@ -119,8 +119,9 @@ contract ComputePaymentNoProofTest is ComputeTest {
         vm.prank(address(ALICE));
         Wallet(payable(aliceWallet)).approve(address(CALLBACK), address(TOKEN), 90e6);
 
-        (uint64 subId, Commitment memory commitment) =
-                            CALLBACK.createMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(TOKEN), 50e6, aliceWallet, NO_VERIFIER);
+        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(TOKEN), 50e6, aliceWallet, NO_VERIFIER
+        );
         assertEq(subId, 1);
 
         // Verify initial balances and allowances

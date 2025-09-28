@@ -3,15 +3,15 @@ pragma solidity ^0.8.23;
 
 import "../utility/Routable.sol";
 import "./DeliveryInbox.sol";
+import {Commitment} from "../types/Commitment.sol";
 
 /**
  * @title ComputeClient
  * @dev Abstract contract for interacting with the Noosphere compute network.
  */
 abstract contract ComputeClient is Routable, DeliveryInbox {
-    
     error NotRouter();
-    
+
     constructor(address router) Routable(router) {}
 
     function createComputeSubscription(
@@ -26,19 +26,25 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         address verifier,
         bytes32 routeId
     ) external returns (uint64) {
-        return
-            _getRouter().createComputeSubscription(
-                containerId,
-                maxExecutions,
-                intervalSeconds,
-                redundancy,
-                useDeliveryInbox,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                routeId
-            );
+        return _getRouter().createComputeSubscription(
+            containerId,
+            maxExecutions,
+            intervalSeconds,
+            redundancy,
+            useDeliveryInbox,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            routeId
+        );
+    }
+
+    function sendRequest(uint64 subscriptionId, uint32 interval)
+        external
+        returns (bytes32 requestKey, Commitment memory commitment)
+    {
+        return _getRouter().sendRequest(subscriptionId, interval);
     }
 
     function receiveRequestCompute(
@@ -54,7 +60,8 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
     ) external {
         // Note: The original check was against a `COORDINATOR` variable that is no longer defined.
         // This check should be updated to reflect the current authorization mechanism, likely via the router.
-        if (msg.sender != address (_getRouter())) { // Example check, might need adjustment based on router logic.
+        if (msg.sender != address(_getRouter())) {
+            // Example check, might need adjustment based on router logic.
             revert NotRouter();
         }
 
@@ -72,7 +79,8 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
                 input,
                 output,
                 proof,
-                containerId);
+                containerId
+            );
         }
     }
 
@@ -82,7 +90,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         virtual
         returns (bytes memory)
     {}
-
 
     function _receiveCompute(
         uint64 subscriptionId,
@@ -95,7 +102,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         bytes calldata proof,
         bytes32 containerId
     ) internal virtual {}
-
 
     function _cancelComputeSubscription(uint64 subscriptionId) internal {
         _getRouter().cancelComputeSubscription(subscriptionId);

@@ -42,22 +42,23 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         // Request off-chain container compute
         bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
 
-        uint64 subId =
-            _createComputeSubscription(
-                containerId,
-                redundancy,
-                false,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                bytes32("Coordinator_v1.0.0")
-            );
+        uint64 subId = _createComputeSubscription(
+            containerId, redundancy, false, feeToken, feeAmount, wallet, verifier, bytes32("Coordinator_v1.0.0")
+        );
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID, containerId, inputs, redundancy, false, feeToken, feeAmount, wallet, verifier, currentTimestamp
+            actualSubscriptionID,
+            containerId,
+            inputs,
+            redundancy,
+            false,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            currentTimestamp
         );
 
         return (actualSubscriptionID, commitment);
@@ -78,21 +79,31 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         // Request off-chain container compute
         bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
 
-        uint64 subId =
-            _createComputeSubscription(
-                containerId,
-                redundancy,
-                true, // useDeliveryInbox = true
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                bytes32("Coordinator_v1.0.0")
-            );
+        uint64 subId = _createComputeSubscription(
+            containerId,
+            redundancy,
+            true, // useDeliveryInbox = true
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            bytes32("Coordinator_v1.0.0")
+        );
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
-        _assertSubscription(actualSubscriptionID, containerId, inputs, redundancy, true, feeToken, feeAmount, wallet, verifier, currentTimestamp);
+        _assertSubscription(
+            actualSubscriptionID,
+            containerId,
+            inputs,
+            redundancy,
+            true,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            currentTimestamp
+        );
 
         return (actualSubscriptionID, commitment);
     }

@@ -7,7 +7,6 @@ import {ComputeSubscription} from "../types/ComputeSubscription.sol";
 /// @notice Interface for managing compute subscriptions: read access, creation, cancellation and simple state checks.
 /// @dev Functions are grouped by responsibility (events, read-only accessors, mutating operations, helpers).
 interface ISubscriptionsManager {
-
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -39,7 +38,10 @@ interface ISubscriptionsManager {
      * @param subscriptionId Subscription identifier to query.
      * @return subscription The stored ComputeSubscription struct for `subscriptionId`.
      */
-    function getComputeSubscription(uint64 subscriptionId) external view returns (ComputeSubscription memory subscription);
+    function getComputeSubscription(uint64 subscriptionId)
+        external
+        view
+        returns (ComputeSubscription memory subscription);
 
     /**
      * @notice Compute the current interval index for a subscription.

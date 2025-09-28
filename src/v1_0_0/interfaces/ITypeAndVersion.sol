@@ -2,5 +2,5 @@
 pragma solidity ^0.8.23;
 
 interface ITypeAndVersion {
-  function typeAndVersion() external pure returns (string memory);
+    function typeAndVersion() external pure returns (string memory);
 }

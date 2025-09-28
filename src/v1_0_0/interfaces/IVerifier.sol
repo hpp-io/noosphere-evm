@@ -12,11 +12,7 @@ interface IVerifier {
     /// @param subscriptionId Subscription identifier that this verification relates to.
     /// @param interval Interval index (or round) that this verification concerns.
     /// @param node Address of the agent/node that submitted the proof.
-    event VerificationRequested(
-        uint64 indexed subscriptionId,
-        uint32 indexed interval,
-        address node
-    );
+    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address node);
 
     /// @notice Returns the fee required by the verifier when paid in `token`.
     /// @param token ERC20 token address (or `address(0)` for native ETH).
@@ -32,7 +28,6 @@ interface IVerifier {
     /// @return accepted True when the token is accepted for payment.
     function isPaymentTokenSupported(address token) external view returns (bool accepted);
 
-
     /// @notice Submit a proof for asynchronous verification.
     /// @dev Implementations MUST either emit `VerificationRequested(requestId, ...)` or return a non-zero
     ///      `requestId` when a submission is accepted. Verification results are delivered out-of-band
@@ -41,10 +36,6 @@ interface IVerifier {
     /// @param interval Interval index (or round) that this proof corresponds to.
     /// @param node Address of the agent/node that produced and submitted the proof.
     /// @param proof Arbitrary proof bytes understood by the verifier implementation.
-    function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address node,
-        bytes calldata proof
-    ) external;
+    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
+        external;
 }

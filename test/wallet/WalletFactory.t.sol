@@ -36,8 +36,8 @@ contract WalletFactoryTest is Test {
         uint256 initialNonce = vm.getNonce(address(this));
 
         // Deploy core contracts. LibDeploy returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
-        (Router deployedRouter, Coordinator deployedCoordinator, , WalletFactory deployedWalletFactory) =
-                            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
+        (Router deployedRouter, Coordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
+            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
 
         router = deployedRouter;
         coordinator = deployedCoordinator;

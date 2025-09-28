@@ -31,14 +31,14 @@ library EIP712Utils {
     /// @param domainVersion Version string for the signing domain (major version recommended).
     /// @param verifyingContract Contract address that will verify signatures.
     /// @return domainSeparator The EIP-712 domain separator (keccak256 encoded).
-    function buildDomainSeparator(
-        string memory domainName,
-        string memory domainVersion,
-        address verifyingContract
-    ) public view returns (bytes32 domainSeparator) {
+    function buildDomainSeparator(string memory domainName, string memory domainVersion, address verifyingContract)
+        public
+        view
+        returns (bytes32 domainSeparator)
+    {
         domainSeparator = keccak256(
             abi.encode(
-            // EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)
+                // EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256(bytes(domainName)),
                 keccak256(bytes(domainVersion)),
@@ -78,9 +78,9 @@ library EIP712Utils {
     /// @param s ComputeSubscription payload being delegated.
     /// @return delegateHash keccak256 of the encoded delegate wrapper.
     function computeDelegateHash(uint32 nonce, uint32 expiry, ComputeSubscription memory s)
-    public
-    pure
-    returns (bytes32 delegateHash)
+        public
+        pure
+        returns (bytes32 delegateHash)
     {
         delegateHash = keccak256(abi.encode(DELEGATE_SCHEMA_HASH, nonce, expiry, computeSubscriptionHash(s)));
     }

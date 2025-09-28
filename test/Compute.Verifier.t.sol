@@ -364,9 +364,9 @@ contract ComputeVerifierTest is ComputeTest {
         // Alice -> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.1 ether)
         // Alice --> allowance: 0 ether
         assertEq(aliceWallet.balance, 7978e14);
-        console.log("aliceWallet.balance : " ,aliceWallet.balance);
-        console.log("aliceWallet.allowance : " ,Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS));
-//        assertEq(Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS), 0);
+        console.log("aliceWallet.balance : ", aliceWallet.balance);
+        console.log("aliceWallet.allowance : ", Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS));
+        //        assertEq(Wallet(payable(aliceWallet)).allowance(address(CALLBACK), ZERO_ADDRESS), 0);
         // Bob --> 1 ether
         // Bob --> allowance: 0 ether
         assertEq(bobWallet.balance, 1 ether);
@@ -395,5 +395,4 @@ contract ComputeVerifierTest is ComputeTest {
         assertEq(DEFERRED_VERIFIER.ethBalance(), 9489e13);
         assertEq(protocolWalletAddress.balance, 10_731e13);
     }
-
 }
