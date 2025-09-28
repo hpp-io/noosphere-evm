@@ -2,16 +2,6 @@
 pragma solidity ^0.8.23;
 
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
-<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
-import {Subscription} from "../../../src/v1_0_0/types/Subscription.sol";
-import {SubscriptionComputeClient} from "../../../src/v1_0_0/client/SubscriptionComputeClient.sol";
-import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
-import {StdAssertions} from "forge-std/StdAssertions.sol";
-
-/// @title MockSubscriptionComputeClient.sol
-/// @notice Mocks SubscriptionComputeClient.sol
-contract MockSubscriptionComputeClient is MockComputeClient, SubscriptionComputeClient, StdAssertions {
-========
 import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
 import {ScheduledComputeClient} from "../../../src/v1_0_0/client/ScheduledComputeClient.sol";
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
@@ -19,7 +9,6 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 
 /// @notice Mocks ScheduledComputeClient.sol
 contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient, StdAssertions {
->>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -31,14 +20,8 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
-    /// @notice Create new MockSubscriptionComputeClient.sol
-    /// @param router The address of the Router contract.
-    constructor(address router) SubscriptionComputeClient(router) {}
-========
     /// @param router The address of the Router contract.
     constructor(address router) ScheduledComputeClient(router) {}
->>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
 
     /*//////////////////////////////////////////////////////////////
                            UTILITY FUNCTIONS
@@ -54,11 +37,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     //    }
 
     /// @notice Create new mock subscription
-<<<<<<<< HEAD:test/mocks/client/MockSubscriptionComputeClient.sol
-    /// @dev Parameter interface conforms to same as `SubscriptionComputeClient.sol._createComputeSubscription`
-========
     /// @dev Parameter interface conforms to same as `ScheduledComputeClient.sol._createComputeSubscription`
->>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/mocks/client/MockScheduledComputeClient.sol
     /// @dev Augmented with checks
     /// @dev Checks returned subscription ID is serially conforming.
     /// @dev Checks subscription stored in coordinator storage conforms to expected, given inputs
@@ -75,18 +54,18 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     ) external returns (uint64, Commitment memory) {
         uint256 creationTimestamp = block.timestamp;
         uint64 actualSubscriptionID =
-            _createComputeSubscription(
-            containerId,
-            maxExecutions,
-            intervalSeconds,
-            redundancy,
-            useDeliveryInbox,
+                        _createComputeSubscription(
+                containerId,
+                maxExecutions,
+                intervalSeconds,
+                redundancy,
+                useDeliveryInbox,
                 feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            bytes32("Coordinator_v1.0.0")
-        );
+                feeAmount,
+                wallet,
+                verifier,
+                bytes32("Coordinator_v1.0.0")
+            );
 
         _assertSubscription(
             actualSubscriptionID,
@@ -118,18 +97,18 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         address verifier
     ) external returns (uint64) {
         uint64 actualSubscriptionID =
-            _createComputeSubscription(
-            containerId,
-            maxExecutions,
-            intervalSeconds,
-            redundancy,
-            useDeliveryInbox,
+                        _createComputeSubscription(
+                containerId,
+                maxExecutions,
+                intervalSeconds,
+                redundancy,
+                useDeliveryInbox,
                 feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            bytes32("Coordinator_v1.0.0")
-        );
+                feeAmount,
+                wallet,
+                verifier,
+                bytes32("Coordinator_v1.0.0")
+            );
 
         _assertSubscription(
             actualSubscriptionID,
@@ -190,10 +169,10 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     }
 
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        pure
-        override
-        returns (bytes memory)
+    external
+    pure
+    override
+    returns (bytes memory)
     {
         return CONTAINER_INPUTS;
     }

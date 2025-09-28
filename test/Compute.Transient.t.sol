@@ -3,15 +3,9 @@ pragma solidity ^0.8.23;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-<<<<<<<< HEAD:test/Coordinator.Transient.t.sol
-import {Subscription} from "../src/v1_0_0/types/Subscription.sol";
-import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
-import {Coordinator} from "../src/v1_0_0/EIP712Coordinator.sol";
-========
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {Coordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
->>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/Compute.Transient.t.sol
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
@@ -19,11 +13,7 @@ import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManag
 
 // @title CoordinatorCallbackTest
 // @notice Coordinator tests specific to usage by TransientComputeClient.sol
-<<<<<<<< HEAD:test/Coordinator.Transient.t.sol
-contract CoordinatorTransientTest is CoordinatorTest {
-========
 contract ComputeTransientTest is ComputeTest {
->>>>>>>> a246261 ( refactor: Align contract architecture with composition over inheritance):test/Compute.Transient.t.sol
     /// @notice Can create callback (one-time subscription)
     function test_Succeeds_When_CreatingCallback() public {
         vm.warp(0);
@@ -140,7 +130,7 @@ contract ComputeTransientTest is ComputeTest {
     function test_Succeeds_When_DeliveringLazyCallbackResponse() public {
         // --- 1. Arrange: Create a useDeliveryInbox request ---
         (uint64 subId, Commitment memory commitment) =
-            CALLBACK.createLazyMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
+                            CALLBACK.createLazyMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
         assertEq(subId, 1);
 
         // --- 2. Act: Deliver the response and check for the event ---
@@ -212,7 +202,7 @@ contract ComputeTransientTest is ComputeTest {
         // Create new useDeliveryInbox callback request w/ redundancy = 2
         uint16 redundancy = 2;
         (uint64 subId, Commitment memory commitment) =
-            CALLBACK.createLazyMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
+                            CALLBACK.createLazyMockRequest(MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER);
 
         bytes memory commitmentData = abi.encode(commitment);
 
