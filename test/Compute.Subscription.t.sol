@@ -3,7 +3,6 @@ pragma solidity ^0.8.23;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
@@ -14,20 +13,20 @@ contract ComputeSubscriptionTest is ComputeTest {
 
     function test_Succeeds_When_CancellingSubscription() public {
         // Create subscription
-        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         vm.warp(block.timestamp + 1 minutes);
         // Cancel subscription and expect event emission
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCancelled(subId);
-        SUBSCRIPTION.cancelMockSubscription(subId);
+        ScheduledClient.cancelMockSubscription(subId);
     }
 
     function test_Succeeds_When_CancellingFulfilledSubscription() public {
         // Create subscription
         // vm.warp(0);
-        (uint64 subId, Commitment memory commitment) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -37,27 +36,27 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.warp(block.timestamp + 1 minutes);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
 
         // Cancel subscription
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCancelled(subId);
-        SUBSCRIPTION.cancelMockSubscription(subId);
+        ScheduledClient.cancelMockSubscription(subId);
     }
 
     /// @notice Cannot cancel a subscription that does not exist
     function test_RevertIf_CancellingNonExistentSubscription() public {
         // Try to delete subscription without creating
         vm.expectRevert(bytes("NotSubscriptionOwner()"));
-        SUBSCRIPTION.cancelMockSubscription(1);
+        ScheduledClient.cancelMockSubscription(1);
     }
 
     /// @notice Can cancel a subscription that has already been cancelled
     function test_RevertIf_Cancelling_AlreadyCancelledSubscription() public {
         // Create and cancel subscription
-        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         vm.warp(block.timestamp + 1 minutes);
@@ -65,10 +64,10 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Cancel subscription and expect event emission
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCancelled(subId);
-        SUBSCRIPTION.cancelMockSubscription(subId);
+        ScheduledClient.cancelMockSubscription(subId);
         // Attempt to cancel again, expect a revert as it's already cancelled
         vm.expectRevert(bytes("SubscriptionNotFound()"));
-        SUBSCRIPTION.cancelMockSubscription(subId);
+        ScheduledClient.cancelMockSubscription(subId);
     }
 
     /// @notice Subscription intervals are properly calculated
@@ -85,7 +84,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Set the block time before creating the subscription
         vm.warp(blockTime);
 
-        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID,
             maxExecutions,
             intervalSeconds,
@@ -96,9 +95,6 @@ contract ComputeSubscriptionTest is ComputeTest {
             userWalletAddress,
             NO_VERIFIER
         );
-
-        // Subscription activeAt timestamp
-        uint32 activeAt = blockTime + intervalSeconds;
 
         // If intervalSeconds == 0, interval is always 1
         if (intervalSeconds == 0) {
@@ -158,14 +154,14 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.expectRevert(bytes("SubscriptionNotFound()"));
 
         // Call reportComputeResult with the crafted commitment.
-        ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+        alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(alice));
     }
 
     /// @notice Cannot deliver a response for an interval that is not the current one.
     function test_RevertIf_DeliveringResponse_ForIncorrectInterval() public {
         // Create new subscription at time = 0, which will be active at t = 60s
         vm.warp(0);
-        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID,
             2, // maxExecutions = 2
             1 minutes,
@@ -179,11 +175,11 @@ contract ComputeSubscriptionTest is ComputeTest {
 
         // Warp to the first active interval and send the request
         vm.warp(1 minutes);
-        (, Commitment memory commitment1) = SUBSCRIPTION.sendRequest(subId, 1);
+        (, Commitment memory commitment1) = ScheduledClient.sendRequest(subId, 1);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // Successfully deliver for interval 1
-        ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
+        alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
 
         // Warp to the second interval
         vm.warp(2 minutes);
@@ -191,6 +187,6 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Now, the current interval is 2. Attempting to deliver for interval 1 should fail.
         // We use the commitment from the first interval to simulate this.
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
-        ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
+        alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
     }
 }

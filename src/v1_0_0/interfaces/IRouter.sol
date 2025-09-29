@@ -64,13 +64,11 @@ interface IRouter {
     /// @notice Instruct Router to execute coordinator-driven payouts on behalf of Coordinator.
     /// @dev Called by Coordinator after commitments are verified or timeouts processed.
     /// @param subscriptionId Subscription identifier related to the payout.
-    /// @param interval Interval for which payments are being disbursed.
     /// @param spenderWallet Wallet address from which funds will be drawn (consumer wallet).
     /// @param spenderAddress Address that authorized the spend (consumer/owner).
     /// @param payments Array of payments to execute.
     function payFromCoordinator(
         uint64 subscriptionId,
-        uint32 interval,
         address spenderWallet,
         address spenderAddress,
         Payment[] memory payments

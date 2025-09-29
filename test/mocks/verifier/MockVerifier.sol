@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.23;
 
-import "../../../src/v1_0_0/Coordinator.sol";
-import "../../../src/v1_0_0/interfaces/IVerifier.sol";
+import {Coordinator} from "../../../src/v1_0_0/Coordinator.sol";
+import {IVerifier} from "../../../src/v1_0_0/interfaces/IVerifier.sol";
 import {Router} from "../../../src/v1_0_0/Router.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
@@ -16,7 +16,7 @@ abstract contract MockVerifier is IVerifier {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Coordinator instance resolved from the Router.
-    Coordinator internal immutable coordinator;
+    Coordinator internal immutable COORDINATOR;
 
     /*//////////////////////////////////////////////////////////////////////////
                                    STORAGE
@@ -38,7 +38,7 @@ abstract contract MockVerifier is IVerifier {
         // resolve Coordinator using the id used throughout the test fixture
         address coordAddr = router.getContractById("Coordinator_v1.0.0");
         require(coordAddr != address(0), "AbstractVerifier: coordinator not found");
-        coordinator = Coordinator(coordAddr);
+        COORDINATOR = Coordinator(coordAddr);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

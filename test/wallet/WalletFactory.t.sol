@@ -5,7 +5,7 @@ import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
-import "../lib/DeployUtils.sol";
+import {DeployUtils} from "../lib/DeployUtils.sol";
 import {Test} from "forge-std/Test.sol";
 
 /// @title WalletFactoryTest
@@ -32,12 +32,9 @@ contract WalletFactoryTest is Test {
 
     /// @notice Deploy Router / Coordinator / WalletFactory via LibDeploy and wire Router -> WalletFactory.
     function setUp() public {
-        // Use a deterministic nonce to allow create address prediction in tests
-        uint256 initialNonce = vm.getNonce(address(this));
-
         // Deploy core contracts. LibDeploy returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
         (Router deployedRouter, Coordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
-            DeployUtils.deployContracts(address(this), initialNonce, address(0), 1, address(0));
+            DeployUtils.deployContracts(address(this), address(0), 1, address(0));
 
         router = deployedRouter;
         coordinator = deployedCoordinator;

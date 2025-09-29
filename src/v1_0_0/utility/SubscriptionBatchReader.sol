@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {Coordinator} from "../Coordinator.sol";
 import {Router} from "../Router.sol";
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
+import {RequestIdUtils} from "../utility/RequestIdUtils.sol";
 
 /// @title SubscriptionBatchReader
 /// @notice Read-only helper contract that exposes batch query helpers for Router and Coordinator state.
@@ -15,10 +16,10 @@ contract SubscriptionBatchReader {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Router instance used to fetch subscription records.
-    Router private immutable router;
+    Router private immutable ROUTER;
 
     /// @notice Coordinator instance used to fetch commitments and redundancy data.
-    Coordinator private immutable coordinator;
+    Coordinator private immutable COORDINATOR;
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
@@ -27,8 +28,8 @@ contract SubscriptionBatchReader {
     /// @param _router Address of the Router contract.
     /// @param _coordinator Address of the Coordinator contract.
     constructor(address _router, address _coordinator) {
-        router = Router(_router);
-        coordinator = Coordinator(_coordinator);
+        ROUTER = Router(_router);
+        COORDINATOR = Coordinator(_coordinator);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -62,7 +63,7 @@ contract SubscriptionBatchReader {
 
         for (uint64 id = startId; id < endId; ++id) {
             uint256 idx = uint256(id - startId);
-            subscriptions[idx] = router.getComputeSubscription(id);
+            subscriptions[idx] = ROUTER.getComputeSubscription(id);
         }
     }
 
@@ -80,9 +81,9 @@ contract SubscriptionBatchReader {
         statuses = new IntervalStatus[](n);
 
         for (uint256 i = 0; i < n; ++i) {
-            bytes32 requestId = keccak256(abi.encodePacked(ids[i], intervals[i]));
-            uint16 count = coordinator.redundancyCount(requestId);
-            bool exists = coordinator.requestCommitments(requestId) != bytes32(0);
+            bytes32 requestId = RequestIdUtils.requestIdPacked(ids[i], intervals[i]);
+            uint16 count = COORDINATOR.redundancyCount(requestId);
+            bool exists = COORDINATOR.requestCommitments(requestId) != bytes32(0);
             statuses[i] = IntervalStatus({redundancyCount: count, commitmentExists: exists});
         }
     }

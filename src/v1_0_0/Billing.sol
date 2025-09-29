@@ -3,7 +3,6 @@ pragma solidity ^0.8.23;
 
 import {Routable} from "./utility/Routable.sol";
 import {IBilling} from "./interfaces/IBilling.sol";
-import {IRouter} from "./interfaces/IRouter.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {Payment} from "./types/Payment.sol";
@@ -171,7 +170,7 @@ abstract contract Billing is IBilling, Routable {
         uint16 numRedundantDeliveries
     ) private {
         Payment[] memory payments = _prepareVerificationPayments(commitment);
-        _initiateVerification(commitment, proofSubmitter, nodeWallet, proof);
+        _initiateVerification(commitment, proofSubmitter, nodeWallet);
         _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         // Initiate verifier verification
         IVerifier(commitment.verifier).submitProofForVerification(
@@ -242,12 +241,10 @@ abstract contract Billing is IBilling, Routable {
     }
 
     /// @dev Handles post-fulfillment steps for verification (locking funds, calling verifier).
-    function _initiateVerification(
-        Commitment memory commitment,
-        address proofSubmitter,
-        address submitterWallet,
-        bytes memory proof
-    ) internal virtual {
+    function _initiateVerification(Commitment memory commitment, address proofSubmitter, address submitterWallet)
+        internal
+        virtual
+    {
         // Calculate the final amount that will be paid to the node after fees.
         // This is the amount that will be escrowed and potentially slashed.
         uint256 tokenAvailable = commitment.feeAmount;
@@ -273,10 +270,7 @@ abstract contract Billing is IBilling, Routable {
     /// @dev This internal function is expected to be called by a public function that authenticates the caller as the verifier.
     /// @param request The proof verification request details.
     /// @param valid True if the proof was valid, false otherwise.
-    function _finalizeVerification(ProofVerificationRequest memory request, bool valid, uint32 interval)
-        internal
-        virtual
-    {
+    function _finalizeVerification(ProofVerificationRequest memory request, bool valid) internal virtual {
         bool expired = uint32(block.timestamp) >= request.expiry;
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(request.subscriptionId);
         if (msg.sender != sub.verifier) {
@@ -294,18 +288,18 @@ abstract contract Billing is IBilling, Routable {
                 feeToken: request.escrowToken,
                 feeAmount: request.escrowedAmount
             });
-            _getRouter().payFromCoordinator(request.subscriptionId, interval, sub.wallet, sub.client, payments);
+            _getRouter().payFromCoordinator(request.subscriptionId, sub.wallet, sub.client, payments);
         } else {
             // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({recipient: sub.wallet, feeToken: sub.feeToken, feeAmount: sub.feeAmount});
             _getRouter().payFromCoordinator(
-                request.subscriptionId, interval, request.submitterWallet, request.submitterAddress, payments
+                request.subscriptionId, request.submitterWallet, request.submitterAddress, payments
             );
         }
     }
 
     /// @notice Calculates the fee for a node that triggers the next interval.
-    function _calculateNextTickFee(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal virtual {
+    function _calculateNextTickFee(uint64 subscriptionId, address nodeWallet) internal virtual {
         Payment[] memory payments;
         if (billingConfig.tickNodeFee > 0) {
             payments = new Payment[](1);
@@ -319,7 +313,6 @@ abstract contract Billing is IBilling, Routable {
         // The spender is the protocol fee recipient itself, as it's paying from its own wallet.
         _getRouter().payFromCoordinator(
             subscriptionId,
-            nextInterval,
             billingConfig.protocolFeeRecipient, // spenderWallet
             billingConfig.protocolFeeRecipient, // spenderAddress
             payments

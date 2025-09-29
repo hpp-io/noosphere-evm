@@ -2,11 +2,15 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
 solc_version = "0.8.23"
 optimizer = true
 optimizer_runs = 1000000
 via_ir = true
 gas_limit = "50000000"
+remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
+
+# Ignore specific solc warnings by error code
+# 2519: Inefficient keccak256 usage; suggests inline assembly
+ignored_error_codes = [2519, 5574]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

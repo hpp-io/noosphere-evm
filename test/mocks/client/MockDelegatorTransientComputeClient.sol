@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import "../../../src/v1_0_0/utility/Delegator.sol";
-import "./MockTransientComputeClient.sol";
+import {Delegator} from "../../../src/v1_0_0/utility/Delegator.sol";
+import {MockTransientComputeClient} from "./MockTransientComputeClient.sol";
 
 /// @title MockDelegatorTransientComputeClient.sol
 /// @notice Mocks TransientComputeClient.sol w/ delegator set to an address

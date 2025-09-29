@@ -38,7 +38,7 @@ abstract contract ScheduledComputeClient is ComputeClient {
     }
 
     function _requestCompute(uint64 subscriptionId, uint32 interval) internal returns (uint64, Commitment memory) {
-        (bytes32 requestId, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
+        (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }
 }

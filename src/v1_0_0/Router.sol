@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import "./interfaces/ICoordinator.sol";
+import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ConfirmedOwner} from "./utility/ConfirmedOwner.sol";
 import {ContractProposalSet} from "./types/ContractProposalSet.sol";
@@ -14,6 +14,7 @@ import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {SubscriptionsManager} from "./SubscriptionManager.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
+import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 
 /**
  * @title Router
@@ -167,7 +168,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
     function payFromCoordinator(
         uint64 subscriptionId,
-        uint32 interval,
         address spenderWallet,
         address spenderAddress,
         Payment[] memory payments
@@ -222,8 +222,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             nodeWallet,
             input,
             output,
-            proof,
-            commitment.containerId
+            proof
         );
         resultCode = FulfillResult.FULFILLED;
         emit RequestProcessed(
@@ -434,7 +433,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         address coordinatorAddr = getContractById(subscription.routeId);
         require(coordinatorAddr != address(0), "Coordinator not found");
 
-        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+        bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         Commitment memory commitment;
 
         if (requestCommitments[requestId] != bytes32(0)) {
@@ -458,7 +457,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 requestId,
                 payable(subscription.wallet),
                 subscriptionId,
-                interval,
                 subscription.redundancy,
                 subscription.feeToken,
                 subscription.feeAmount

@@ -5,27 +5,22 @@ import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
-import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
-import {Delegator} from "../src/v1_0_0/utility/Delegator.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
-import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
-import {ComputeSubscription as CS} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {DeployUtils} from "./lib/DeployUtils.sol";
 import {EIP712Utils} from "./lib/EIP712Utils.sol";
-import {MockDelegatorSubscriptionConsumer} from "./mocks/client/MockDelegatorSubscriptionConsumer.sol";
+import {MockDelegatorScheduledComputeClient} from "./mocks/client/MockDelegatorScheduledComputeClient.sol";
 import {MockDelegatorTransientComputeClient} from "./mocks/client/MockDelegatorTransientComputeClient.sol";
 import {MockAgent} from "./mocks/MockAgent.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
+import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
-import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
-import {console} from "forge-std/console.sol";
 
 /// @title Delegatee compute integration tests (refactored)
 /// @notice Tests the delegated subscription flow and delegated delivery paths.
@@ -63,7 +58,7 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
     MockDelegatorTransientComputeClient private transientClient;
 
     /// @notice Subscription-style client that accepts pending deliveries (inbox)
-    MockDelegatorSubscriptionConsumer private subscriptionClient;
+    MockDelegatorScheduledComputeClient private subscriptionClient;
 
     /*//////////////////////////////////////////////////////////////
                                   ADDRESSES / KEYS
@@ -94,14 +89,8 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Deploy core contracts and supporting utilities via helper
-        (
-            Router deployedRouter,
-            DelegateeCoordinator deployedCoordinator,
-            SubscriptionBatchReader reader,
-            WalletFactory deployedWalletFactory
-        ) = DeployUtils.deployContracts(
-            address(this), initialNonce, ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token)
-        );
+        (Router deployedRouter, DelegateeCoordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
+            DeployUtils.deployContracts(address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token));
         router = deployedRouter;
         coordinator = deployedCoordinator;
         walletFactory = deployedWalletFactory;
@@ -119,14 +108,13 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         // create wallets for test actors
         userWalletAddr = walletFactory.createWallet(address(this));
-        Wallet userWallet = Wallet(payable(userWalletAddr));
         aliceWalletAddr = walletFactory.createWallet(address(this));
         bobWalletAddr = walletFactory.createWallet(address(this));
         protocolWalletAddr = walletFactory.createWallet(ownerProtocolWalletAddress);
 
         // configure billing settings for coordinator (protocol fee recipient / wallet)
         DeployUtils.updateBillingConfig(
-            coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0, 0 ether, address(0)
+            coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0 ether, address(0)
         );
 
         // setup delegatee and backup keys/addresses
@@ -138,7 +126,7 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         // initialize clients with assigned delegator signer
         transientClient = new MockDelegatorTransientComputeClient(address(router), delegateeAddr);
-        subscriptionClient = new MockDelegatorSubscriptionConsumer(address(router), delegateeAddr);
+        subscriptionClient = new MockDelegatorScheduledComputeClient(address(router), delegateeAddr);
 
         // Optionally initialize allowlist consumer variants etc.
         // (commented out in this test fixture)
@@ -306,7 +294,6 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         // client updates its signer to a new (backup) address
         transientClient.updateMockSigner(backupDelegateeAddr);
         assertEq(transientClient.getSigner(), backupDelegateeAddr);
-
         // even a previously valid signature must now revert (signer mismatch)
         vm.expectRevert(bytes("SignerMismatch()"));
         router.createSubscriptionDelegatee(0, expiry, sub, signature);
@@ -469,7 +456,7 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         );
 
         // pending delivery should be stored in the subscription client's inbox
-        bytes32 requestId = keccak256(abi.encodePacked(uint64(1), deliveryInterval));
+        bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
         (bool exists, PendingDelivery memory pd) = subscriptionClient.getDelivery(requestId, aliceWalletAddr);
         assertTrue(exists, "Expected pending delivery to exist");
         assertEq(pd.subscriptionId, 1);

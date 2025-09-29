@@ -58,6 +58,6 @@ contract MockDeferredVerifier is MockVerifier {
 
     function mockFinalizeVerification(uint64 subscriptionId, uint32 interval, address node, bool valid) external {
         // call into the Coordinator to finalize the verification outcome
-        coordinator.reportVerificationResult(subscriptionId, interval, node, valid);
+        COORDINATOR.reportVerificationResult(subscriptionId, interval, node, valid);
     }
 }

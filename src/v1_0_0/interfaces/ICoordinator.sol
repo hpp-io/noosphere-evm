@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import "../types/Commitment.sol";
+import {Commitment} from "../types/Commitment.sol";
 
 /// @title ICoordinator
 /// @notice Coordinator interface for managing the lifecycle of compute requests:

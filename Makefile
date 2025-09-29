@@ -2,7 +2,8 @@
 SHELL := /bin/bash
 
 # -----------------------------------------------------------------------------
-# 환경변수 로드 (.env가 있다면 읽어와서 Makefile에서 사용 가능하도록 export)
+# Load environment variables (if a .env exists, include it so variables
+# are available to the Makefile)
 # -----------------------------------------------------------------------------
 ifneq (,$(wildcard ./.env))
 	include .env
@@ -10,51 +11,50 @@ ifneq (,$(wildcard ./.env))
 endif
 
 # -----------------------------------------------------------------------------
-# PHONY targets (파일과 이름이 겹치더라도 항상 실행되도록 함)
+# PHONY targets (force these to run even if a file with the same name exists)
 # -----------------------------------------------------------------------------
 .PHONY: all install clean build test format docs snapshot diff deploy
 
 # -----------------------------------------------------------------------------
-# 기본 타깃: 의존 타깃을 차례로 실행
-# - 설치 -> 정리 -> 포맷 -> 빌드 -> 테스트
+# Default target: run dependency install -> clean -> format -> build -> test
 # -----------------------------------------------------------------------------
 all: install clean format build test
 
 # -----------------------------------------------------------------------------
-# 의존성 설치
-# - forge 의존성(라이브러리 등)을 가져옵니다.
+# Install dependencies
+# - Fetch forge dependencies (libraries, etc.)
 # -----------------------------------------------------------------------------
 install:
 	@echo "=> installing dependencies..."
 	@forge install
 
 # -----------------------------------------------------------------------------
-# 빌드 캐시/아티팩트 삭제
-# - 깨끗한 상태에서 빌드를 다시 하기 위해 사용
+# Clean build cache / artifacts
+# - Use to get to a clean state before rebuilding
 # -----------------------------------------------------------------------------
 clean:
 	@echo "=> cleaning build artifacts..."
 	@forge clean
 
 # -----------------------------------------------------------------------------
-# 컴파일/빌드
+# Compile / build
 # -----------------------------------------------------------------------------
 build:
 	@echo "=> building contracts and artifacts..."
 	@forge build
 
 # -----------------------------------------------------------------------------
-# 모든 테스트 실행 (자세한 출력)
+# Run all tests (verbose)
 # -----------------------------------------------------------------------------
 test:
 	@echo "=> running tests..."
 	@forge test -vvv
 
 # -----------------------------------------------------------------------------
-# 스크립트/배포 실행용 타깃
-# - 환경변수 RPC_URL 필요
-# - PRIVATE_KEY는 Deploy 스크립트(Forge Script)가 자체적으로 읽도록 설정되어야 함
-# - --skip-simulation 과 optimizer 옵션 등은 배포 정책에 따라 조정하세요.
+# Scripts / deploy target
+# - Requires RPC_URL environment variable
+# - PRIVATE_KEY should be provided for the Forge script to read
+# - Adjust --skip-simulation and optimizer flags according to deployment policy
 # -----------------------------------------------------------------------------
 deploy:
 	@if [ -z "$(RPC_URL)" ]; then \
@@ -72,29 +72,29 @@ deploy:
 		--rpc-url $(RPC_URL)
 
 # -----------------------------------------------------------------------------
-# gas snapshot 저장 (forge snapshot 사용)
+# Save gas snapshot (using forge snapshot)
 # -----------------------------------------------------------------------------
 snapshot:
 	@echo "=> saving current gas profile snapshot..."
 	@forge snapshot
 
 # -----------------------------------------------------------------------------
-# 저장된 스냅샷과 현재 프로파일 차이 출력
+# Show difference between saved snapshot and current profile
 # -----------------------------------------------------------------------------
 diff:
 	@echo "=> comparing gas snapshot (diff)..."
 	@forge snapshot --diff
 
 # -----------------------------------------------------------------------------
-# 코드 포맷팅
+# Code formatting
 # -----------------------------------------------------------------------------
 format:
 	@echo "=> formatting solidity files..."
 	@forge fmt
 
 # -----------------------------------------------------------------------------
-# 문서 생성 및 로컬 서빙(브라우저 자동 오픈)
-# - 시스템에 `open` 커맨드가 없다면 주석 처리하세요 (Linux headless 환경 등)
+# Build documentation and serve locally (auto-open browser)
+# - If system does not have `open`, comment out that step (e.g., headless Linux)
 # -----------------------------------------------------------------------------
 docs:
 	@echo "=> building docs..."

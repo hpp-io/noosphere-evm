@@ -6,8 +6,8 @@ import {IOwnable} from "../interfaces/IOwnable.sol";
 /// @title The ConfirmedOwner contract
 /// @notice A contract with helpers for basic contract ownership.
 contract ConfirmedOwnerWithProposal is IOwnable {
-    address private s_owner;
-    address private s_pendingOwner;
+    address private owner;
+    address private pendingOwner;
 
     event OwnershipTransferRequested(address indexed from, address indexed to);
     event OwnershipTransferred(address indexed from, address indexed to);
@@ -16,7 +16,7 @@ contract ConfirmedOwnerWithProposal is IOwnable {
         // solhint-disable-next-line gas-custom-errors
         require(newOwner != address(0), "Cannot set client to zero");
 
-        s_owner = newOwner;
+        owner = newOwner;
         if (pendingOwner != address(0)) {
             _transferOwnership(pendingOwner);
         }
@@ -30,18 +30,18 @@ contract ConfirmedOwnerWithProposal is IOwnable {
     /// @notice Allows an ownership transfer to be completed by the recipient.
     function acceptOwnership() external override {
         // solhint-disable-next-line gas-custom-errors
-        require(msg.sender == s_pendingOwner, "Must be proposed client");
+        require(msg.sender == pendingOwner, "Must be proposed client");
 
-        address oldOwner = s_owner;
-        s_owner = msg.sender;
-        s_pendingOwner = address(0);
+        address oldOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
 
         emit OwnershipTransferred(oldOwner, msg.sender);
     }
 
     /// @notice Get the current client
     function client() public view override returns (address) {
-        return s_owner;
+        return owner;
     }
 
     /// @notice validate, transfer ownership, and emit relevant events
@@ -49,15 +49,15 @@ contract ConfirmedOwnerWithProposal is IOwnable {
         // solhint-disable-next-line gas-custom-errors
         require(to != msg.sender, "Cannot transfer to self");
 
-        s_pendingOwner = to;
+        pendingOwner = to;
 
-        emit OwnershipTransferRequested(s_owner, to);
+        emit OwnershipTransferRequested(owner, to);
     }
 
     /// @notice validate access
     function _validateOwnership() internal view {
         // solhint-disable-next-line gas-custom-errors
-        require(msg.sender == s_owner, "Only callable by client");
+        require(msg.sender == owner, "Only callable by client");
     }
 
     /// @notice Reverts if called by anyone other than the contract client.

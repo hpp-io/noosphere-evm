@@ -27,11 +27,7 @@ library DeployUtils {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Deploy the core suite of test contracts and wire them into the Router.
-    /// @dev The `initialNonce` parameter is retained for historical reasons (address prediction
-    ///      outside this helper). It is not used internally by this helper — callers may still
-    ///      use `vm.computeCreateAddress` with a nonce of their choosing.
     /// @param deployerAddress Address which will be used as the nominal deployer/owner for certain contracts.
-    /// @param initialNonce Unused parameter kept for compatibility with existing tests.
     /// @param initialFeeRecipient Address that will receive protocol fees during test setup.
     /// @param initialFee Protocol fee (basis points or protocol-defined unit).
     /// @param tokenAddr Optional token address used for tick fees / mocks (may be address(0)).
@@ -39,13 +35,7 @@ library DeployUtils {
     /// @return coordinator Deployed DelegateeCoordinator instance (initialized).
     /// @return reader Deployed SubscriptionBatchReader helper instance (wired to Router & Coordinator).
     /// @return walletFactory Deployed WalletFactory instance (wired to Router).
-    function deployContracts(
-        address deployerAddress,
-        uint256 initialNonce,
-        address initialFeeRecipient,
-        uint16 initialFee,
-        address tokenAddr
-    )
+    function deployContracts(address deployerAddress, address initialFeeRecipient, uint16 initialFee, address tokenAddr)
         internal
         returns (
             Router router,
@@ -85,7 +75,6 @@ library DeployUtils {
     /// @param verificationTimeout Timeout used by verifier-related logic.
     /// @param protocolFeeRecipient Recipient address for protocol fees.
     /// @param protocolFee Protocol fee value.
-    /// @param minimumEstimateGasPriceWei Minimum estimated gas price used by fee calculations (not validated here).
     /// @param tickNodeFee Per-tick node fee paid to nodes.
     /// @param tickNodeFeeToken Token used to pay tick node fees.
     function updateBillingConfig(
@@ -93,7 +82,6 @@ library DeployUtils {
         uint32 verificationTimeout,
         address protocolFeeRecipient,
         uint16 protocolFee,
-        uint256 minimumEstimateGasPriceWei,
         uint256 tickNodeFee,
         address tickNodeFeeToken
     ) internal {

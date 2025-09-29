@@ -39,9 +39,6 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
     ) external returns (uint64, Commitment memory) {
         // Get current block timestamp
         uint256 currentTimestamp = block.timestamp;
-        // Request off-chain container compute
-        bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
-
         uint64 subId = _createComputeSubscription(
             containerId, redundancy, false, feeToken, feeAmount, wallet, verifier, bytes32("Coordinator_v1.0.0")
         );
@@ -77,8 +74,6 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         // Get current block timestamp
         uint256 currentTimestamp = block.timestamp;
         // Request off-chain container compute
-        bytes32 coordinatorId = bytes32("Coordinator_v1.0.0");
-
         uint64 subId = _createComputeSubscription(
             containerId,
             redundancy,
@@ -124,7 +119,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         address wallet,
         address verifier,
         uint256 creationTimestamp
-    ) private {
+    ) private view {
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(subId);
 
         assertEq(sub.activeAt, creationTimestamp);

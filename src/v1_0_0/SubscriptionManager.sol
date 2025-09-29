@@ -11,8 +11,8 @@ import {Wallet} from "./wallet/Wallet.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
-import {console} from "forge-std/console.sol";
 import {Delegator} from "./utility/Delegator.sol";
+import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ComputeClient} from "./client/ComputeClient.sol";
 
 abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
@@ -238,7 +238,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         uint32 processed = 0;
         for (uint32 i = start; i <= uptoInterval && processed < maxIter; ++i) {
-            bytes32 rid = keccak256(abi.encodePacked(subscriptionId, i));
+            bytes32 rid = RequestIdUtils.requestIdPacked(subscriptionId, i);
             bytes32 stored = requestCommitments[rid];
             if (stored != bytes32(0)) {
                 bool timeoutable;
@@ -319,7 +319,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
     function _pendingRequestExists(uint64 subscriptionId) internal view returns (bool) {
         uint32 interval = _getSubscriptionInterval(subscriptionId);
-        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+        bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         return requestCommitments[requestId] != bytes32(0);
     }
 
@@ -327,7 +327,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @dev This locks `feeAmount * redundancy` on the Wallet (via lockForRequest).
     /// @param walletAddr Wallet address (subscriptions[subscriptionId].wallet)
     /// @param subscriptionId subscription id
-    /// @param interval interval for this request
     /// @param redundancy number of expected payouts
     /// @param feeToken token used for payment
     /// @param feeAmount per-response payment amount
@@ -335,7 +334,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes32 requestId,
         address payable walletAddr,
         uint64 subscriptionId,
-        uint32 interval,
         uint16 redundancy,
         address feeToken,
         uint256 feeAmount
@@ -391,8 +389,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         address node,
         bytes memory input,
         bytes memory output,
-        bytes memory proof,
-        bytes32 containerId
+        bytes memory proof
     ) internal {
         ComputeSubscription memory subscription = subscriptions[subscriptionId];
         ComputeClient(subscription.client).receiveRequestCompute(
@@ -408,7 +405,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         // Note: we don't scan all historical intervals here for gas reasons.
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
         if (currentInterval > 0) {
-            bytes32 rid = keccak256(abi.encodePacked(subscriptionId, currentInterval));
+            bytes32 rid = RequestIdUtils.requestIdPacked(subscriptionId, currentInterval);
             if (requestCommitments[rid] != bytes32(0)) {
                 Wallet consumer = Wallet(subscription.wallet);
                 // release funds for that single requestId
@@ -483,7 +480,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         // Check if a request for the next interval has already been created.
         uint32 nextInterval = currentInterval + 1;
-        bytes32 nextRequestId = keccak256(abi.encodePacked(subscriptionId, nextInterval));
+        bytes32 nextRequestId = RequestIdUtils.requestIdPacked(subscriptionId, nextInterval);
         if (requestCommitments[nextRequestId] != bytes32(0)) {
             return false;
         }
@@ -492,7 +489,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _releaseTimeoutRequestLock(bytes32 requestId, uint64 subscriptionId, uint32 interval) internal {
-        bytes32 expectedId = keccak256(abi.encodePacked(subscriptionId, interval));
+        bytes32 expectedId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         if (expectedId != requestId) revert NoSuchCommitment();
 
         bytes32 stored = requestCommitments[requestId];

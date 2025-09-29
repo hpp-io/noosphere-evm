@@ -55,7 +55,7 @@ contract MockImmediateVerifier is MockVerifier {
 
         // Immediately finalize the verification on the coordinator using the configured outcome.
         // The mock intentionally ignores the proof bytes and uses `nextValidity`.
-        coordinator.reportVerificationResult(subscriptionId, interval, node, nextValidity);
+        COORDINATOR.reportVerificationResult(subscriptionId, interval, node, nextValidity);
     }
 
     /*//////////////////////////////////////////////////////////////

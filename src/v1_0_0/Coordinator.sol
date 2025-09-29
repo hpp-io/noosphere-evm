@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import "./utility/ConfirmedOwner.sol";
+import {ConfirmedOwner} from "./utility/ConfirmedOwner.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";
 import {Billing} from "./Billing.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
-import {IWalletFactory} from "./interfaces/IWalletFactory.sol";
-import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
@@ -120,7 +118,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         }
 
         // finalize verification (internal handles settlement/state update)
-        _finalizeVerification(request, valid, interval);
+        _finalizeVerification(request, valid);
 
         // emit a high-level event for observability
         emit ProofVerified(subscriptionId, interval, node, valid, msg.sender);
@@ -145,7 +143,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         _getRouter().sendRequest(subscriptionId, nextInterval);
 
         // pre-calculate and reserve any next-tick fees needed for nodes (Billing helper)
-        _calculateNextTickFee(subscriptionId, nextInterval, nodeWallet);
+        _calculateNextTickFee(subscriptionId, nodeWallet);
     }
 
     /// @dev Internal: core logic for processing a compute delivery from a node.

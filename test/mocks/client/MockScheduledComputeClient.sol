@@ -138,7 +138,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         address wallet,
         address verifier,
         uint256 creationTimestamp
-    ) private {
+    ) private view {
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(subId);
 
         assertEq(sub.activeAt, creationTimestamp + intervalSeconds);
@@ -166,12 +166,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         assertEq(actual.activeAt, expected);
     }
 
-    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        pure
-        override
-        returns (bytes memory)
-    {
+    function getComputeInputs(uint64 subscriptionId) external pure override returns (bytes memory) {
         return CONTAINER_INPUTS;
     }
 

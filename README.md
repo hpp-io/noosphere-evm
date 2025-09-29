@@ -27,9 +27,9 @@ Noosphere smart contract suite — an on-chain framework for requesting off-chai
 - Commitment-based request lifecycle: create request → off-chain fulfill → on-chain delivery.
 - Billing and escrow primitives for payment/settlement management.
 - Developer-facing base contracts:
-    - `ScheduledComputeClient` — for recurring subscriptions (formerly `SubscriptionConsumer`)
-    - `TransientComputeClient` — for one-shot callback jobs (formerly `CallbackConsumer`)
-    - `ComputeClient` — shared base utilities (formerly `BaseConsumer`)
+    - `ScheduledComputeClient` — for recurring subscriptions
+    - `TransientComputeClient` — for one-shot callback jobs
+    - `ComputeClient` — shared base utilities
 
 ---
 
@@ -199,27 +199,6 @@ contract MyOneShotClient is TransientComputeClient {
     - `forge build`
     - `forge test`
     - `forge fmt --check`
-
-Example GitHub Actions job (conceptual):
-
-```yaml
-# .github/workflows/ci.yml (conceptual)
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Foundry
-        run: curl -L https://foundry.paradigm.xyz | bash && foundryup
-      - name: Install deps
-        run: forge install || true
-      - name: Build & test
-        run: forge build && forge test
-      - name: Check format
-        run: forge fmt --check
-```
-
----
 
 ## Deployment
 

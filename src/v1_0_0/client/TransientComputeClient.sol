@@ -32,16 +32,11 @@ abstract contract TransientComputeClient is ComputeClient {
 
     function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
         subscriptionInputs[subscriptionId] = inputs;
-        (bytes32 requestId, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, 1);
+        (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, 1);
         return (subscriptionId, commitment);
     }
 
-    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        view
-        override
-        returns (bytes memory)
-    {
+    function getComputeInputs(uint64 subscriptionId) external view override returns (bytes memory) {
         // {interval, timestamp, caller} unnecessary for simple callback request
         return subscriptionInputs[subscriptionId];
     }

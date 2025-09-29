@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import {Test} from "forge-std/Test.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
-import {MockAgent} from "./mocks/MockAgent.sol";
-import {DeployUtils} from "./lib/DeployUtils.sol";
-import {stdError} from "forge-std/StdError.sol";
 import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {ComputeTest} from "./Compute.t.sol";
-import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
-import {MockDelegatorSubscriptionConsumer} from "./mocks/client/MockDelegatorSubscriptionConsumer.sol";
+import {MockDelegatorScheduledComputeClient} from "./mocks/client/MockDelegatorScheduledComputeClient.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
@@ -24,10 +18,10 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice SubscriptionBatchReader
-    SubscriptionBatchReader private READER;
+    SubscriptionBatchReader private batchReader;
 
     /// @notice Mock subscription consumer
-    MockDelegatorSubscriptionConsumer private SUBSCRIPTION_CONSUMER;
+    MockDelegatorScheduledComputeClient private scheduledClient;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -37,8 +31,8 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         super.setUp();
         // The base ComputeTest deploys most contracts. We just need the reader.
         address coordinator = ROUTER.getContractById("Coordinator_v1.0.0");
-        READER = new SubscriptionBatchReader(address(ROUTER), coordinator);
-        SUBSCRIPTION_CONSUMER = new MockDelegatorSubscriptionConsumer(address(ROUTER), address(this));
+        batchReader = new SubscriptionBatchReader(address(ROUTER), coordinator);
+        scheduledClient = new MockDelegatorScheduledComputeClient(address(ROUTER), address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -49,12 +43,12 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     function test_Succeeds_When_ReadingSingleSubscription() public {
         // Create subscription
         vm.warp(0);
-        (uint64 subId,) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Read via `SubscriptionBatchReader ` and direct via `Router`
-        ComputeSubscription[] memory read = READER.getSubscriptions(subId, subId + 1);
+        ComputeSubscription[] memory read = batchReader.getSubscriptions(subId, subId + 1);
         ComputeSubscription memory actual = ROUTER.getComputeSubscription(subId);
 
         // Assert batch length
@@ -85,17 +79,17 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         uint256 requiredFunds = 10e6 * 4;
         vm.deal(userWalletAddress, requiredFunds);
         vm.prank(address(this));
-        Wallet(payable(userWalletAddress)).approve(address(SUBSCRIPTION), NO_PAYMENT_TOKEN, requiredFunds);
+        Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, requiredFunds);
 
         console.log("User wallet balance before:", userWalletAddress.balance);
         console.log(
             "User wallet allowance for SUBSCRIPTION:",
-            Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN)
+            Wallet(payable(userWalletAddress)).allowance(address(ScheduledClient), NO_PAYMENT_TOKEN)
         );
 
         // Create normal subscriptions at ids {1, 2, 3, 4}
         for (uint32 i = 0; i < 4; i++) {
-            SUBSCRIPTION.createMockSubscription(
+            ScheduledClient.createMockSubscription(
                 MOCK_CONTAINER_ID,
                 i + 1, // Use maxExecutions as verification index
                 1 minutes,
@@ -111,22 +105,22 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         console.log("User wallet balance after creating subs:", userWalletAddress.balance);
         console.log(
             "User wallet allowance for SUBSCRIPTION after:",
-            Wallet(payable(userWalletAddress)).allowance(address(SUBSCRIPTION), NO_PAYMENT_TOKEN)
+            Wallet(payable(userWalletAddress)).allowance(address(ScheduledClient), NO_PAYMENT_TOKEN)
         );
 
         // Cancel subscription id {4}
-        vm.prank(address(SUBSCRIPTION));
+        vm.prank(address(ScheduledClient));
         ROUTER.cancelComputeSubscription(4);
 
         // Read subscriptions
-        ComputeSubscription[] memory read = READER.getSubscriptions(1, 6);
+        ComputeSubscription[] memory read = batchReader.getSubscriptions(1, 6);
 
         // Assert batch length
         assertEq(read.length, 5);
 
         // Check normal subscriptions {1, 2, 3}
         for (uint32 i = 0; i < 3; i++) {
-            assertEq(read[i].client, address(SUBSCRIPTION));
+            assertEq(read[i].client, address(ScheduledClient));
             assertEq(read[i].activeAt, 60);
             assertEq(read[i].intervalSeconds, 1 minutes);
             assertEq(read[i].maxExecutions, i + 1); // Use as verification index
@@ -140,7 +134,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         }
 
         // Check cancelled subscription
-        assertEq(read[3].client, address(SUBSCRIPTION));
+        assertEq(read[3].client, address(ScheduledClient));
         assertEq(read[3].activeAt, type(uint32).max); // Cancelled
         assertEq(read[3].intervalSeconds, 1 minutes);
         assertEq(read[3].maxExecutions, 4);
@@ -164,32 +158,32 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     function test_Succeeds_When_QueryingRedundancyCounts() public {
         // Create first subscription (maxExecutions = 2, redundancy = 2)
         vm.warp(0);
-        (uint64 subOne,) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subOne,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 2, 1 minutes, 2, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Create second subscription (maxExecutions = 1, redundancy = 1)
-        (uint64 subTwo,) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subTwo,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 1, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Deliver (id: subOne, interval: 1) from Alice + Bob
         // Deliver (id: subTwo, interval: 1) from Alice
         vm.warp(1 minutes);
-        (, Commitment memory commitmentStruct1) = SUBSCRIPTION.sendRequest(subOne, 1);
+        (, Commitment memory commitmentStruct1) = ScheduledClient.sendRequest(subOne, 1);
         bytes memory commitment1 = abi.encode(commitmentStruct1);
-        (, Commitment memory commitmentStruct2) = SUBSCRIPTION.sendRequest(subTwo, 1);
+        (, Commitment memory commitmentStruct2) = ScheduledClient.sendRequest(subTwo, 1);
         bytes memory commitment2 = abi.encode(commitmentStruct2);
 
-        ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment1, aliceWalletAddress);
-        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment1, bobWalletAddress);
-        ALICE.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment2, aliceWalletAddress);
+        alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment1, aliceWalletAddress);
+        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment1, bobWalletAddress);
+        alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment2, aliceWalletAddress);
 
         // Deliver (id: subOne, interval: 2) from Alice
         vm.warp(2 minutes);
-        (, Commitment memory commitmentStruct3) = SUBSCRIPTION.sendRequest(subOne, 2);
+        (, Commitment memory commitmentStruct3) = ScheduledClient.sendRequest(subOne, 2);
         bytes memory commitment3 = abi.encode(commitmentStruct3);
-        ALICE.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment3, aliceWalletAddress);
+        alice.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment3, aliceWalletAddress);
 
         // Assert correct batch reads
         uint64[] memory ids = new uint64[](4);
@@ -220,7 +214,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         intervals[3] = 2;
         expectedRedundancyCounts[3] = 0;
 
-        SubscriptionBatchReader.IntervalStatus[] memory actual = READER.getIntervalStatuses(ids, intervals);
+        SubscriptionBatchReader.IntervalStatus[] memory actual = batchReader.getIntervalStatuses(ids, intervals);
         for (uint256 i = 0; i < 4; i++) {
             assertEq(actual[i].redundancyCount, expectedRedundancyCounts[i]);
         }
@@ -230,19 +224,19 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     function test_Succeeds_When_QueryingRedundancyAfterSubscriptionCancellation() public {
         // Create subscription
         vm.warp(0);
-        (uint64 subId,) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Deliver subscription
         vm.warp(1 minutes);
         uint32 interval = 1;
-        (, Commitment memory commitmentStruct) = SUBSCRIPTION.sendRequest(subId, interval);
+        (, Commitment memory commitmentStruct) = ScheduledClient.sendRequest(subId, interval);
         bytes memory commitment = abi.encode(commitmentStruct);
-        ALICE.reportComputeResult(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment, aliceWalletAddress);
+        alice.reportComputeResult(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment, aliceWalletAddress);
 
         // Cancel partially fulfilled subscription
-        vm.prank(address(SUBSCRIPTION));
+        vm.prank(address(ScheduledClient));
         ROUTER.cancelComputeSubscription(subId);
 
         // Assert redundancy count still returns 1 for (id: subId, interval: 1)
@@ -250,7 +244,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         uint32[] memory intervals = new uint32[](1);
         ids[0] = subId;
         intervals[0] = interval;
-        SubscriptionBatchReader.IntervalStatus[] memory statuses = READER.getIntervalStatuses(ids, intervals);
+        SubscriptionBatchReader.IntervalStatus[] memory statuses = batchReader.getIntervalStatuses(ids, intervals);
 
         // Assert batch length
         assertEq(statuses.length, 1);
@@ -260,13 +254,13 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     }
 
     /// @notice Non-existent redundancy count returns `0`
-    function test_Fuzz_NonExistentInterval_ReturnsZeroRedundancy(uint64 subscriptionId, uint32 interval) public {
+    function test_Fuzz_NonExistentInterval_ReturnsZeroRedundancy(uint64 subscriptionId, uint32 interval) public view {
         // Collect redundancy count
         uint64[] memory ids = new uint64[](1);
         uint32[] memory intervals = new uint32[](1);
         ids[0] = subscriptionId;
         intervals[0] = interval;
-        SubscriptionBatchReader.IntervalStatus[] memory statuses = READER.getIntervalStatuses(ids, intervals);
+        SubscriptionBatchReader.IntervalStatus[] memory statuses = batchReader.getIntervalStatuses(ids, intervals);
 
         // Assert batch length
         assertEq(statuses.length, 1);
@@ -288,6 +282,6 @@ contract SubscriptionBatchReaderTest is ComputeTest {
 
         // Attempt to batch read (catching OOBError in external contract)
         vm.expectRevert();
-        READER.getIntervalStatuses(ids, intervals);
+        batchReader.getIntervalStatuses(ids, intervals);
     }
 }

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
-import "../utility/Routable.sol";
-import "./DeliveryInbox.sol";
+import {Routable} from "../utility/Routable.sol";
+import {DeliveryInbox} from "./DeliveryInbox.sol";
 import {Commitment} from "../types/Commitment.sol";
+import {RequestIdUtils} from "../utility/RequestIdUtils.sol";
 
 /**
  * @title ComputeClient
@@ -66,7 +67,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         }
 
         if (useDeliveryInbox) {
-            bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, interval));
+            bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
             _enqueuePendingDelivery(requestId, node, subscriptionId, interval, input, output, proof);
         } else {
             // Call internal receive function, since caller is validated
@@ -84,12 +85,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         }
     }
 
-    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        view
-        virtual
-        returns (bytes memory)
-    {}
+    function getComputeInputs(uint64 subscriptionId) external view virtual returns (bytes memory) {}
 
     function _receiveCompute(
         uint64 subscriptionId,

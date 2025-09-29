@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.23;
 
-import "../../src/v1_0_0/types/ComputeSubscription.sol";
+import {ComputeSubscription} from "../../src/v1_0_0/types/ComputeSubscription.sol";
 
 /// @title EIP712Utils
 /// @notice Lightweight helpers for building and hashing EIP-712 typed messages for subscriptions.

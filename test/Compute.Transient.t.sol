@@ -5,10 +5,8 @@ import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
-import {Coordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
-import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
 // @title CoordinatorCallbackTest
@@ -24,7 +22,7 @@ contract ComputeTransientTest is ComputeTest {
         // Create new callback
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCreated(expected);
-        (uint64 actual,) = CALLBACK.createMockRequest(
+        (uint64 actual,) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -34,7 +32,7 @@ contract ComputeTransientTest is ComputeTest {
         // Assert subscription data is correctly stored
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(actual);
         assertEq(sub.activeAt, 0);
-        assertEq(sub.client, address(CALLBACK));
+        assertEq(sub.client, address(transientClient));
         assertEq(sub.redundancy, 1);
         assertEq(sub.maxExecutions, 1);
         assertEq(sub.intervalSeconds, 0);
@@ -42,7 +40,7 @@ contract ComputeTransientTest is ComputeTest {
         assertEq(sub.useDeliveryInbox, false);
 
         // Assert subscription inputs are correctly stord
-        assertEq(CALLBACK.getComputeInputs(actual, 0, 0, address(0)), MOCK_CONTAINER_INPUTS);
+        assertEq(transientClient.getComputeInputs(actual), MOCK_CONTAINER_INPUTS);
     }
 
     /// @notice Can create useDeliveryInbox callback (one-time subscription)
@@ -55,7 +53,7 @@ contract ComputeTransientTest is ComputeTest {
         // Create new useDeliveryInbox callback
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCreated(expected);
-        (uint64 actual,) = CALLBACK.createLazyMockRequest(
+        (uint64 actual,) = transientClient.createLazyMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -64,11 +62,11 @@ contract ComputeTransientTest is ComputeTest {
 
         // Assert subscription data is correctly stored
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(actual);
-        assertEq(sub.client, address(CALLBACK));
+        assertEq(sub.client, address(transientClient));
         assertEq(sub.useDeliveryInbox, true);
 
         // Assert subscription inputs are correctly stord
-        assertEq(CALLBACK.getComputeInputs(actual, 0, 0, address(0)), MOCK_CONTAINER_INPUTS);
+        assertEq(transientClient.getComputeInputs(actual), MOCK_CONTAINER_INPUTS);
     }
 
     function testFuzz_RevertIf_DeliveringCallback_WithIncorrectInterval(uint32 interval) public {
@@ -76,7 +74,7 @@ contract ComputeTransientTest is ComputeTest {
         vm.assume(interval != 1);
 
         // Create new callback request
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+        (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         assertEq(subId, 1);
@@ -84,15 +82,15 @@ contract ComputeTransientTest is ComputeTest {
         // Attempt to deliver callback request w/ incorrect interval
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, interval));
         bytes memory commitmentData = abi.encode(commitment);
-        vm.prank(address(ALICE));
+        vm.prank(address(alice));
         // Use the fuzzed interval to test the logic correctly
-        ALICE.reportComputeResult(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(ALICE));
+        alice.reportComputeResult(interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(alice));
     }
 
     /// @notice Can deliver callback response successfully
     function test_Succeeds_When_DeliveringCallbackResponse() public {
         // --- 1. Arrange: Create a request ---
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+        (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         assertEq(subId, 1);
@@ -105,8 +103,8 @@ contract ComputeTransientTest is ComputeTest {
 
         // Call the function that emits the event.
         bytes memory commitmentData = abi.encode(commitment);
-        vm.prank(address(ALICE));
-        ALICE.reportComputeResult(
+        vm.prank(address(alice));
+        alice.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
             MOCK_INPUT,
             MOCK_OUTPUT,
@@ -115,7 +113,7 @@ contract ComputeTransientTest is ComputeTest {
             aliceWalletAddress
         );
         // --- 3. Assert: Verify the outcome ---
-        DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subId, 1, 1);
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(subId, 1, 1);
         assertEq(out.subscriptionId, subId);
         assertEq(out.interval, 1);
         assertEq(out.redundancy, 1);
@@ -131,7 +129,7 @@ contract ComputeTransientTest is ComputeTest {
     /// @notice Can deliver useDeliveryInbox callback response successfully
     function test_Succeeds_When_DeliveringLazyCallbackResponse() public {
         // --- 1. Arrange: Create a useDeliveryInbox request ---
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createLazyMockRequest(
+        (uint64 subId, Commitment memory commitment) = transientClient.createLazyMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         assertEq(subId, 1);
@@ -141,8 +139,8 @@ contract ComputeTransientTest is ComputeTest {
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
 
         bytes memory commitmentData = abi.encode(commitment);
-        vm.prank(address(ALICE));
-        ALICE.reportComputeResult(
+        vm.prank(address(alice));
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
 
@@ -152,7 +150,7 @@ contract ComputeTransientTest is ComputeTest {
         //        assertEq(out.subscriptionId, 1);
 
         // Instead, the delivery should be enqueued in DeliveryInbox.sol.
-        (bool exists, PendingDelivery memory pd) = CALLBACK.getDelivery(commitment.requestId, aliceWalletAddress);
+        (bool exists, PendingDelivery memory pd) = transientClient.getDelivery(commitment.requestId, aliceWalletAddress);
         assertTrue(exists);
         assertEq(pd.subscriptionId, subId);
         assertEq(pd.interval, 1);
@@ -165,7 +163,7 @@ contract ComputeTransientTest is ComputeTest {
     function test_Succeeds_When_DeliveringCallbackResponse_OncePerNode_WithRedundancy() public {
         // Create new callback request w/ redundancy = 2
         uint16 redundancy = 2;
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+        (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -175,20 +173,20 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2);
-        BOB.reportComputeResult(
+        bob.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddress
         );
 
         // Assert delivery
         address[2] memory nodes = [aliceWalletAddress, bobWalletAddress];
         for (uint16 r = 1; r <= 2; r++) {
-            DeliveredOutput memory out = CALLBACK.getDeliveredOutput(subId, 1, r);
+            DeliveredOutput memory out = transientClient.getDeliveredOutput(subId, 1, r);
             assertEq(out.subscriptionId, subId);
             assertEq(out.interval, 1);
             assertEq(out.redundancy, r);
@@ -204,7 +202,7 @@ contract ComputeTransientTest is ComputeTest {
     function test_Succeeds_When_DeliveringLazyCallbackResponse_WithRedundancy() public {
         // Create new useDeliveryInbox callback request w/ redundancy = 2
         uint16 redundancy = 2;
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createLazyMockRequest(
+        (uint64 subId, Commitment memory commitment) = transientClient.createLazyMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -213,30 +211,31 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2);
-        BOB.reportComputeResult(
+        bob.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddress
         );
 
         // Assert that getNodesForRequest returns the correct nodes
-        address[] memory nodes = CALLBACK.getNodesForRequest(commitment.requestId);
+        address[] memory nodes = transientClient.getNodesForRequest(commitment.requestId);
         assertEq(nodes.length, 2);
         assertEq(nodes[0], aliceWalletAddress);
         assertEq(nodes[1], bobWalletAddress);
 
         // Assert both deliveries are stored in DeliveryInbox.sol
         (bool existsAlice, PendingDelivery memory pdAlice) =
-            CALLBACK.getDelivery(commitment.requestId, aliceWalletAddress);
+            transientClient.getDelivery(commitment.requestId, aliceWalletAddress);
         assertTrue(existsAlice);
         assertEq(pdAlice.subscriptionId, subId);
         assertEq(pdAlice.output, MOCK_OUTPUT);
 
-        (bool existsBob, PendingDelivery memory pdBob) = CALLBACK.getDelivery(commitment.requestId, bobWalletAddress);
+        (bool existsBob, PendingDelivery memory pdBob) =
+            transientClient.getDelivery(commitment.requestId, bobWalletAddress);
         assertTrue(existsBob);
         assertEq(pdBob.subscriptionId, subId);
         assertEq(pdBob.output, MOCK_OUTPUT);
@@ -245,7 +244,7 @@ contract ComputeTransientTest is ComputeTest {
     function test_RevertIf_DeliveringCallbackResponse_FromSameNodeTwice() public {
         // Create new callback request w/ redundancy = 2
         uint16 redundancy = 2;
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+        (, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -254,11 +253,11 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
         vm.expectRevert(ICoordinator.NodeRespondedAlready.selector);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
     }
@@ -267,7 +266,7 @@ contract ComputeTransientTest is ComputeTest {
     function test_RevertIf_DeliveringCallbackResponse_ExceedingRedundancy() public {
         // Create new callback request w/ redundancy = 2
         uint16 redundancy = 2;
-        (uint64 subId, Commitment memory commitment) = CALLBACK.createMockRequest(
+        (, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, redundancy, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -277,20 +276,20 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
-        ALICE.reportComputeResult(
+        alice.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2);
-        BOB.reportComputeResult(
+        bob.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddress
         );
 
         // Attempt to deliver a third response (exceeds redundancy)
         // The Coordinator should revert with a RequestCompleted error.
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalCompleted.selector));
-        CHARLIE.reportComputeResult(
+        charlie.reportComputeResult(
             commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddress
         );
     }

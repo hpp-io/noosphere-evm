@@ -6,28 +6,29 @@ import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
-import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
 
 contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_Succeeds_When_TimingOutRequest() public {
         // 1. Create a recurring, paid subscription
-        address consumerWallet = WALLET_FACTORY.createWallet(address(this));
+        address consumerWallet = walletFactory.createWallet(address(this));
         uint256 feeAmount = 40e6;
         uint16 redundancy = 2;
         uint256 paymentForOneInterval = feeAmount * redundancy;
-        TOKEN.mint(consumerWallet, paymentForOneInterval * 2); // Fund for two intervals
+        erc20Token.mint(consumerWallet, paymentForOneInterval * 2); // Fund for two intervals
 
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(SUBSCRIPTION), address(TOKEN), paymentForOneInterval * 2);
+        Wallet(payable(consumerWallet)).approve(
+            address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2
+        );
 
         // Create subscription and first request
-        (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             3, // maxExecutions
             1 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
-            address(TOKEN),
+            address(erc20Token),
             feeAmount,
             consumerWallet,
             NO_VERIFIER
@@ -56,7 +57,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
 
     function test_RevertIf_TimingOutRequest_ForCurrentInterval() public {
         // 1. Create a recurring subscription
-        (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -70,7 +71,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
 
     function test_RevertIf_TimingOutRequest_ForInactiveSubscription() public {
         // 1. Create a recurring subscription. The first request is created immediately.
-        (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
@@ -84,7 +85,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
 
     function test_RevertIf_TimingOut_NonExistentRequest() public {
         // 1. Create a subscription but don't create a request for interval 2
-        uint64 subId = SUBSCRIPTION.createMockSubscriptionWithoutRequest(
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
         );
 
@@ -99,23 +100,23 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
 
     function test_RevertIf_DeliveringCompute_ForTimedOutRequest() public {
         // 1. Create a recurring, paid subscription and its first request
-        address consumerWallet = WALLET_FACTORY.createWallet(address(this));
-        address nodeWallet = WALLET_FACTORY.createWallet(address(BOB));
+        address consumerWallet = walletFactory.createWallet(address(this));
+        address nodeWallet = walletFactory.createWallet(address(bob));
         uint256 feeAmount = 40e6;
         uint16 redundancy = 1;
         uint256 paymentForOneInterval = feeAmount * redundancy;
-        TOKEN.mint(consumerWallet, paymentForOneInterval);
+        erc20Token.mint(consumerWallet, paymentForOneInterval);
 
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(SUBSCRIPTION), address(TOKEN), paymentForOneInterval);
+        Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
-        (uint64 subId, Commitment memory commitment1) = SUBSCRIPTION.createMockSubscription(
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             2, // maxExecutions
             1 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
-            address(TOKEN),
+            address(erc20Token),
             feeAmount,
             consumerWallet,
             NO_VERIFIER
@@ -130,7 +131,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         // delivery interval (1) and the current system interval (2).
         bytes memory commitmentData1 = abi.encode(commitment1);
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
-        vm.prank(address(BOB));
-        BOB.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        vm.prank(address(bob));
+        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
     }
 }
