@@ -4,7 +4,7 @@ pragma solidity ^0.8.4;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {DeployUtils} from "../test/lib/DeployUtils.sol";
-import {Reader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
+import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
@@ -31,8 +31,8 @@ contract Deploy is Script {
         console.log("Deployer nonce (pre-deploy):", initialNonce);
 
         // Deploy contracts via DeployUtils
-        (Router router, Coordinator coordinator, Reader reader, WalletFactory walletFactory) =
-                            DeployUtils.deployContracts(deployerAddress, initialNonce, deployerAddress, 1, address(0));
+        (Router router, Coordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) =
+                            DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
 
         // Wire the Router to the WalletFactory
         router.setWalletFactory(address(walletFactory));
