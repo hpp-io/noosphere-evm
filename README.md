@@ -1,6 +1,21 @@
-# noosphere-evm
+# Noosphere Smart Contract Suite
 
-Noosphere smart contract suite — an on-chain framework for requesting off-chain compute workloads, receiving results, and managing subscription lifecycle and billing on EVM chains. This repository provides the protocol primitives, developer-facing client base contracts, and tooling to integrate periodic or one-shot off-chain compute into your smart contracts.
+Noosphere is an on-chain framework for requesting off-chain compute workloads,
+receiving results on-chain, and managing subscription lifecycle and billing
+on EVM-compatible chains.
+
+This repository contains the protocol primitives, developer-facing client base
+contracts, and tooling to integrate recurring or one-time off-chain compute
+into your smart contracts.
+
+---
+
+## Features
+
+- **Request off-chain compute** from EVM contracts (one-shot or recurring).
+- **Receive results on-chain** with proof and delivery metadata.
+- **Subscription lifecycle** management (create, cancel).
+- **Billing & escrow** primitives for payments and fee settlement.
 
 ---
 
@@ -149,7 +164,7 @@ Integrate by inheriting one of the client base contracts depending on your use c
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ScheduledComputeClient} from "src/v1_0_0/ScheduledComputeClient.sol";
 
