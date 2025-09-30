@@ -1,4 +1,4 @@
-# Noosphere Smart Contract Suite
+# Noosphere Smart Contract
 
 Noosphere is an on-chain framework for requesting off-chain compute workloads,
 receiving results on-chain, and managing subscription lifecycle and billing
@@ -70,35 +70,7 @@ Clone and install dependencies (if you use git submodules for libs):
 ```bash
 git clone https://github.com/hpp-io/noosphere-evm.git
 cd noosphere-evm
-# initialize submodules if any
-git submodule update --init --recursive
 ```
-
-Build and test:
-
-```bash
-forge build
-forge test
-```
-
-Format:
-
-```bash
-forge fmt
-```
-
-Run a local node:
-
-```bash
-anvil
-```
-
-Interact with contracts:
-
-```bash
-cast <subcommand>
-```
-
 ---
 
 ## Usage
@@ -106,25 +78,25 @@ cast <subcommand>
 ### Build
 
 ```bash
-forge build
+make build
 ```
 
 ### Test
 
 ```bash
-forge test
+make test
 ```
 
 ### Format
 
 ```bash
-forge fmt
+make format
 ```
 
 ### Gas snapshots
 
 ```bash
-forge snapshot
+make snapshot
 ```
 
 ### Local node
@@ -252,7 +224,6 @@ This repo uses a `Makefile` helper to standardize deployment. `make deploy` wrap
 To configure the project, create a `.env` file in the root directory and add the following content:
 
 ```config
-# use CI secrets or hardware signer in production
 PRIVATE_KEY=0xYOUR_PRIVATE_KEY 
 RPC_URL=https://sepolia.hpp.io
 ```
@@ -282,7 +253,6 @@ We welcome contributions.
 - Fork the repo and open PRs with clear, focused changes.
 - Run `forge fmt` and `forge test` locally before opening PRs.
 - Keep API changes backwards-compatible where possible; if not, include a migration note.
-- Add tests for new behavior and document new public functions in the README.
 
 When referencing design ideas or architecture that were inspired by other public projects, a short mention in your PR description is appreciated.
 
@@ -292,18 +262,12 @@ When referencing design ideas or architecture that were inspired by other public
 
 This repository is licensed under the **BSD 3-Clause Clear License**.
 
-Include SPDX header in Solidity files:
-
-```solidity
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
-```
-
-If you have questions about license compatibility with other projects you consulted, consider legal review.
-
 ---
 
 ## Acknowledgements
 
-Design ideas and high-level patterns were referenced from other public projects. 
-For attribution we note: Ritual / Infernet SDK. This mention is informational only.
+The design and architecture of Noosphere were informed by several public projects
+in the decentralized compute space. We thank the teams behind these projects,
+including:
+- [Ritual / Infernet SDK](https://github.com/ritual-net/infernet-sdk) — referenced
+  for its approach to managing off-chain compute jobs and SDK structure.
