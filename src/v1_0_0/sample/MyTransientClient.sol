@@ -44,19 +44,23 @@ contract MyTransientClient is TransientComputeClient {
         bytes32 routeId
     ) external returns (uint64) {
         // Call the internal function provided by TransientComputeClient
-        return
-            _createComputeSubscription(containerId, redundancy, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId);
+        return _createComputeSubscription(
+            containerId, redundancy, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
+        );
     }
 
-    function requestCompute(uint64 subscriptionId, bytes memory inputs) external returns (uint64 id, Commitment memory) {
+    function requestCompute(uint64 subscriptionId, bytes memory inputs)
+        external
+        returns (uint64 id, Commitment memory)
+    {
         return _requestCompute(subscriptionId, inputs);
     }
 
     /// @notice A public function to request a compute job for an existing subscription.
     /// @dev Wraps the internal `_requestCompute` function.
     function MockDelegatorScheduledComputeClient(uint64 subscriptionId, bytes memory inputs)
-    external
-    returns (uint64, Commitment memory)
+        external
+        returns (uint64, Commitment memory)
     {
         return _requestCompute(subscriptionId, inputs);
     }
