@@ -86,7 +86,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOut_NonExistentRequest() public {
         // 1. Create a subscription but don't create a request for interval 2
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, NO_WALLET, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 2. Warp time to make the subscription active
