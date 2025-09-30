@@ -3,6 +3,7 @@ cache/
 out/
 .idea/
 broadcast/
+node_modules/
 
 # Ignores development broadcast logs
 !/broadcast
@@ -14,3 +15,6 @@ docs/
 
 # Dotenv file
 .env
+
+# lock file
+package-lock.json

@@ -412,7 +412,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     //////////////////////////////////////////////////////////////*/
     /// @inheritdoc ITypeAndVersion
     function typeAndVersion() external pure override returns (string memory) {
-        return "route_v1_0_0";
+        return "Router_v1.0.0";
     }
 
     /*//////////////////////////////////////////////////////////////

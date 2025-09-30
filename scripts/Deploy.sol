@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import {Script} from "forge-std/Script.sol";
-import {console} from "forge-std/console.sol";
-import {DeployUtils} from "../test/lib/DeployUtils.sol";
-import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
+import {DeployUtils} from "../test/lib/DeployUtils.sol";
+import {MyTransientClient} from "../src/v1_0_0/sample/MyTransientClient.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
+import {Script} from "forge-std/Script.sol";
+import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Deploy
 /// @notice Deploys noosphere SDK to destination chain defined in environment
@@ -34,12 +35,16 @@ contract Deploy is Script {
         (Router router, Coordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) =
                             DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
 
+        // Deploy the new client contract, linking it to the router
+        MyTransientClient myClient = new MyTransientClient(address(router));
+
         // Wire the Router to the WalletFactory
         router.setWalletFactory(address(walletFactory));
 
         // Summary logs
         console.log("=== Deploy: summary ===");
         console.log("Router:        ", address(router));
+        console.log("MyTransientClient: ", address(myClient));
         console.log("Coordinator:   ", address(coordinator));
         console.log("Reader:        ", address(reader));
         console.log("WalletFactory: ", address(walletFactory));

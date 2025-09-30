@@ -117,6 +117,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         address verifier,
         bytes32 routeId
     ) external virtual override returns (uint64) {
+        if (_getWalletFactory().isValidWallet(wallet) == false) {
+            revert InvalidWallet();
+        }
         uint64 subscriptionId = ++currentSubscriptionId;
         // If intervalSeconds is = 0 (one-time), active immediately
         subscriptions[subscriptionId] = ComputeSubscription({

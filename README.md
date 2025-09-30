@@ -183,9 +183,10 @@ contract MyOneShotClient is TransientComputeClient {
 .
 ├─ src/v1_0_0/            # Contracts (Router, Coordinator, ScheduledComputeClient, TransientComputeClient, Wallet, Billing, etc.)
 ├─ test/                  # Foundry tests
-├─ scripts/               # Helper scripts (optional)
-├─ Makefile               # build / test / deploy helpers (make deploy)
-├─ lib/                   # Third-party deps (openzeppelin, solady, etc.)
+├─ scripts/               # Helper scripts
+├─ webapp/                # Web application source
+├─ Makefile               # Build / test / deploy helpers (make deploy)
+├─ lib/                   # Third-party deps (openzeppelin, forge-std, etc.)
 ├─ foundry.toml
 └─ README.md
 ```
@@ -200,15 +201,45 @@ contract MyOneShotClient is TransientComputeClient {
     - `forge test`
     - `forge fmt --check`
 
+### End-to-End (E2E) Testing
+
+This project includes an automated end-to-end testing suite that simulates a full interaction between a client, the smart contracts, and a compute node (`agent`).
+
+#### 1. Setup
+
+First, install the required Node.js dependencies:
+
+```bash
+npm install
+```
+
+#### 2. Run E2E Tests
+
+Execute the entire test suite with a single command:
+
+```bash
+npm run test:e2e
+```
+
+This command automates the following steps:
+1.  Starts a local `anvil` node.
+2.  Deploys all necessary smart contracts using `make deploy`.
+3.  Starts the `agent.js` script to listen for compute requests.
+4.  Runs the `client.js` script to create a subscription and request a compute job.
+5.  After the client script successfully completes, it automatically shuts down all related processes.
+
 ## Deployment
 
 This repo uses a `Makefile` helper to standardize deployment. `make deploy` wraps `forge script` with environment variables for the private key and RPC endpoint.
 
-### Example usage
+### Guide for Setting Up Environment Variables
 
-```bash
-export PRIVATE_KEY="0xYOUR_PRIVATE_KEY"   # use CI secrets or hardware signer in production
-export RPC_URL="https://sepolia.hpp.io"
+To configure the project, create a `.env` file in the root directory and add the following content:
+
+```config
+# use CI secrets or hardware signer in production
+PRIVATE_KEY=0xYOUR_PRIVATE_KEY 
+RPC_URL=https://sepolia.hpp.io
 ```
 
 ```bash

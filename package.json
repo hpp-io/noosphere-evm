@@ -1,0 +1,33 @@
+{
+  "name": "noosphere-evm",
+  "version": "1.0.0",
+  "description": "End-to-end testing scripts for the Noosphere EVM protocol.",
+  "private": true,
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "anvil": "anvil",
+    "build": "forge build",
+    "deploy": "make deploy",
+    "agent": "node webapp/src/agent.js",
+    "client": "node webapp/src/client.js",
+    "test:e2e": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 5 && npm run agent\" \"sleep 8 && npm run client\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hpp-io/noosphere-evm/issues"
+  },
+  "homepage": "https://github.com/hpp-io/noosphere-evm#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
