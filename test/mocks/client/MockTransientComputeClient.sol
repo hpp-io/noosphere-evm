@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
 import {TransientComputeClient} from "../../../src/v1_0_0/client/TransientComputeClient.sol";
@@ -42,6 +42,39 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         uint64 subId = _createComputeSubscription(
             containerId, redundancy, false, feeToken, feeAmount, wallet, verifier, bytes32("Coordinator_v1.0.0")
         );
+
+        (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
+
+        _assertSubscription(
+            actualSubscriptionID,
+            containerId,
+            inputs,
+            redundancy,
+            false,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            currentTimestamp
+        );
+
+        return (actualSubscriptionID, commitment);
+    }
+
+    function createMockRequestWithRouteId(
+        string memory containerId,
+        bytes memory inputs,
+        uint16 redundancy,
+        address feeToken,
+        uint256 feeAmount,
+        address wallet,
+        address verifier,
+        bytes32 routeId
+    ) external returns (uint64, Commitment memory) {
+        // Get current block timestamp
+        uint256 currentTimestamp = block.timestamp;
+        uint64 subId =
+            _createComputeSubscription(containerId, redundancy, false, feeToken, feeAmount, wallet, verifier, routeId);
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
