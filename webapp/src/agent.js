@@ -29,6 +29,9 @@ function getLatestDeploymentAddress(contractName) {
     }
 }
 
+// Returns the current timestamp in seconds.
+const now = () => Math.floor(Date.now() / 1000);
+
 async function main() {
     console.log("🤖 Node starting up...");
 
@@ -98,7 +101,7 @@ async function main() {
         try {
             // 1. Get the inputs for the computation from the client contract
             console.log("   1. Fetching compute inputs...");
-            const inputs = await clientContract.getComputeInputs(subscriptionId);
+            const inputs = await clientContract.getComputeInputs(subscriptionId, 1, now(), nodePaymentWalletAddress);
             console.log(`      Inputs received: ${inputs}`);
 
             // 2. "Perform" the computation (we'll just return a dummy value)

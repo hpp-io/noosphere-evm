@@ -85,7 +85,12 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         }
     }
 
-    function getComputeInputs(uint64 subscriptionId) external view virtual returns (bytes memory) {}
+    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
+        external
+        view
+        virtual
+        returns (bytes memory)
+    {}
 
     function _receiveCompute(
         uint64 subscriptionId,

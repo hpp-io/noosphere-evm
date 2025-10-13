@@ -48,6 +48,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         _assertSubscription(
             actualSubscriptionID,
             containerId,
+            1,
             inputs,
             redundancy,
             false,
@@ -81,6 +82,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         _assertSubscription(
             actualSubscriptionID,
             containerId,
+            1,
             inputs,
             redundancy,
             false,
@@ -123,6 +125,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         _assertSubscription(
             actualSubscriptionID,
             containerId,
+            1,
             inputs,
             redundancy,
             true,
@@ -144,6 +147,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
     function _assertSubscription(
         uint64 subId,
         string memory containerId,
+        uint32 interval,
         bytes memory inputs,
         uint16 redundancy,
         bool expectedLazy, // Add this parameter
@@ -166,7 +170,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         assertEq(sub.feeAmount, feeAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
-        assertEq(subscriptionInputs[subId], inputs);
+        assertEq(subscriptionInputs[subId][interval], inputs);
     }
 
     /// @notice Overrides internal function, pushing received response to delivered outputs map
