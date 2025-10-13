@@ -3,8 +3,11 @@ pragma solidity ^0.8.23;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
+import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
+import {ComputeSubscriptionTest} from "./Compute.Subscription.t.sol";
+import {CommitmentUtils} from "../src/v1_0_0/utility/CommitmentUtils.sol";
 
 /// @title CoordinatorEagerPaymentNoProofTest
 /// @notice Coordinator tests specific to eager subscriptions with payments but no proofs
@@ -265,5 +268,34 @@ contract ComputePaymentNoProofTest is ComputeTest {
         transientClient.createMockRequest(
             MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
+    }
+
+    /// @notice Can build an idempotent commitment using CommitmentUtils
+    function test_Succeeds_When_BuildingIdempotentCommitment() public {
+        // 1. Create a subscription
+        address aliceWallet = walletFactory.createWallet(address(alice));
+        vm.deal(aliceWallet, 1 ether);
+        vm.prank(address(alice));
+        Wallet(payable(aliceWallet)).approve(address(transientClient), ZERO_ADDRESS, 1 ether);
+
+        (uint64 subId, Commitment memory firstCommitment) = transientClient.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 0.01 ether, aliceWallet, NO_VERIFIER
+        );
+
+        ComputeSubscription memory sub = ROUTER.getComputeSubscription(subId);
+        Commitment memory commitmentResult = CommitmentUtils.build(sub, subId, 1, address(COORDINATOR));
+
+        // 3. Compare the first commitment with the idempotent commitment
+        assertEq(firstCommitment.requestId, commitmentResult.requestId);
+        assertEq(firstCommitment.subscriptionId, commitmentResult.subscriptionId);
+        assertEq(firstCommitment.containerId, commitmentResult.containerId);
+        assertEq(firstCommitment.interval, commitmentResult.interval);
+        assertEq(firstCommitment.useDeliveryInbox, commitmentResult.useDeliveryInbox);
+        assertEq(firstCommitment.redundancy, commitmentResult.redundancy);
+        assertEq(firstCommitment.walletAddress, commitmentResult.walletAddress);
+        assertEq(firstCommitment.feeToken, commitmentResult.feeToken);
+        assertEq(firstCommitment.feeAmount, commitmentResult.feeAmount);
+        assertEq(firstCommitment.verifier, commitmentResult.verifier);
+        assertEq(firstCommitment.coordinator, commitmentResult.coordinator);
     }
 }

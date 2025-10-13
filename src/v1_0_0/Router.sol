@@ -14,6 +14,7 @@ import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {SubscriptionsManager} from "./SubscriptionManager.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
+import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 
 /**
@@ -438,19 +439,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         if (requestCommitments[requestId] != bytes32(0)) {
             // Request already exists, reconstruct the commitment to make the call idempotent.
-            commitment = Commitment({
-                requestId: requestId,
-                subscriptionId: subscriptionId,
-                containerId: subscription.containerId,
-                interval: interval,
-                useDeliveryInbox: subscription.useDeliveryInbox,
-                redundancy: subscription.redundancy,
-                walletAddress: subscription.wallet,
-                feeAmount: subscription.feeAmount,
-                feeToken: subscription.feeToken,
-                verifier: subscription.verifier,
-                coordinator: coordinatorAddr
-            });
+            commitment = CommitmentUtils.build(subscription, subscriptionId, interval, coordinatorAddr);
         } else {
             // New request, mark it and start it in the coordinator.
             _markRequestInFlight(

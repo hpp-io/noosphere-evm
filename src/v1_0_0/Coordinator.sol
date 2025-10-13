@@ -211,7 +211,6 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         _validateOwnership();
     }
 
-
     /*//////////////////////////////////////////////////////////////
                            UTILITY CONTRACTS
     //////////////////////////////////////////////////////////////*/

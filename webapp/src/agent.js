@@ -1,6 +1,7 @@
 // /Users/nol/work/noosphere/noosphere-evm/webapp/src/node.js
 
 const path = require('path');
+const {Commitment} = require("./commitment");
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const ethers = require('ethers');
@@ -109,10 +110,8 @@ async function main() {
             console.log(`   2. Computation finished. Output: ${output}`);
 
             // 3. Prepare the data to report back to the coordinator
-            const commitmentData = ethers.AbiCoder.defaultAbiCoder().encode(
-                ['(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address)'],
-                [commitment]
-            );
+            const commitmentInstance = new Commitment(commitment);
+            const commitmentData = commitmentInstance.encode();
 
             // 4. Report the result back to the Coordinator
             console.log("   3. Reporting compute result to Coordinator...");
