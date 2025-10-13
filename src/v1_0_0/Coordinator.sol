@@ -21,6 +21,8 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /*//////////////////////////////////////////////////////////////////////////
                                      STORAGE
     //////////////////////////////////////////////////////////////////////////*/
+    /// @notice Address of the SubscriptionBatchReader utility contract.
+    address private subscriptionBatchReader;
 
     /// @notice Counts redundant deliveries for a request: key = keccak256(requestId)
     mapping(bytes32 => uint16) public redundancyCount;
@@ -207,5 +209,24 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev ConfirmedOwner abstract hook (required override).
     function _onlyOwner() internal view override {
         _validateOwnership();
+    }
+
+
+    /*//////////////////////////////////////////////////////////////
+                           UTILITY CONTRACTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Sets the address of the SubscriptionBatchReader contract.
+    /// @dev Can only be called by the owner.
+    /// @param _reader The address of the deployed SubscriptionBatchReader.
+    function setSubscriptionBatchReader(address _reader) external onlyOwner {
+        require(_reader != address(0), "Coordinator: Invalid reader address");
+        subscriptionBatchReader = _reader;
+    }
+
+    /// @notice Gets the address of the SubscriptionBatchReader contract.
+    /// @return The address of the reader contract.
+    function getSubscriptionBatchReader() external view returns (address) {
+        return subscriptionBatchReader;
     }
 }

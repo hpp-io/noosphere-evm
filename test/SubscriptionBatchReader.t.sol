@@ -33,11 +33,22 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         address coordinator = ROUTER.getContractById("Coordinator_v1.0.0");
         batchReader = new SubscriptionBatchReader(address(ROUTER), coordinator);
         scheduledClient = new MockDelegatorScheduledComputeClient(address(ROUTER), address(this));
+        vm.prank(address(this));
+        COORDINATOR.setSubscriptionBatchReader(address(batchReader));
     }
 
     /*//////////////////////////////////////////////////////////////
                                  TESTS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Can retrieve the batch reader address from the coordinator
+    function test_Succeeds_When_GettingReaderFromCoordinator() public view {
+        // Act
+        address readerAddressFromCoordinator = COORDINATOR.getSubscriptionBatchReader();
+
+        // Assert
+        assertEq(readerAddressFromCoordinator, address(batchReader));
+    }
 
     /// @notice Can read single subscription
     function test_Succeeds_When_ReadingSingleSubscription() public {

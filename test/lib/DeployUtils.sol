@@ -53,6 +53,7 @@ library DeployUtils {
         // Deploy lightweight reader and wallet factory wired to the router + coordinator.
         reader = new SubscriptionBatchReader(address(router), address(coordinator));
         walletFactory = new WalletFactory(address(router));
+        coordinator.setSubscriptionBatchReader(address (reader));
 
         // Register Coordinator into the Router's contract registry so lookups succeed.
         bytes32[] memory ids = new bytes32[](1);
