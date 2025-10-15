@@ -1,6 +1,7 @@
 // /Users/nol/work/noosphere/noosphere-evm/webapp/src/node.js
 
 const path = require('path');
+const {Commitment} = require("./commitment");
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const ethers = require('ethers');
@@ -28,6 +29,9 @@ function getLatestDeploymentAddress(contractName) {
         return undefined;
     }
 }
+
+// Returns the current timestamp in seconds.
+const now = () => Math.floor(Date.now() / 1000);
 
 async function main() {
     console.log("🤖 Node starting up...");
@@ -98,7 +102,7 @@ async function main() {
         try {
             // 1. Get the inputs for the computation from the client contract
             console.log("   1. Fetching compute inputs...");
-            const inputs = await clientContract.getComputeInputs(subscriptionId);
+            const inputs = await clientContract.getComputeInputs(subscriptionId, 1, now(), nodePaymentWalletAddress);
             console.log(`      Inputs received: ${inputs}`);
 
             // 2. "Perform" the computation (we'll just return a dummy value)
@@ -106,10 +110,38 @@ async function main() {
             console.log(`   2. Computation finished. Output: ${output}`);
 
             // 3. Prepare the data to report back to the coordinator
-            const commitmentData = ethers.AbiCoder.defaultAbiCoder().encode(
-                ['(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address)'],
-                [commitment]
-            );
+            // Use the commitmentUtil to reconstruct the commitment data
+            const subscription = await routerContract.getComputeSubscription(subscriptionId);
+
+            // The full commitment object is received from the event, but if we were to reconstruct it
+            // from the subscription data, it would look like this:
+            const commitmentDataForReport = {
+                requestId: requestId,
+                subscriptionId: subscriptionId,
+                containerId: subscription.containerId,
+                interval: commitment.interval,
+                useDeliveryInbox: subscription.useDeliveryInbox,
+                redundancy: subscription.redundancy,
+                walletAddress: subscription.wallet,
+                feeAmount: subscription.feeAmount,
+                feeToken: subscription.feeToken,
+                verifier: subscription.verifier,
+                coordinator:COORDINATOR_ADDRESS
+            };
+
+            const commitmentInstance = new Commitment(commitmentDataForReport);
+            const encodedCommitmentData = commitmentInstance.encode();
+
+            // Compare the commitment from the event with the one we reconstructed
+            const eventCommitment = new Commitment(commitment);
+            if (ethers.keccak256(eventCommitment.encode()) !== ethers.keccak256(commitmentInstance.encode())) {
+                console.warn("   ⚠️ Reconstructed commitment hash does not match event commitment hash!");
+                console.warn("      Event Commitment:", eventCommitment.toObject());
+                console.warn("      Reconstructed Commitment:", commitmentInstance.toObject());
+            } else {
+                console.log("   ✅ Reconstructed commitment matches event commitment.");
+            }
+
 
             // 4. Report the result back to the Coordinator
             console.log("   3. Reporting compute result to Coordinator...");
@@ -117,8 +149,8 @@ async function main() {
                 commitment.interval,
                 inputs,
                 output,
-                "0x", // proof
-                commitmentData,
+                "0x", // proof (placeholder)
+                encodedCommitmentData,
                 nodePaymentWalletAddress // The node's dedicated Wallet contract that will receive payment
             );
 

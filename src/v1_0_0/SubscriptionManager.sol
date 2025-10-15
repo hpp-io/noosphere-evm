@@ -123,7 +123,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint64 subscriptionId = ++currentSubscriptionId;
         // If intervalSeconds is = 0 (one-time), active immediately
         subscriptions[subscriptionId] = ComputeSubscription({
-            activeAt: uint32(block.timestamp) + intervalSeconds,
+            activeAt: type(uint32).max,
             client: msg.sender,
             redundancy: redundancy,
             maxExecutions: maxExecutions,
@@ -210,14 +210,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function cancelComputeSubscription(uint64 subscriptionId) external override {
+        if (subscriptions[subscriptionId].client == address(0)) {
+            revert SubscriptionNotFound();
+        }
         if (subscriptions[subscriptionId].client != msg.sender) {
             revert NotSubscriptionOwner();
         }
         if (_pendingRequestExists(subscriptionId)) {
             revert CannotRemoveWithPendingRequests();
         }
-        subscriptions[subscriptionId].activeAt = type(uint32).max;
-        emit SubscriptionCancelled(subscriptionId);
+        _cancelSubscriptionHelper(subscriptionId);
     }
 
     function pendingRequestExists(uint64 subscriptionId) external view override returns (bool) {
@@ -308,13 +310,10 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         }
         uint32 activeAt = sub.activeAt;
         uint32 intervalSeconds = sub.intervalSeconds;
-        if (uint32(block.timestamp) < activeAt) {
-            return 0;
-            //            revert SubscriptionNotActive();
-        }
-        if (intervalSeconds == 0) {
-            return 1;
-        }
+
+        if (uint32(block.timestamp) < activeAt) return 0;
+        if (intervalSeconds == 0) return 1;
+
         unchecked {
             return ((uint32(block.timestamp) - activeAt) / intervalSeconds) + 1;
         }
@@ -400,6 +399,10 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         );
     }
 
+    function _makeSubscriptionInactive(uint64 subscriptionId) internal {
+        subscriptions[subscriptionId].activeAt = type(uint32).max;
+    }
+
     function _cancelSubscriptionHelper(uint64 subscriptionId) internal {
         ComputeSubscription memory subscription = subscriptions[subscriptionId];
         subscription.activeAt = type(uint32).max;
@@ -417,9 +420,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                 emit CommitmentTimedOut(rid, subscriptionId, currentInterval);
             }
         }
-
-        // Mark subscription inactive
-        subscriptions[subscriptionId].activeAt = type(uint32).max;
+        delete subscriptions[subscriptionId];
         emit SubscriptionCancelled(subscriptionId);
     }
 
@@ -452,7 +453,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (subscriptionId == 0 || subscriptions[subscriptionId].client == address(0)) {
             return false;
         }
-        return subscriptions[subscriptionId].activeAt != type(uint32).max;
+        return true;
     }
 
     function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
@@ -499,6 +500,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (stored == bytes32(0)) revert NoSuchCommitment();
 
         ComputeSubscription storage sub = subscriptions[subscriptionId];
+        if (sub.activeAt == type(uint32).max) revert SubscriptionNotActive();
+
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
         if (currentInterval == 0) revert SubscriptionNotActive();
 

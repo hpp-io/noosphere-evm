@@ -40,7 +40,7 @@ contract ComputeTransientTest is ComputeTest {
         assertEq(sub.useDeliveryInbox, false);
 
         // Assert subscription inputs are correctly stord
-        assertEq(transientClient.getComputeInputs(actual), MOCK_CONTAINER_INPUTS);
+        assertEq(transientClient.getComputeInputs(actual, 1, 0, address(0)), MOCK_CONTAINER_INPUTS);
     }
 
     /// @notice Can create useDeliveryInbox callback (one-time subscription)
@@ -66,7 +66,7 @@ contract ComputeTransientTest is ComputeTest {
         assertEq(sub.useDeliveryInbox, true);
 
         // Assert subscription inputs are correctly stord
-        assertEq(transientClient.getComputeInputs(actual), MOCK_CONTAINER_INPUTS);
+        assertEq(transientClient.getComputeInputs(actual, 1, 0, address(0)), MOCK_CONTAINER_INPUTS);
     }
 
     function testFuzz_RevertIf_DeliveringCallback_WithIncorrectInterval(uint32 interval) public {

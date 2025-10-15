@@ -41,7 +41,6 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         );
 
         // 5. Warp to the first interval and deliver the compute
-        vm.warp(1 minutes);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // --- Assertions for the next interval preparation ---
@@ -120,7 +119,6 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
         MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
         // 5. Deliver compute for the first interval
-        vm.warp(block.timestamp + 1 minutes);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
@@ -155,7 +153,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
 
         // 5. Deliver compute for the first interval
-        vm.warp(block.timestamp + 1 minutes);
+        //        vm.warp(block.timestamp + 1 minutes);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
@@ -207,7 +205,6 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         assertEq(subId, 1);
 
         // 2. Act: Deliver compute for the first interval, which triggers preparation for the second.
-        vm.warp(block.timestamp + 1 minutes);
         bytes memory commitmentData1 = abi.encode(commitment);
         vm.prank(address(bob));
         bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);

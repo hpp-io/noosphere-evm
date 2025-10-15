@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
 import {TransientComputeClient} from "../../../src/v1_0_0/client/TransientComputeClient.sol";
@@ -48,6 +48,41 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         _assertSubscription(
             actualSubscriptionID,
             containerId,
+            1,
+            inputs,
+            redundancy,
+            false,
+            feeToken,
+            feeAmount,
+            wallet,
+            verifier,
+            currentTimestamp
+        );
+
+        return (actualSubscriptionID, commitment);
+    }
+
+    function createMockRequestWithRouteId(
+        string memory containerId,
+        bytes memory inputs,
+        uint16 redundancy,
+        address feeToken,
+        uint256 feeAmount,
+        address wallet,
+        address verifier,
+        bytes32 routeId
+    ) external returns (uint64, Commitment memory) {
+        // Get current block timestamp
+        uint256 currentTimestamp = block.timestamp;
+        uint64 subId =
+            _createComputeSubscription(containerId, redundancy, false, feeToken, feeAmount, wallet, verifier, routeId);
+
+        (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
+
+        _assertSubscription(
+            actualSubscriptionID,
+            containerId,
+            1,
             inputs,
             redundancy,
             false,
@@ -90,6 +125,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         _assertSubscription(
             actualSubscriptionID,
             containerId,
+            1,
             inputs,
             redundancy,
             true,
@@ -111,6 +147,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
     function _assertSubscription(
         uint64 subId,
         string memory containerId,
+        uint32 interval,
         bytes memory inputs,
         uint16 redundancy,
         bool expectedLazy, // Add this parameter
@@ -133,7 +170,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         assertEq(sub.feeAmount, feeAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
-        assertEq(subscriptionInputs[subId], inputs);
+        assertEq(subscriptionInputs[subId][interval], inputs);
     }
 
     /// @notice Overrides internal function, pushing received response to delivered outputs map

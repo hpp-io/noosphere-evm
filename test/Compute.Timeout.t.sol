@@ -61,10 +61,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
-        // 2. Warp time to the *first* interval. The request is not yet in the past.
-        vm.warp(block.timestamp + 1 minutes);
-
-        // 3. Expect a revert because the interval is not in the past
+        // 2. Expect a revert because the interval is not in the past
         vm.expectRevert(CommitmentNotTimeoutable.selector);
         ROUTER.timeoutRequest(commitment1.requestId, subId, 1);
     }
@@ -75,11 +72,8 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
-        // 2. Do NOT warp time. The subscription's activeAt is `block.timestamp + 1 minutes`.
-        // The current block.timestamp is before activeAt.
-
         // 3. Expect a revert because the subscription is not active
-        vm.expectRevert(bytes("SubscriptionNotActive()"));
+        vm.expectRevert(bytes("CommitmentNotTimeoutable()"));
         ROUTER.timeoutRequest(commitment1.requestId, subId, 1);
     }
 

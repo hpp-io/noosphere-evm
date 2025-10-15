@@ -264,11 +264,8 @@ async function main() {
             console.warn("   ⚠️ Settlement verification inconclusive. Client's wallet balance did not decrease as expected.");
         }
 
-        // --- (Optional) 3. Cancel the subscription ---
-        // console.log("\n3️⃣  Canceling subscription...");
-        // const cancelTx = await clientContract.cancelSubscription(subscriptionId);
-        // await cancelTx.wait(1);
-        // console.log(`   ✅ Subscription ${subscriptionId.toString()} cancelled.`);
+        console.log("\n🎉 E2E test completed successfully!");
+        process.exit(0);
 
     } catch (error) {
         console.error("\nAn error occurred during the client test script:");

@@ -9,12 +9,12 @@
     "test": "test"
   },
   "scripts": {
-    "anvil": "anvil",
     "build": "forge build",
     "deploy": "make deploy",
+    "anvil": "anvil",
     "agent": "node webapp/src/agent.js",
     "client": "node webapp/src/client.js",
-    "test:e2e": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 5 && npm run agent\" \"sleep 8 && npm run client\""
+    "test:e2e": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 15 && npm run agent\" \"sleep 20 && npm run client && npx kill-port 8545\""
   },
   "keywords": [],
   "author": "",
@@ -28,6 +28,7 @@
     "ethers": "^6.15.0"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "kill-port": "^2.0.1"
   }
 }
