@@ -24,16 +24,11 @@ contract ComputeSubscriptionTest is ComputeTest {
     }
 
     function test_Succeeds_When_CancellingFulfilledSubscription() public {
-        // Create subscription
-        // vm.warp(0);
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         bytes memory commitmentData = abi.encode(commitment);
-
-        // Fulfill at least once
-        vm.warp(block.timestamp + 1 minutes);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1);
         alice.reportComputeResult(
@@ -49,7 +44,7 @@ contract ComputeSubscriptionTest is ComputeTest {
     /// @notice Cannot cancel a subscription that does not exist
     function test_RevertIf_CancellingNonExistentSubscription() public {
         // Try to delete subscription without creating
-        vm.expectRevert(bytes("NotSubscriptionOwner()"));
+        vm.expectRevert(bytes("SubscriptionNotFound()"));
         ScheduledClient.cancelMockSubscription(1);
     }
 
@@ -84,7 +79,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Set the block time before creating the subscription
         vm.warp(blockTime);
 
-        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             maxExecutions,
             intervalSeconds,
@@ -108,9 +103,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // blockTime + N * intervalSeconds = N
         uint32 expected = 1;
         for (
-            uint32 start = blockTime + intervalSeconds;
-            start < (blockTime) + (maxExecutions * intervalSeconds);
-            start += intervalSeconds
+            uint32 start = blockTime; start < (blockTime) + (maxExecutions * intervalSeconds); start += intervalSeconds
         ) {
             // Set current time
             vm.warp(start);
@@ -165,7 +158,7 @@ contract ComputeSubscriptionTest is ComputeTest {
             MOCK_CONTAINER_ID,
             2, // maxExecutions = 2
             1 minutes,
-            1,
+            2,
             false,
             NO_PAYMENT_TOKEN,
             0,
@@ -174,7 +167,6 @@ contract ComputeSubscriptionTest is ComputeTest {
         );
 
         // Warp to the first active interval and send the request
-        vm.warp(1 minutes);
         (, Commitment memory commitment1) = ScheduledClient.sendRequest(subId, 1);
         bytes memory commitmentData1 = abi.encode(commitment1);
 

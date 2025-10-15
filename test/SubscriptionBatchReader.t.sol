@@ -100,7 +100,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
 
         // Create normal subscriptions at ids {1, 2, 3, 4}
         for (uint32 i = 0; i < 4; i++) {
-            ScheduledClient.createMockSubscription(
+            ScheduledClient.createMockSubscriptionWithoutRequest(
                 MOCK_CONTAINER_ID,
                 i + 1, // Use maxExecutions as verification index
                 1 minutes,
@@ -132,7 +132,6 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Check normal subscriptions {1, 2, 3}
         for (uint32 i = 0; i < 3; i++) {
             assertEq(read[i].client, address(ScheduledClient));
-            assertEq(read[i].activeAt, 60);
             assertEq(read[i].intervalSeconds, 1 minutes);
             assertEq(read[i].maxExecutions, i + 1); // Use as verification index
             assertEq(read[i].redundancy, 1);
@@ -144,15 +143,8 @@ contract SubscriptionBatchReaderTest is ComputeTest {
             assertEq(read[i].verifier, payable(NO_VERIFIER));
         }
 
-        // Check cancelled subscription
-        assertEq(read[3].client, address(ScheduledClient));
-        assertEq(read[3].activeAt, type(uint32).max); // Cancelled
-        assertEq(read[3].intervalSeconds, 1 minutes);
-        assertEq(read[3].maxExecutions, 4);
-        assertEq(read[3].redundancy, 1);
-        assertEq(read[3].containerId, HASHED_MOCK_CONTAINER_ID);
-        assertEq(read[3].useDeliveryInbox, false);
-        assertEq(read[3].feeAmount, 10e6);
+        //        // Check cancelled subscription
+        assertEq(read[3].client, address(0));
 
         // Check non-existent subscription
         assertEq(read[4].client, address(0));
@@ -180,7 +172,6 @@ contract SubscriptionBatchReaderTest is ComputeTest {
 
         // Deliver (id: subOne, interval: 1) from Alice + Bob
         // Deliver (id: subTwo, interval: 1) from Alice
-        vm.warp(1 minutes);
         (, Commitment memory commitmentStruct1) = ScheduledClient.sendRequest(subOne, 1);
         bytes memory commitment1 = abi.encode(commitmentStruct1);
         (, Commitment memory commitmentStruct2) = ScheduledClient.sendRequest(subTwo, 1);
@@ -191,7 +182,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment2, aliceWalletAddress);
 
         // Deliver (id: subOne, interval: 2) from Alice
-        vm.warp(2 minutes);
+        vm.warp(1 minutes);
         (, Commitment memory commitmentStruct3) = ScheduledClient.sendRequest(subOne, 2);
         bytes memory commitment3 = abi.encode(commitmentStruct3);
         alice.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment3, aliceWalletAddress);
@@ -240,7 +231,6 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         );
 
         // Deliver subscription
-        vm.warp(1 minutes);
         uint32 interval = 1;
         (, Commitment memory commitmentStruct) = ScheduledClient.sendRequest(subId, interval);
         bytes memory commitment = abi.encode(commitmentStruct);

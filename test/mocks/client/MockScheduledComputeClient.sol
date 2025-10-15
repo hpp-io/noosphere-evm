@@ -141,7 +141,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     ) private view {
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(subId);
 
-        assertEq(sub.activeAt, creationTimestamp + intervalSeconds);
+        assertEq(sub.activeAt, type(uint32).max);
         assertEq(sub.client, address(this));
         assertEq(sub.redundancy, redundancy);
         assertEq(sub.maxExecutions, maxExecutions);
@@ -160,10 +160,10 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     /// @dev Asserts subscription client is nullified after cancellation
     function cancelMockSubscription(uint64 subscriptionId) external {
         _cancelComputeSubscription(subscriptionId);
-        // Assert maxxed out subscription `activeAt`
-        uint32 expected = type(uint32).max;
         ComputeSubscription memory actual = _getRouter().getComputeSubscription(subscriptionId);
-        assertEq(actual.activeAt, expected);
+        assertEq(actual.client, address(0)); // Assert client is nullified
+
+        //        assertEq(actual.activeAt, expected);
     }
 
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)

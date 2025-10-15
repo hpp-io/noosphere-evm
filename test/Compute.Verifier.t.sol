@@ -219,9 +219,6 @@ contract ComputeVerifierTest is ComputeTest {
         // Ensure that atomic verifier will return true for proof verification
         immediateVerifier.setNextValidityTrue();
 
-        // Warp to the exact time the subscription becomes active
-        vm.warp(1 minutes + 1);
-
         // Execute response fulfillment from Bob
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 

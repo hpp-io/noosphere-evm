@@ -404,8 +404,8 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         router.cancelComputeSubscription(subscriptionId);
 
         ComputeSubscription memory stored = router.getComputeSubscription(1);
-        // cancellation uses sentinel max value for activeAt in this testbench
-        assertEq(stored.activeAt, type(uint32).max);
+        // After cancellation, the subscription should be deleted, and its client address reset to the default (zero).
+        assertEq(stored.client, address(0));
     }
 
     /// @notice Deliver a compute response atomically while creating a subscription (delegatee path)

@@ -161,16 +161,16 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
 
-        // verify the delivery interval matches subscription's current interval
-        uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
-        if (interval != deliveryInterval) {
-            revert IntervalMismatch(deliveryInterval);
-        }
-
         // check redundancy limit for this request: if already reached, revert
         uint16 numRedundantDeliveries = redundancyCount[commitment.requestId];
         if (numRedundantDeliveries == commitment.redundancy) {
             revert IntervalCompleted();
+        }
+
+        // verify the delivery interval matches subscription's current interval
+        uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
+        if (interval != deliveryInterval) {
+            revert IntervalMismatch(deliveryInterval);
         }
 
         // validate the nodeWallet is a recognized wallet produced by the WalletFactory

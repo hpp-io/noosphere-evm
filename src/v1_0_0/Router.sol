@@ -225,6 +225,16 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             output,
             proof
         );
+
+        // Deactivate the subscription only if the current delivery is the last one for this interval
+        // and there are no more intervals to execute.
+        if (
+            numRedundantDeliveries == commitment.redundancy
+                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false
+        ) {
+            _makeSubscriptionInactive(commitment.subscriptionId);
+        }
+
         resultCode = FulfillResult.FULFILLED;
         emit RequestProcessed(
             commitment.requestId,
@@ -450,6 +460,11 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscription.feeToken,
                 subscription.feeAmount
             );
+
+            /// Update the activeAt timestamp to reflect the last activity
+            if (subscription.activeAt == type(uint32).max) {
+                subscription.activeAt = uint32(block.timestamp);
+            }
 
             ICoordinator coordinator = ICoordinator(coordinatorAddr);
             commitment = coordinator.startRequest(

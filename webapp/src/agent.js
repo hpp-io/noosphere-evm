@@ -110,8 +110,38 @@ async function main() {
             console.log(`   2. Computation finished. Output: ${output}`);
 
             // 3. Prepare the data to report back to the coordinator
-            const commitmentInstance = new Commitment(commitment);
-            const commitmentData = commitmentInstance.encode();
+            // Use the commitmentUtil to reconstruct the commitment data
+            const subscription = await routerContract.getComputeSubscription(subscriptionId);
+
+            // The full commitment object is received from the event, but if we were to reconstruct it
+            // from the subscription data, it would look like this:
+            const commitmentDataForReport = {
+                requestId: requestId,
+                subscriptionId: subscriptionId,
+                containerId: subscription.containerId,
+                interval: commitment.interval,
+                useDeliveryInbox: subscription.useDeliveryInbox,
+                redundancy: subscription.redundancy,
+                walletAddress: subscription.wallet,
+                feeAmount: subscription.feeAmount,
+                feeToken: subscription.feeToken,
+                verifier: subscription.verifier,
+                coordinator:COORDINATOR_ADDRESS
+            };
+
+            const commitmentInstance = new Commitment(commitmentDataForReport);
+            const encodedCommitmentData = commitmentInstance.encode();
+
+            // Compare the commitment from the event with the one we reconstructed
+            const eventCommitment = new Commitment(commitment);
+            if (ethers.keccak256(eventCommitment.encode()) !== ethers.keccak256(commitmentInstance.encode())) {
+                console.warn("   ⚠️ Reconstructed commitment hash does not match event commitment hash!");
+                console.warn("      Event Commitment:", eventCommitment.toObject());
+                console.warn("      Reconstructed Commitment:", commitmentInstance.toObject());
+            } else {
+                console.log("   ✅ Reconstructed commitment matches event commitment.");
+            }
+
 
             // 4. Report the result back to the Coordinator
             console.log("   3. Reporting compute result to Coordinator...");
@@ -119,8 +149,8 @@ async function main() {
                 commitment.interval,
                 inputs,
                 output,
-                "0x", // proof
-                commitmentData,
+                "0x", // proof (placeholder)
+                encodedCommitmentData,
                 nodePaymentWalletAddress // The node's dedicated Wallet contract that will receive payment
             );
 
