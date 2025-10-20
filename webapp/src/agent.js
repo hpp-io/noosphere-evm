@@ -85,6 +85,8 @@ async function main() {
 
     console.log(`   Listening for 'RequestStarted' events on Coordinator at ${COORDINATOR_ADDRESS}...`);
 
+
+
     // Listen for the RequestStarted event from the Coordinator
     coordinatorContract.on("RequestStarted", async (requestId, subscriptionId, containerId, commitment) => {
         console.log("\n⚡️ New Request Detected!");
@@ -104,6 +106,12 @@ async function main() {
             console.log("   1. Fetching compute inputs...");
             const inputs = await clientContract.getComputeInputs(subscriptionId, 1, now(), nodePaymentWalletAddress);
             console.log(`      Inputs received: ${inputs}`);
+
+            // [EXAMPLE] Get the delegated signer from the client contract
+            console.log("   -> Fetching delegated signer from client contract...");
+            const delegatedSigner = await clientContract.getSigner();
+            console.log(`      Delegated Signer for client ${await clientContract.getAddress()}: ${delegatedSigner}`);
+            // This delegatedSigner address is the one that would be used to sign off-chain messages for `createSubscriptionDelegatee`.
 
             // 2. "Perform" the computation (we'll just return a dummy value)
             const output = "0x5678"; // Our "computed" result

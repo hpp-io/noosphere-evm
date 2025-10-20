@@ -36,7 +36,7 @@ contract Deploy is Script {
                             DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
 
         // Deploy the new client contract, linking it to the router
-        MyTransientClient myClient = new MyTransientClient(address(router));
+        MyTransientClient myClient = new MyTransientClient(address(router), address(deployerAddress));
 
         // Wire the Router to the WalletFactory
         router.setWalletFactory(address(walletFactory));

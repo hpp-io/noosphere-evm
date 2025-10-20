@@ -3,12 +3,13 @@ pragma solidity ^0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {TransientComputeClient} from "../client/TransientComputeClient.sol";
+import {Delegator} from "../utility/Delegator.sol";
 
 /// @title MyTransientClient
 /// @notice An example implementation of a TransientComputeClient.
 /// @dev This contract provides a public interface to create, request, and cancel subscriptions,
 ///      and demonstrates how to receive compute results.
-contract MyTransientClient is TransientComputeClient {
+contract MyTransientClient is TransientComputeClient, Delegator {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -25,7 +26,7 @@ contract MyTransientClient is TransientComputeClient {
     //////////////////////////////////////////////////////////////*/
 
     /// @param router The address of the main Router contract.
-    constructor(address router) TransientComputeClient(router) {}
+    constructor(address router, address signer) TransientComputeClient(router) Delegator(signer) {}
 
     /*//////////////////////////////////////////////////////////////
                                PUBLIC FUNCTIONS
@@ -94,6 +95,12 @@ contract MyTransientClient is TransientComputeClient {
         lastReceivedNode = node;
         lastReceivedOutput = output;
         lastReceivedContainerId = containerId;
+    }
+
+    /// @notice Update new signer
+    /// @param newSigner to update
+    function updateMockSigner(address newSigner) external {
+        _updateSigner(newSigner);
     }
 
     /*//////////////////////////////////////////////////////////////
