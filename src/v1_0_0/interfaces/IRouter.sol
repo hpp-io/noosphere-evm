@@ -83,8 +83,7 @@ interface IRouter {
     ///      needed for verifier fees are reserved.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
     /// @param commitment Commitment that proves the original request context and pricing.
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
-        external;
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external;
 
     /// @notice Release/unlock previously locked funds after verification completes or is aborted.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
@@ -144,8 +143,7 @@ interface IRouter {
     /// @notice Propose an updated set of contracts (ids + new addresses) for governance review.
     /// @param proposalSetIds Array of contract ids to update.
     /// @param proposalSetAddresses Corresponding array of proposed addresses.
-    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
-        external;
+    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses) external;
 
     /// @notice Commit the previously proposed contracts set into active use.
     function updateContracts() external;

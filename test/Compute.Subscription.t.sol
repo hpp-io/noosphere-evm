@@ -103,7 +103,9 @@ contract ComputeSubscriptionTest is ComputeTest {
         // blockTime + N * intervalSeconds = N
         uint32 expected = 1;
         for (
-            uint32 start = blockTime; start < (blockTime) + (maxExecutions * intervalSeconds); start += intervalSeconds
+            uint32 start = blockTime;
+            start < (blockTime) + (maxExecutions * intervalSeconds);
+            start += intervalSeconds
         ) {
             // Set current time
             vm.warp(start);

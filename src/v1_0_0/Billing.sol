@@ -173,9 +173,8 @@ abstract contract Billing is IBilling, Routable {
         _initiateVerification(commitment, proofSubmitter, nodeWallet);
         _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         // Initiate verifier verification
-        IVerifier(commitment.verifier).submitProofForVerification(
-            commitment.subscriptionId, commitment.interval, proofSubmitter, proof
-        );
+        IVerifier(commitment.verifier)
+            .submitProofForVerification(commitment.subscriptionId, commitment.interval, proofSubmitter, proof);
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.
@@ -284,17 +283,14 @@ abstract contract Billing is IBilling, Routable {
         // Pay the node if the proof is valid OR if the verification intervalSeconds has expired.
         if (valid || expired) {
             payments[0] = Payment({
-                recipient: request.submitterWallet,
-                feeToken: request.escrowToken,
-                feeAmount: request.escrowedAmount
+                recipient: request.submitterWallet, feeToken: request.escrowToken, feeAmount: request.escrowedAmount
             });
             _getRouter().payFromCoordinator(request.subscriptionId, sub.wallet, sub.client, payments);
         } else {
             // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({recipient: sub.wallet, feeToken: sub.feeToken, feeAmount: sub.feeAmount});
-            _getRouter().payFromCoordinator(
-                request.subscriptionId, request.submitterWallet, request.submitterAddress, payments
-            );
+            _getRouter()
+                .payFromCoordinator(request.subscriptionId, request.submitterWallet, request.submitterAddress, payments);
         }
     }
 
@@ -304,19 +300,18 @@ abstract contract Billing is IBilling, Routable {
         if (billingConfig.tickNodeFee > 0) {
             payments = new Payment[](1);
             payments[0] = Payment({
-                recipient: nodeWallet,
-                feeToken: billingConfig.tickNodeFeeToken,
-                feeAmount: billingConfig.tickNodeFee
+                recipient: nodeWallet, feeToken: billingConfig.tickNodeFeeToken, feeAmount: billingConfig.tickNodeFee
             });
         }
 
         // The spender is the protocol fee recipient itself, as it's paying from its own wallet.
-        _getRouter().payFromCoordinator(
-            subscriptionId,
-            billingConfig.protocolFeeRecipient, // spenderWallet
-            billingConfig.protocolFeeRecipient, // spenderAddress
-            payments
-        );
+        _getRouter()
+            .payFromCoordinator(
+                subscriptionId,
+                billingConfig.protocolFeeRecipient, // spenderWallet
+                billingConfig.protocolFeeRecipient, // spenderAddress
+                payments
+            );
     }
 
     function _cancelRequest(bytes32 requestId) internal virtual {

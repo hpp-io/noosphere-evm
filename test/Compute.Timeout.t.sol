@@ -17,9 +17,8 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         erc20Token.mint(consumerWallet, paymentForOneInterval * 2); // Fund for two intervals
 
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(
-            address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2
-        );
+        Wallet(payable(consumerWallet))
+            .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         // Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(

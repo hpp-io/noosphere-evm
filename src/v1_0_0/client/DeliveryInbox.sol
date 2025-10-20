@@ -122,11 +122,7 @@ abstract contract DeliveryInbox {
 
     /// @notice Read stored pending delivery for (requestId, node).
     /// @return exists true if present, and the PendingDelivery payload (copied to memory).
-    function getDelivery(bytes32 requestId, address node)
-        public
-        view
-        returns (bool exists, PendingDelivery memory pd)
-    {
+    function getDelivery(bytes32 requestId, address node) public view returns (bool exists, PendingDelivery memory pd) {
         PendingDelivery storage r = _deliveriesByRequest[requestId][node];
         if (r.timestamp == 0) return (false, pd);
 

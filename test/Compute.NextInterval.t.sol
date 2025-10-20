@@ -75,7 +75,14 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(transientClient), address(erc20Token), feeAmount);
 
         (, Commitment memory commitment1) = transientClient.createMockRequest( //
-        MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
+            MOCK_CONTAINER_ID,
+            MOCK_CONTAINER_INPUTS,
+            1,
+            address(erc20Token),
+            feeAmount,
+            consumerWallet,
+            NO_VERIFIER
+        );
 
         // 2. Deliver the compute for the final (and only) interval.
         bytes memory commitmentData1 = abi.encode(commitment1);
@@ -111,13 +118,21 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // 3. Approve for two intervals (even though funds are insufficient)
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(
-            address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2
-        );
+        Wallet(payable(consumerWallet))
+            .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         // 4. Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
+            MOCK_CONTAINER_ID,
+            2,
+            1 minutes,
+            redundancy,
+            false,
+            address(erc20Token),
+            feeAmount,
+            consumerWallet,
+            NO_VERIFIER
+        );
         // 5. Deliver compute for the first interval
         bytes memory commitmentData1 = abi.encode(commitment1);
 
@@ -150,7 +165,16 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // 4. Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
+            MOCK_CONTAINER_ID,
+            2,
+            1 minutes,
+            redundancy,
+            false,
+            address(erc20Token),
+            feeAmount,
+            consumerWallet,
+            NO_VERIFIER
+        );
 
         // 5. Deliver compute for the first interval
         //        vm.warp(block.timestamp + 1 minutes);
@@ -201,7 +225,16 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // Create the subscription
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, ZERO_ADDRESS, feeAmount, consumerWallet, NO_VERIFIER);
+            MOCK_CONTAINER_ID,
+            2,
+            1 minutes,
+            redundancy,
+            false,
+            ZERO_ADDRESS,
+            feeAmount,
+            consumerWallet,
+            NO_VERIFIER
+        );
         assertEq(subId, 1);
 
         // 2. Act: Deliver compute for the first interval, which triggers preparation for the second.

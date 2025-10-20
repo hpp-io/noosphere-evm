@@ -35,7 +35,12 @@ library DeployUtils {
     /// @return coordinator Deployed DelegateeCoordinator instance (initialized).
     /// @return reader Deployed SubscriptionBatchReader helper instance (wired to Router & Coordinator).
     /// @return walletFactory Deployed WalletFactory instance (wired to Router).
-    function deployContracts(address deployerAddress, address initialFeeRecipient, uint16 initialFee, address tokenAddr)
+    function deployContracts(
+        address deployerAddress,
+        address initialFeeRecipient,
+        uint16 initialFee,
+        address tokenAddr
+    )
         internal
         returns (
             Router router,

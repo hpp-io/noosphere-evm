@@ -394,9 +394,18 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         bytes memory proof
     ) internal {
         ComputeSubscription memory subscription = subscriptions[subscriptionId];
-        ComputeClient(subscription.client).receiveRequestCompute(
-            subscriptionId, interval, numRedundantDeliveries, useDeliveryInbox, node, input, output, proof, bytes32(0)
-        );
+        ComputeClient(subscription.client)
+            .receiveRequestCompute(
+                subscriptionId,
+                interval,
+                numRedundantDeliveries,
+                useDeliveryInbox,
+                node,
+                input,
+                output,
+                proof,
+                bytes32(0)
+            );
     }
 
     function _makeSubscriptionInactive(uint64 subscriptionId) internal {
@@ -474,8 +483,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
             }
 
             // Check if the wallet has enough unlocked balance.
-            uint256 totalBalance =
-                (sub.feeToken == address(0)) ? address(wallet).balance : IERC20(sub.feeToken).balanceOf(address(wallet));
+            uint256 totalBalance = (sub.feeToken == address(0))
+                ? address(wallet).balance
+                : IERC20(sub.feeToken).balanceOf(address(wallet));
             uint256 totalLocked = wallet.totalLockedFor(sub.feeToken);
             if (totalBalance < totalLocked || (totalBalance - totalLocked) < requiredAmount) {
                 return false;

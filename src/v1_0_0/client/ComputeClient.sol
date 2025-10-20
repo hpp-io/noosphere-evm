@@ -27,18 +27,19 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         address verifier,
         bytes32 routeId
     ) external returns (uint64) {
-        return _getRouter().createComputeSubscription(
-            containerId,
-            maxExecutions,
-            intervalSeconds,
-            redundancy,
-            useDeliveryInbox,
-            feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            routeId
-        );
+        return _getRouter()
+            .createComputeSubscription(
+                containerId,
+                maxExecutions,
+                intervalSeconds,
+                redundancy,
+                useDeliveryInbox,
+                feeToken,
+                feeAmount,
+                wallet,
+                verifier,
+                routeId
+            );
     }
 
     function sendRequest(uint64 subscriptionId, uint32 interval)
