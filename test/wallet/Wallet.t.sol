@@ -39,15 +39,14 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
     /// @notice Deploy test fixture: Router, Coordinator, WalletFactory, WalletFactory -> Router wiring.
     function setUp() public {
         // LibDeploy.deployContracts returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
-        (Router deployedRouter, Coordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
-            DeployUtils.deployContracts(address(this), address(0), 1, address(0));
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(address(this), address(this), 1, address(0));
 
-        router = deployedRouter;
-        coordinator = deployedCoordinator;
-        walletFactory = deployedWalletFactory;
-
+        router = contracts.router;
+        coordinator = Coordinator(address(contracts.coordinator));
+        walletFactory = contracts.walletFactory;
         // Wire the Router to know the walletFactory address (addresses circular-dependency resolution).
-        router.setWalletFactory(address(walletFactory));
+        router.setWalletFactory(address(contracts.walletFactory));
     }
 
     /*//////////////////////////////////////////////////////////////

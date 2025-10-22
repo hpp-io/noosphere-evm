@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
+import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
@@ -89,16 +90,16 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Deploy core contracts and supporting utilities via helper
-        (Router deployedRouter, DelegateeCoordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
+        DeployUtils.DeployedContracts memory contracts =
             DeployUtils.deployContracts(address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token));
-        router = deployedRouter;
-        coordinator = deployedCoordinator;
-        walletFactory = deployedWalletFactory;
+        router = contracts.router;
+        coordinator = contracts.coordinator;
+        walletFactory = contracts.walletFactory;
 
-        router.setWalletFactory(address(walletFactory));
+        router.setWalletFactory(address(contracts.walletFactory));
 
         // instantiate mocks used by tests
-        protocolMock = new MockProtocol(deployedCoordinator);
+        protocolMock = new MockProtocol(Coordinator(address(contracts.coordinator)));
         token = new MockToken();
 
         // create and register mock nodes

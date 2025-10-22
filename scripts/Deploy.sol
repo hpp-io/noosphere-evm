@@ -2,6 +2,7 @@
 pragma solidity ^0.8.4;
 
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
+import {OptimisticVerifier} from "../src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {DeployUtils} from "../test/lib/DeployUtils.sol";
 import {MyTransientClient} from "../src/v1_0_0/sample/MyTransientClient.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
@@ -32,22 +33,23 @@ contract Deploy is Script {
         console.log("Deployer nonce (pre-deploy):", initialNonce);
 
         // Deploy contracts via DeployUtils
-        (Router router, Coordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) =
-                            DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
 
         // Deploy the new client contract, linking it to the router
-        MyTransientClient myClient = new MyTransientClient(address(router), address(deployerAddress));
+        MyTransientClient myClient = new MyTransientClient(address(contracts.router), address(deployerAddress));
 
         // Wire the Router to the WalletFactory
-        router.setWalletFactory(address(walletFactory));
+        contracts.router.setWalletFactory(address(contracts.walletFactory));
 
         // Summary logs
         console.log("=== Deploy: summary ===");
-        console.log("Router:        ", address(router));
+        console.log("Router:        ", address(contracts.router));
         console.log("MyTransientClient: ", address(myClient));
-        console.log("Coordinator:   ", address(coordinator));
-        console.log("Reader:        ", address(reader));
-        console.log("WalletFactory: ", address(walletFactory));
+        console.log("Coordinator:   ", address(contracts.coordinator));
+        console.log("Reader:        ", address(contracts.reader));
+        console.log("OptimisticVerifier: ", address(contracts.optimisticVerifier));
+        console.log("WalletFactory: ", address(contracts.walletFactory));
         console.log("=========================");
 
         // Stop broadcasting transactions

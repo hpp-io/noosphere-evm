@@ -7,6 +7,7 @@ import {MockDeferredVerifier} from "./mocks/verifier/MockDeferredVerifier.sol";
 import {Commitment} from "src/v1_0_0/types/Commitment.sol";
 import {ComputeTest} from "./Compute.t.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {IOptimisticVerifier} from "../src/v1_0_0/interfaces/IOptimisticVerifier.sol";
 import {Wallet} from "src/v1_0_0/wallet/Wallet.sol";
 import {Merkle} from "./utils/Merkle.sol";
 import {console} from "forge-std/console.sol";
@@ -429,15 +430,31 @@ contract ComputeVerifierTest is ComputeTest {
         // Prepare compute report data
         bytes32 execCommitment = keccak256("optimistic_exec");
         bytes32 resultDigest = keccak256("result");
-        bytes memory proof = abi.encodePacked(execCommitment, resultDigest);
+        bytes memory daBatchId = bytes("test_da_batch_id");
+        bytes32 dataHash = keccak256(daBatchId);
+
+        // Encode the proof according to the new format expected by OptimisticVerifier
+        bytes memory proof = abi.encode(
+            uint8(1), // version
+            execCommitment,
+            resultDigest,
+            daBatchId,
+            uint32(0), // leafIndex (not used in this test)
+            bytes(""), // proofNodes (not used in this test)
+            address(0), // adapter (not used in this test)
+            bytes("") // adapterSig (not used in this test)
+        );
 
         // Execute response fulfillment from Bob
         vm.warp(1 minutes);
 
         // Expect ProvisionalSubmitted event from the verifier
         bytes32 expectedKey = optimisticVerifier.submissionKey(subId, 1, address(bob));
-        vm.expectEmit(true, true, true, true, address(optimisticVerifier));
-        emit OptimisticVerifier.ProvisionalSubmitted(subId, 1, address(bob), expectedKey, execCommitment, resultDigest);
+        vm.expectEmit(address(optimisticVerifier));
+        emit IOptimisticVerifier.ProvisionalSubmitted(
+            subId, 1, address(bob), expectedKey, execCommitment, resultDigest, dataHash
+        );
+
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, bobWallet);
     }
 
@@ -467,7 +484,19 @@ contract ComputeVerifierTest is ComputeTest {
 
         bytes32 execCommitment = leaves.getMerkleRoot(); // The Merkle root of all leaves
         bytes32 resultDigest = leaves[0]; // The node claims the result is the first leaf
-        bytes memory reportProof = abi.encodePacked(execCommitment, resultDigest);
+        bytes memory daBatchId = bytes("challenge_da_batch_id");
+
+        // Encode the proof for the initial report
+        bytes memory reportProof = abi.encode(
+            uint8(1), // version
+            execCommitment,
+            resultDigest,
+            daBatchId,
+            uint32(0), // leafIndex
+            bytes(""), // proofNodes (not used for submission, only for challenge)
+            address(0), // adapter
+            bytes("") // adapterSig
+        );
 
         // 3. Node reports the compute result
         vm.warp(1 minutes);
@@ -478,15 +507,15 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 5. Expect Slashed event and perform the challenge
         bytes32 expectedKey = optimisticVerifier.submissionKey(subId, 1, address(bob));
-        vm.expectEmit(true, true, true, true, address(optimisticVerifier));
-        emit OptimisticVerifier.Slashed(expectedKey, address(this));
+        vm.expectEmit(address(optimisticVerifier));
+        emit IOptimisticVerifier.Slashed(expectedKey, address(this));
 
         vm.prank(address(this));
         optimisticVerifier.challengeAndSlash(subId, 1, address(bob), leaves[1], challengeProof);
 
         // 6. Verify state: the submission should now be marked as slashed
-        (,,,,,,,,, bool slashed) = optimisticVerifier.getSubmission(expectedKey);
-        assertTrue(slashed, "Submission should be slashed");
+        IOptimisticVerifier.Submission memory s = optimisticVerifier.getSubmission(expectedKey);
+        assertTrue(s.slashed, "Submission should be slashed");
     }
 
     /// @notice Test 3: A submission can be finalized after the challenge window.
@@ -509,7 +538,20 @@ contract ComputeVerifierTest is ComputeTest {
         // 2. Prepare and report a valid compute result
         bytes32 execCommitment = keccak256("finalizable_exec");
         bytes32 resultDigest = keccak256("finalizable_result");
-        bytes memory proof = abi.encodePacked(execCommitment, resultDigest);
+        bytes memory daBatchId = bytes("finalize_da_batch_id");
+
+        // Encode the proof according to the new format
+        bytes memory proof = abi.encode(
+            uint8(1), // version
+            execCommitment,
+            resultDigest,
+            daBatchId,
+            uint32(0), // leafIndex
+            bytes(""), // proofNodes
+            address(0), // adapter
+            bytes("") // adapterSig
+        );
+
         vm.warp(1 minutes);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, bobWallet);
 
@@ -519,14 +561,14 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 4. Expect Finalized event and finalize the submission (anyone can call this)
         bytes32 expectedKey = optimisticVerifier.submissionKey(subId, 1, address(bob));
-        vm.expectEmit(true, true, true, true, address(optimisticVerifier));
-        emit OptimisticVerifier.SubmissionFinalized(expectedKey, subId, 1, address(bob));
+        vm.expectEmit(address(optimisticVerifier));
+        emit IOptimisticVerifier.SubmissionFinalized(expectedKey, subId, 1, address(bob));
 
         vm.prank(address(this));
         optimisticVerifier.finalizeSubmission(subId, 1, address(bob));
 
         // 5. Verify state: the submission should now be marked as finalized
-        (,,,,,,,, bool finalized,) = optimisticVerifier.getSubmission(expectedKey);
-        assertTrue(finalized, "Submission should be finalized");
+        IOptimisticVerifier.Submission memory s = optimisticVerifier.getSubmission(expectedKey);
+        assertTrue(s.finalized, "Submission should be finalized");
     }
 }
