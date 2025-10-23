@@ -6,6 +6,7 @@ import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
 import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {OptimisticVerifier} from "../../src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 
 /// @title LibDeploy
@@ -13,6 +14,14 @@ import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 /// @dev The library purposefully keeps deployment logic minimal and splits complex constructor
 ///      initialization into helper functions to avoid "stack too deep" issues inside a single function.
 library DeployUtils {
+    struct DeployedContracts {
+        Router router;
+        DelegateeCoordinator coordinator;
+        SubscriptionBatchReader reader;
+        OptimisticVerifier optimisticVerifier;
+        WalletFactory walletFactory;
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -31,24 +40,16 @@ library DeployUtils {
     /// @param initialFeeRecipient Address that will receive protocol fees during test setup.
     /// @param initialFee Protocol fee (basis points or protocol-defined unit).
     /// @param tokenAddr Optional token address used for tick fees / mocks (may be address(0)).
-    /// @return router Deployed Router instance.
-    /// @return coordinator Deployed DelegateeCoordinator instance (initialized).
-    /// @return reader Deployed SubscriptionBatchReader helper instance (wired to Router & Coordinator).
-    /// @return walletFactory Deployed WalletFactory instance (wired to Router).
+    /// @return contracts A struct containing all deployed contract instances.
     function deployContracts(
         address deployerAddress,
         address initialFeeRecipient,
         uint16 initialFee,
         address tokenAddr
-    )
-        internal
-        returns (
-            Router router,
-            DelegateeCoordinator coordinator,
-            SubscriptionBatchReader reader,
-            WalletFactory walletFactory
-        )
-    {
+    ) internal returns (DeployedContracts memory contracts) {
+        Router router;
+        DelegateeCoordinator coordinator;
+
         // Deploy Router first (dependency for the other contracts).
         router = new Router();
 
@@ -56,9 +57,16 @@ library DeployUtils {
         coordinator = _deployCoordinator(address(router), deployerAddress, initialFeeRecipient, initialFee, tokenAddr);
 
         // Deploy lightweight reader and wallet factory wired to the router + coordinator.
-        reader = new SubscriptionBatchReader(address(router), address(coordinator));
-        walletFactory = new WalletFactory(address(router));
-        coordinator.setSubscriptionBatchReader(address(reader));
+        contracts.reader = new SubscriptionBatchReader(address(router), address(coordinator));
+        contracts.walletFactory = new WalletFactory(address(router));
+        coordinator.setSubscriptionBatchReader(address(contracts.reader));
+
+        // Deploy OptimisticVerifier
+        contracts.optimisticVerifier = new OptimisticVerifier(
+            address(coordinator),
+            initialFeeRecipient, // Using initialFeeRecipient as paymentRecipient for tests
+            deployerAddress // Using deployerAddress as initialOwner
+        );
 
         // Register Coordinator into the Router's contract registry so lookups succeed.
         bytes32[] memory ids = new bytes32[](1);
@@ -69,7 +77,10 @@ library DeployUtils {
         router.proposeContractsUpdate(ids, addrs);
         router.updateContracts();
 
-        return (router, coordinator, reader, walletFactory);
+        contracts.router = router;
+        contracts.coordinator = coordinator;
+
+        return contracts;
     }
 
     /*//////////////////////////////////////////////////////////////////////////

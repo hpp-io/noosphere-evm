@@ -128,14 +128,14 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        (Router _router, DelegateeCoordinator _coordinator,, WalletFactory _walletFactory) = DeployUtils.deployContracts(
+        DeployUtils.DeployedContracts memory contracts = DeployUtils.deployContracts(
             address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(erc20Token)
         );
-        ROUTER = _router;
-        COORDINATOR = _coordinator;
-        walletFactory = _walletFactory;
+        ROUTER = contracts.router;
+        COORDINATOR = contracts.coordinator;
+        walletFactory = contracts.walletFactory;
 
-        ROUTER.setWalletFactory(address(walletFactory));
+        ROUTER.setWalletFactory(address(contracts.walletFactory));
         PROTOCOL = new MockProtocol(COORDINATOR);
         erc20Token = new MockToken();
 
