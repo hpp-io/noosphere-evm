@@ -7,6 +7,8 @@ import {Billing} from "./Billing.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {ComputeSubscription} from "./types/ComputeSubscription.sol";
+import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
 /// @title Coordinator
@@ -133,6 +135,23 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
             _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                  VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Reconstructs and returns the Commitment for a given request.
+     * @dev This function is useful for on-chain services or other contracts that need to
+     *      retrieve the full commitment data using only the requestId.
+     * @param subscriptionId The ID of the subscription associated with the request.
+     * @param interval The interval of the request.
+     * @return A memory-resident Commitment struct.
+     */
+    function getCommitment(uint64 subscriptionId, uint32 interval) public view override returns (Commitment memory) {
+        ComputeSubscription memory sub = _getRouter().getComputeSubscription(subscriptionId);
+        return CommitmentUtils.build(sub, subscriptionId, interval, address(this));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
