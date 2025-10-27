@@ -130,4 +130,11 @@ interface ICoordinator {
     /// @param nextInterval Next interval index to prepare.
     /// @param nodeWallet Node wallet address associated with the preparation call.
     function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external;
+
+    /// @notice Retrieve the commitment for a specific subscription and interval.
+    /// @dev This is a read-only operation.
+    /// @param subscriptionId The ID of the subscription.
+    /// @param interval The interval index.
+    /// @return commitment The Commitment struct associated with the given subscription and interval.
+    function getCommitment(uint64 subscriptionId, uint32 interval) external view returns (Commitment memory);
 }

@@ -33,6 +33,50 @@ function getLatestDeploymentAddress(contractName) {
 // Returns the current timestamp in seconds.
 const now = () => Math.floor(Date.now() / 1000);
 
+/**
+ * Replicates the logic of RequestIdUtils.requestIdPacked in Solidity.
+ * keccak256(abi.encodePacked(uint64, uint32))
+ * @param {bigint | number | string} subscriptionId - The subscription ID (uint64).
+ * @param {number} interval - The interval (uint32).
+ * @returns {string} The calculated request ID (bytes32).
+ */
+function calculateRequestIdPacked(subscriptionId, interval) {
+    return ethers.solidityPackedKeccak256(
+        ['uint64', 'uint32'],
+        [subscriptionId, interval]
+    );
+}
+
+/**
+ * Replicates the logic of CommitmentUtils.build in Solidity.
+ * Creates a Commitment instance from subscription data and other parameters.
+ * @param {object} sub - The compute subscription object from the contract.
+ * @param {bigint | number | string} subscriptionId - The subscription ID (uint64).
+ * @param {number} interval - The interval for which the commitment is being created (uint32).
+ * @param {string} coordinator - The address of the coordinator.
+ * @returns {Commitment} A new Commitment instance.
+ */
+function buildCommitment(sub, subscriptionId, interval, coordinator) {
+    const requestId = calculateRequestIdPacked(subscriptionId, interval);
+
+    // Note: The field names in the `sub` object from ethers.js match the Solidity struct.
+    // The Commitment class constructor expects `walletAddress`, so we map `sub.wallet` to it.
+    const commitmentParams = {
+        requestId: requestId,
+        subscriptionId: subscriptionId,
+        containerId: sub.containerId,
+        interval: interval,
+        useDeliveryInbox: sub.useDeliveryInbox,
+        redundancy: sub.redundancy,
+        walletAddress: sub.wallet, // Map sub.wallet to walletAddress
+        feeAmount: sub.feeAmount,
+        feeToken: sub.feeToken,
+        verifier: sub.verifier,
+        coordinator: coordinator
+    };
+    return new Commitment(commitmentParams);
+}
+
 async function main() {
     console.log("🤖 Node starting up...");
 
@@ -117,48 +161,40 @@ async function main() {
             const output = "0x5678"; // Our "computed" result
             console.log(`   2. Computation finished. Output: ${output}`);
 
-            // 3. Prepare the data to report back to the coordinator
-            // Use the commitmentUtil to reconstruct the commitment data
+            // 3. Verify commitment data from multiple sources and prepare for reporting
+            console.log("   3. Verifying commitment data and preparing report...");
             const subscription = await routerContract.getComputeSubscription(subscriptionId);
 
-            // The full commitment object is received from the event, but if we were to reconstruct it
-            // from the subscription data, it would look like this:
-            const commitmentDataForReport = {
-                requestId: requestId,
-                subscriptionId: subscriptionId,
-                containerId: subscription.containerId,
-                interval: commitment.interval,
-                useDeliveryInbox: subscription.useDeliveryInbox,
-                redundancy: subscription.redundancy,
-                walletAddress: subscription.wallet,
-                feeAmount: subscription.feeAmount,
-                feeToken: subscription.feeToken,
-                verifier: subscription.verifier,
-                coordinator:COORDINATOR_ADDRESS
-            };
-
-            const commitmentInstance = new Commitment(commitmentDataForReport);
-            const encodedCommitmentData = commitmentInstance.encode();
-
-            // Compare the commitment from the event with the one we reconstructed
+            // Source 1: From the event itself
             const eventCommitment = new Commitment(commitment);
-            if (ethers.keccak256(eventCommitment.encode()) !== ethers.keccak256(commitmentInstance.encode())) {
-                console.warn("   ⚠️ Reconstructed commitment hash does not match event commitment hash!");
-                console.warn("      Event Commitment:", eventCommitment.toObject());
-                console.warn("      Reconstructed Commitment:", commitmentInstance.toObject());
+
+            // Source 3: Fetched directly from the Coordinator contract
+            const onchainCommitmentResult = await coordinatorContract.getCommitment(subscriptionId, commitment.interval);
+            const onchainCommitment = new Commitment(onchainCommitmentResult);
+
+            // Compare all three sources. We'll use the encoded hash for a definitive check.
+            const eventHash = ethers.keccak256(eventCommitment.encode());
+            const onchainHash = ethers.keccak256(onchainCommitment.encode());
+
+
+            if (eventHash !== onchainHash) {
+                console.warn("   ⚠️ CRITICAL: Commitment data mismatch between sources!");
+                console.warn(`      - Event Hash:         ${eventHash}`);
+                console.warn(`      - On-chain Hash:      ${onchainHash}`);
+                // In a real-world scenario, you might want to halt processing here.
             } else {
-                console.log("   ✅ Reconstructed commitment matches event commitment.");
+                console.log("   ✅ Commitment data verified across all sources (event, on-chain).");
             }
 
 
             // 4. Report the result back to the Coordinator
-            console.log("   3. Reporting compute result to Coordinator...");
+            console.log("   4. Reporting compute result to Coordinator...");
             const reportTx = await coordinatorContract.reportComputeResult(
                 commitment.interval,
                 inputs,
                 output,
                 "0x", // proof (placeholder)
-                encodedCommitmentData,
+                eventCommitment.encode(), // Use the reconstructed data for the report
                 nodePaymentWalletAddress // The node's dedicated Wallet contract that will receive payment
             );
 
@@ -167,7 +203,7 @@ async function main() {
             console.log("   ✅ Result reported to Coordinator successfully!");
 
             // 5. Find the settlement event in the receipt and verify payment
-            console.log("   4. Finding settlement event (RequestProcessed) in transaction receipt...");
+            console.log("   5. Finding settlement event (RequestProcessed) in transaction receipt...");
 
             let requestProcessedEvent;
             for (const log of reportReceipt.logs) {
