@@ -80,12 +80,18 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
      * The contract stores execCommitment/resultDigest and keccak256(daBatchId) for on-chain reference,
      * and emits events so watchers can fetch the DA via daBatchId from the off-chain proof bytes.
      */
-    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
-        external
-        override
-    {
+    function submitProofForVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address submitter,
+        address, /* nodeWallet */
+        bytes calldata proof,
+        bytes32, /* commitmentHash */
+        bytes32, /* inputHash */
+        bytes32 /* resultHash */
+    ) external override {
         require(msg.sender == address(coordinator), "only coordinator");
-        bytes32 key = submissionKey(subscriptionId, interval, node);
+        bytes32 key = submissionKey(subscriptionId, interval, submitter);
         require(!submissions[key].finalized && !submissions[key].slashed, "submission closed");
 
         // Default empty values
@@ -132,7 +138,7 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         submissions[key] = IOptimisticVerifier.Submission({
             subscriptionId: subscriptionId,
             interval: interval,
-            node: node,
+            node: submitter,
             execCommitment: execCommitment,
             resultDigest: resultDigest,
             dataHash: dataHash,
@@ -144,14 +150,14 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         });
 
         // Interface event (IVerifier.expected)
-        emit VerificationRequested(subscriptionId, interval, node);
+        emit VerificationRequested(subscriptionId, interval, submitter);
 
         // Keep the original registration event with dataHash for watchers
         emit SubmissionRegistered(
-            key, subscriptionId, interval, node, execCommitment, resultDigest, dataHash, cEnd, bEnd
+            key, subscriptionId, interval, submitter, execCommitment, resultDigest, dataHash, cEnd, bEnd
         );
 
-        emit ProvisionalSubmitted(subscriptionId, interval, node, key, execCommitment, resultDigest, dataHash);
+        emit ProvisionalSubmitted(subscriptionId, interval, submitter, key, execCommitment, resultDigest, dataHash);
     }
 
     /**

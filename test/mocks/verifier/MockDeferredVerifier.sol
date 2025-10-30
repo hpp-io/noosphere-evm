@@ -31,17 +31,18 @@ contract MockDeferredVerifier is MockVerifier {
     /// @dev Records a light-weight submission record (stores proof hash only), emits
     ///      `VerificationRequested(requestId, ...)` and returns an implementation-assigned `requestId`.
     ///      The verification decision is expected to be produced later (e.g., via `mockFinalizeVerification`).
-    /// @param subscriptionId Subscription this proof belongs to.
-    /// @param interval Interval index (round) this proof targets.
-    /// @param node Address of the agent/node submitting the proof.
-    /// @param proof Raw proof bytes (not stored on-chain; only hashed for correlation).
-    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
-        external
-        virtual
-        override
-    {
+    function submitProofForVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address submitter,
+        address, /* nodeWallet */
+        bytes calldata, /* proof */
+        bytes32, /* commitmentHash */
+        bytes32, /* inputHash */
+        bytes32 /* resultHash */
+    ) external virtual override {
         // signal that the request was accepted
-        emit VerificationRequested(subscriptionId, interval, node);
+        emit VerificationRequested(subscriptionId, interval, submitter);
     }
 
     /*//////////////////////////////////////////////////////////////

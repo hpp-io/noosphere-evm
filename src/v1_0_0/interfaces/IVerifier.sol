@@ -34,8 +34,20 @@ interface IVerifier {
     ///      (events, callbacks, or off-chain notifications). Do not expect synchronous verification here.
     /// @param subscriptionId Subscription identifier associated with this proof.
     /// @param interval Interval index (or round) that this proof corresponds to.
-    /// @param node Address of the agent/node that produced and submitted the proof.
+    /// @param submitter Address of the agent/node that produced and submitted the proof.
+    /// @param nodeWallet Address of the node wallet.
     /// @param proof Arbitrary proof bytes understood by the verifier implementation.
-    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
-        external;
+    /// @param commitmentHash Hash of the commitment being verified.
+    /// @param inputHash Hash of the input data used to generate the proof.
+    /// @param resultHash Hash of the result data produced by the proof.
+    function submitProofForVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address submitter,
+        address nodeWallet,
+        bytes calldata proof,
+        bytes32 commitmentHash,
+        bytes32 inputHash,
+        bytes32 resultHash
+    ) external;
 }

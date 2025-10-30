@@ -173,8 +173,20 @@ abstract contract Billing is IBilling, Routable {
         _initiateVerification(commitment, proofSubmitter, nodeWallet);
         _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         // Initiate verifier verification
+        bytes32 commitmentHash = keccak256(abi.encode(commitment));
+        bytes32 inputHash = keccak256(input);
+        bytes32 resultHash = keccak256(output);
         IVerifier(commitment.verifier)
-            .submitProofForVerification(commitment.subscriptionId, commitment.interval, proofSubmitter, proof);
+            .submitProofForVerification(
+                commitment.subscriptionId,
+                commitment.interval,
+                proofSubmitter,
+                nodeWallet,
+                proof,
+                commitmentHash,
+                inputHash,
+                resultHash
+            );
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.

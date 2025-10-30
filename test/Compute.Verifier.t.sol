@@ -6,9 +6,12 @@ import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol"
 import {MockDeferredVerifier} from "./mocks/verifier/MockDeferredVerifier.sol";
 import {Commitment} from "src/v1_0_0/types/Commitment.sol";
 import {ComputeTest} from "./Compute.t.sol";
+import {MockAgent} from "./mocks/MockAgent.sol";
+import {IVerifier} from "src/v1_0_0/interfaces/IVerifier.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {IOptimisticVerifier} from "../src/v1_0_0/interfaces/IOptimisticVerifier.sol";
 import {Wallet} from "src/v1_0_0/wallet/Wallet.sol";
+import {ImmediateFinalizeVerifier} from "src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {Merkle} from "./utils/Merkle.sol";
 import {console} from "forge-std/console.sol";
 import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
@@ -25,14 +28,22 @@ contract ComputeVerifierTest is ComputeTest {
     /// @notice Real optimistic verifier
     OptimisticVerifier internal optimisticVerifier;
 
+    /// @notice Real immediate finalize verifier
+    ImmediateFinalizeVerifier internal immediateFinalizeVerifier;
+
     function setUp() public override {
         super.setUp();
         immediateVerifier = new MockImmediateVerifier(ROUTER);
         deferredVerifier = new MockDeferredVerifier(ROUTER);
 
         optimisticVerifier = new OptimisticVerifier(address(COORDINATOR), address(this), address(this));
+        immediateFinalizeVerifier = new ImmediateFinalizeVerifier(address(COORDINATOR), address(this));
+
         optimisticVerifier.setTokenSupported(address(erc20Token), true);
         optimisticVerifier.setTokenSupported(ZERO_ADDRESS, true);
+
+        immediateFinalizeVerifier.setTokenSupported(address(erc20Token), true);
+        immediateFinalizeVerifier.setTokenSupported(ZERO_ADDRESS, true);
     }
 
     function test_RevertIf_DeliveringCompute_When_NodeWalletNotApproved() public {
@@ -570,5 +581,265 @@ contract ComputeVerifierTest is ComputeTest {
         // 5. Verify state: the submission should now be marked as finalized
         IOptimisticVerifier.Submission memory s = optimisticVerifier.getSubmission(expectedKey);
         assertTrue(s.finalized, "Submission should be finalized");
+    }
+
+    /// @notice Test: A submission can be immediately finalized using ImmediateFinalizeVerifier.
+    ///         This test is similar to test_Optimistic_ProvisionalSubmission but uses ImmediateFinalizeVerifier.
+    function test_ImmediateFinalize_SuccessfulSubmission() public {
+        // solhint-disable-line function-max-lines
+        // The node is represented by an EOA (bob) that owns a smart contract wallet (nodeWallet).
+        uint256 bobPrivateKey = 0x2;
+        address bob = vm.addr(bobPrivateKey);
+        vm.label(bob, "Bob (EOA)");
+
+        // 1. Setup wallets, mint tokens, and set approvals
+        address aliceWallet = walletFactory.createWallet(address(alice));
+        address nodeWallet = walletFactory.createWallet(bob); // The CA wallet is owned by Bob (EOA)
+        vm.label(nodeWallet, "NodeWallet (CA)");
+
+        erc20Token.mint(aliceWallet, 50e6);
+        erc20Token.mint(nodeWallet, 50e6);
+
+        vm.prank(address(alice));
+        Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 50e6);
+
+        // Bob (EOA owner) approves himself to spend from his wallet for the escrow lock.
+        vm.prank(bob);
+        Wallet(payable(nodeWallet)).approve(bob, address(erc20Token), 50e6);
+
+        // 2. Create a one-time subscription with a 40e6 payout, specifying ImmediateFinalizeVerifier
+        (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
+            MOCK_CONTAINER_ID,
+            MOCK_INPUT,
+            1,
+            address(erc20Token),
+            40e6,
+            aliceWallet,
+            address(immediateFinalizeVerifier) // Use the real ImmediateFinalizeVerifier
+        );
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // 3. Prepare proof data for EIP-712 signature
+        bytes32 requestId = commitment.requestId; // This is an arbitrary off-chain identifier
+        bytes32 commitmentHash = keccak256(commitmentData);
+        bytes32 inputHash = keccak256(MOCK_INPUT);
+        bytes32 resultHash = keccak256(MOCK_OUTPUT);
+        uint256 timestamp = block.timestamp + 1 minutes;
+
+        // 4. Create the EIP-712 digest for the node (Bob) to sign
+        bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
+            // The `nodeAddress` in the struct MUST be the EOA that is actually signing the message.
+            immediateFinalizeVerifier.getStructHash(requestId, commitmentHash, inputHash, resultHash, bob, timestamp)
+        );
+
+        // 5. Sign the digest with Bob's private key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobPrivateKey, digest); // solhint-disable-line var-name-mixedcase
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // 6. Encode the proof as expected by ImmediateFinalizeVerifier
+        // The proof now includes the EOA's address, which is the intended signer.
+        bytes memory proof = abi.encode(requestId, commitmentHash, inputHash, resultHash, bob, timestamp, signature);
+        // 7. Execute response fulfillment from Bob
+        vm.warp(timestamp);
+        // Check for the VerificationRequested event from the verifier
+        //        vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
+        //        emit IVerifier.VerificationRequested(subId, 1, nodeWallet);
+        // Check for the final ComputeDelivered event from the coordinator
+        vm.expectEmit(true, false, false, true, address(COORDINATOR));
+        emit ICoordinator.ComputeDelivered(commitment.requestId, nodeWallet, 1);
+
+        // 9. Bob reports the compute result
+        // The EOA `bob` initiates the transaction by calling the Coordinator directly.
+        // This ensures msg.sender is the EOA, which is required for the escrow lock approval check.
+        vm.startPrank(bob);
+        COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
+        vm.stopPrank();
+
+        // 10. Assert final balances
+        // Alice's wallet: 50e6 (initial) - 40e6 (payment) = 10e6
+        assertEq(erc20Token.balanceOf(aliceWallet), 10e6);
+
+        // Bob's wallet: 50e6 (initial) + 35,920,000 (payment after fees) = 85,920,000
+        // Payment: 40e6
+        // Protocol fee: 40e6 * 0.0511 * 2 = 4,088,000
+        // Verifier fee: 0 (ImmediateFinalizeVerifier has no fee)
+        // Net to Bob: 40e6 - 4,088,000 = 35,912,000
+        // Total: 50,000,000 + 35,912,000 = 85,912,000
+        assertEq(erc20Token.balanceOf(nodeWallet), 85_912_000);
+
+        // Verifier's balance should be 0 as it has no fee and doesn't receive funds
+        assertEq(erc20Token.balanceOf(address(immediateFinalizeVerifier)), 0);
+
+        // Protocol wallet: 4,088,000 (fees from payment)
+        assertEq(erc20Token.balanceOf(protocolWalletAddress), 4_088_000);
+
+        // 11. Assert consumed allowances
+        // Alice's allowance for the client should be reduced by 40e6
+        assertEq(Wallet(payable(aliceWallet)).allowance(address(transientClient), address(erc20Token)), 10e6);
+
+        // Bob's allowance for himself should remain as the lock/unlock for verification is atomic
+        // and doesn't consume allowance in the same way.
+        assertEq(Wallet(payable(nodeWallet)).allowance(bob, address(erc20Token)), 50e6);
+    }
+
+    /// @notice Test: Reverts if the proof signature is from the wrong EOA.
+    function test_RevertIf_ImmediateFinalize_WithInvalidSignature() public {
+        // solhint-disable-line function-max-lines
+        // The node is represented by an EOA (bob) that owns a smart contract wallet (nodeWallet).
+        uint256 bobPrivateKey = 0x2;
+        address bob = vm.addr(bobPrivateKey);
+        vm.label(bob, "Bob (EOA)");
+
+        // The attacker is Charlie
+        uint256 charliePrivateKey = 0x3;
+        address charlie = vm.addr(charliePrivateKey);
+        vm.label(charlie, "Charlie (Attacker EOA)");
+
+        // 1. Setup wallets and funds
+        address aliceWallet = walletFactory.createWallet(address(alice));
+        address nodeWallet = walletFactory.createWallet(bob);
+        erc20Token.mint(aliceWallet, 50e6);
+        erc20Token.mint(nodeWallet, 50e6);
+        vm.prank(address(alice));
+        Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 50e6);
+        vm.prank(bob);
+        Wallet(payable(nodeWallet)).approve(bob, address(erc20Token), 50e6);
+
+        // 2. Create a subscription
+        (, Commitment memory commitment) = transientClient.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+        );
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // 3. Prepare proof data, but sign it with the WRONG key (Charlie's)
+        bytes32 requestId = commitment.requestId;
+        bytes32 commitmentHash = keccak256(commitmentData);
+        bytes32 inputHash = keccak256(MOCK_INPUT);
+        bytes32 resultHash = keccak256(MOCK_OUTPUT);
+        uint256 timestamp = block.timestamp + 1 minutes;
+
+        bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
+            immediateFinalizeVerifier.getStructHash(requestId, commitmentHash, inputHash, resultHash, bob, timestamp)
+        );
+
+        // Charlie signs the digest, not Bob.
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(charliePrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        bytes memory proof = abi.encode(requestId, commitmentHash, inputHash, resultHash, bob, timestamp, signature);
+
+        // 4. Expect the transaction to revert with InvalidEOASignature
+        vm.warp(timestamp);
+        vm.startPrank(bob);
+        vm.expectRevert(ImmediateFinalizeVerifier.InvalidEOASignature.selector);
+        COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
+        vm.stopPrank();
+    }
+
+    /// @notice Test: Reverts if the nodeAddress in the proof data does not match the signer.
+    function test_RevertIf_ImmediateFinalize_WithMismatchedNodeAddress() public {
+        // solhint-disable-line function-max-lines
+        uint256 bobPrivateKey = 0x2;
+        address bob = vm.addr(bobPrivateKey);
+        vm.label(bob, "Bob (EOA)");
+
+        address randomAddress = vm.addr(0x99);
+        vm.label(randomAddress, "Random Address");
+
+        // 1. Setup wallets and funds
+        address aliceWallet = walletFactory.createWallet(address(alice));
+        address nodeWallet = walletFactory.createWallet(bob);
+        erc20Token.mint(aliceWallet, 50e6);
+        erc20Token.mint(nodeWallet, 50e6);
+        vm.prank(address(alice));
+        Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 50e6);
+        vm.prank(bob);
+        Wallet(payable(nodeWallet)).approve(bob, address(erc20Token), 50e6);
+
+        // 2. Create a subscription
+        (, Commitment memory commitment) = transientClient.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+        );
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // 3. Prepare proof data where `nodeAddress` is a random address, not Bob's.
+        bytes32 requestId = commitment.requestId;
+        bytes32 commitmentHash = keccak256(commitmentData);
+        bytes32 inputHash = keccak256(MOCK_INPUT);
+        bytes32 resultHash = keccak256(MOCK_OUTPUT);
+        uint256 timestamp = block.timestamp + 1 minutes;
+
+        // The digest is created with the wrong address.
+        bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
+            immediateFinalizeVerifier.getStructHash(
+                requestId, commitmentHash, inputHash, resultHash, randomAddress, timestamp
+            )
+        );
+
+        // Bob signs this digest.
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // The proof is encoded with the wrong address.
+        bytes memory proof =
+            abi.encode(requestId, commitmentHash, inputHash, resultHash, randomAddress, timestamp, signature);
+
+        // 4. Expect the transaction to revert because the recovered signer (Bob) will not match `proofData.nodeAddress` (randomAddress).
+        vm.warp(timestamp);
+        vm.startPrank(bob);
+        vm.expectRevert(ImmediateFinalizeVerifier.InvalidEOASignature.selector);
+        COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
+        vm.stopPrank();
+    }
+
+    /// @notice Test: Reverts if the commitment hash in the proof does not match the one from the Coordinator.
+    function test_RevertIf_ImmediateFinalize_WithMismatchedCommitmentHash() public {
+        uint256 bobPrivateKey = 0x2;
+        address bob = vm.addr(bobPrivateKey);
+
+        // 1. Setup wallets and funds
+        address aliceWallet = walletFactory.createWallet(address(alice));
+        address nodeWallet = walletFactory.createWallet(bob);
+        erc20Token.mint(aliceWallet, 50e6);
+        erc20Token.mint(nodeWallet, 50e6); // Fund the node's wallet
+        vm.prank(address(alice));
+        Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 50e6);
+        vm.prank(bob);
+        Wallet(payable(nodeWallet)).approve(bob, address(erc20Token), 50e6); // Approve the node to spend from its own wallet
+
+        // 2. Create a subscription
+        (, Commitment memory commitment) = transientClient.createMockRequest(
+            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+        );
+        bytes memory commitmentData = abi.encode(commitment);
+
+        // 3. Create a proof with a FAKE commitment hash.
+        bytes32 fakeCommitmentHash = keccak256("fake");
+        bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
+            immediateFinalizeVerifier.getStructHash(
+                commitment.requestId,
+                fakeCommitmentHash,
+                keccak256(MOCK_INPUT),
+                keccak256(MOCK_OUTPUT),
+                bob,
+                block.timestamp
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobPrivateKey, digest);
+        bytes memory proof = abi.encode(
+            commitment.requestId,
+            fakeCommitmentHash,
+            keccak256(MOCK_INPUT),
+            keccak256(MOCK_OUTPUT),
+            bob,
+            block.timestamp,
+            abi.encodePacked(r, s, v)
+        );
+
+        // 4. Expect revert because the hash from the proof will not match the hash from the coordinator's parameters.
+        vm.startPrank(bob);
+        vm.expectRevert(ImmediateFinalizeVerifier.CommitmentHashMismatch.selector);
+        COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
+        vm.stopPrank();
     }
 }

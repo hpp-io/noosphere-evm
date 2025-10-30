@@ -24,7 +24,7 @@ function getLatestDeploymentAddress(contractName) {
         const broadcast = require(broadcastPath);
         // Find the transaction for the contract deployment.
         const deployment = broadcast.transactions.find(
-            (tx) => tx.transactionType === 'CREATE' && tx.contractName === contractName
+            (tx) => tx.transactionType === 'CREATE' && (tx.contractName === contractName || (contractName === 'Coordinator' && tx.contractName === 'DelegateeCoordinator'))
         );
         return deployment?.contractAddress;
     } catch (e) {
@@ -33,16 +33,6 @@ function getLatestDeploymentAddress(contractName) {
     }
 }
 
-function requestIdPacked(subscriptionId, interval) {
-    const packedData = ethers.solidityPacked(
-        ['uint64', 'uint32'],
-        [subscriptionId, interval]
-    );
-    const rid = ethers.keccak256(packedData);
-    return rid;
-}
-
-
 async function main() {
     // Load RPC_URL and PRIVATE_KEY from the .env file.
     const rpcUrl = process.env.RPC_URL;
@@ -50,9 +40,10 @@ async function main() {
     // Get contract addresses from the latest deployment run.
     const CLIENT_ADDRESS = getLatestDeploymentAddress('MyTransientClient');
     const ROUTER_ADDRESS = getLatestDeploymentAddress('Router');
+    const IMMEDIATE_FINALIZE_VERIFIER_ADDRESS = getLatestDeploymentAddress('ImmediateFinalizeVerifier');
 
-    if (!CLIENT_ADDRESS || !ROUTER_ADDRESS) {
-        console.error("Error: Could not find MyTransientClient or Router address in run-latest.json. Please deploy contracts first.");
+    if (!CLIENT_ADDRESS || !ROUTER_ADDRESS || !IMMEDIATE_FINALIZE_VERIFIER_ADDRESS) {
+        console.error("Error: Could not find MyTransientClient, Router, or OptimisticVerifier address in run-latest.json. Please deploy contracts first.");
         process.exit(1);
     }
 
@@ -152,20 +143,19 @@ async function main() {
         // --- 1. Create a new compute subscription ---
 
         const coordinatorId = ethers.encodeBytes32String("Coordinator_v1.0.0");
-        console.log(coordinatorId);
         const coordinatorAddress = await routerContract.getContractById(coordinatorId);
         console.log(`   Coordinator Address for routeId "Coordinator_v1.0.0" : ${coordinatorAddress}`);
 
-        console.log("\n1️⃣  Sending transaction to create a new compute subscription...");
+        console.log("\n1️⃣  Sending transaction to create a new compute subscription with OptimisticVerifier...");
         const subscriptionParams = {
-            containerId: "my-container-id",
+            containerId: "my-optimistic-container-id",
             redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress, // Native ETH
             feeAmount: ethers.parseEther("0.0001"),
             wallet: newWalletAddress, // The wallet that will pay for the compute
-            verifier: ethers.ZeroAddress, // No verifier in this example
-            routeId: coordinatorId // Example routeId
+            verifier: IMMEDIATE_FINALIZE_VERIFIER_ADDRESS,
+            routeId: coordinatorId
         };
 
         // Use the pending-based nonce
@@ -192,9 +182,7 @@ async function main() {
         }
 
         // --- Find the SubscriptionCreated Event ---
-        // Fetch all SubscriptionCreated events from the transaction's block...
         const events = await routerContract.queryFilter("SubscriptionCreated", createSubReceipt.blockNumber, createSubReceipt.blockNumber);
-        // ...and then find the specific event from our transaction.
         const subCreatedEvent = events.find(e => e.transactionHash === createSubTx.hash);
 
         if (!subCreatedEvent) {
@@ -209,12 +197,10 @@ async function main() {
         console.log("\n2️⃣  Sending transaction to request a compute job...");
         const computeInputs = "0x1234"; // Example input data
 
-        // Use the incremented nonce (we already incremented after create)
         console.log(`   Using nonce for requestCompute: ${nonce}`);
         const requestTx = await clientContract.requestCompute.send(subscriptionId, computeInputs, {
             nonce
         });
-        // increment nonce in case you want to send more txs later
         nonce++;
 
         const requestReceipt = await requestTx.wait(1);
@@ -223,7 +209,6 @@ async function main() {
             throw new Error("Compute request transaction failed!")
         }
 
-        // To get the requestId, we need to parse the logs from the ROUTER contract
         const requestStartEvents = await routerContract.queryFilter("RequestStart", requestReceipt.blockNumber, requestReceipt.blockNumber);
         const ourRequestEvent = requestStartEvents.find(e => e.transactionHash === requestTx.hash);
 
@@ -232,14 +217,6 @@ async function main() {
         }
 
         const { requestId } = ourRequestEvent.args;
-
-        const expectedRequestId = requestIdPacked(subscriptionId, 1);
-        if (requestId === expectedRequestId) {
-            console.log(`   ✅ Request ID matches expected value derived from requestIdPacked.`);
-        } else {
-            console.warn(`   ⚠️ Warning: Request ID (${requestId}) does not match expected value (${expectedRequestId}).`);
-        }
-
 
         console.log(`   ✅ Compute requested successfully!`);
         console.log(`   Request ID: ${requestId}`);
@@ -270,8 +247,7 @@ async function main() {
         // --- 4. Verify settlement by checking the client's wallet balance ---
         console.log("\n4️⃣  Verifying settlement from client's perspective...");
 
-        // Wait a moment for the settlement transaction to be fully processed
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Increased delay for stability
+        await new Promise(resolve => setTimeout(resolve, 2000));
         const clientWalletBalanceAfter = await provider.getBalance(newWalletAddress);
 
         console.log(`   Client Wallet Balance: ${ethers.formatEther(clientWalletBalanceBefore)} -> ${ethers.formatEther(clientWalletBalanceAfter)} ETH`);
@@ -282,7 +258,7 @@ async function main() {
             console.warn("   ⚠️ Settlement verification inconclusive. Client's wallet balance did not decrease as expected.");
         }
 
-        console.log("\n🎉 E2E test completed successfully!");
+        console.log("\n🎉 Optimistic E2E test completed successfully!");
         process.exit(0);
 
     } catch (error) {

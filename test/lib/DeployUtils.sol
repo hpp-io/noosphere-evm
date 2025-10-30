@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
+import "../../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {BillingConfig} from "../../src/v1_0_0/types/BillingConfig.sol";
 import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
-import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
+import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {OptimisticVerifier} from "../../src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 
 /// @title LibDeploy
@@ -18,7 +18,7 @@ library DeployUtils {
         Router router;
         DelegateeCoordinator coordinator;
         SubscriptionBatchReader reader;
-        OptimisticVerifier optimisticVerifier;
+        ImmediateFinalizeVerifier immediateFinalizeVerifier;
         WalletFactory walletFactory;
     }
 
@@ -62,11 +62,14 @@ library DeployUtils {
         coordinator.setSubscriptionBatchReader(address(contracts.reader));
 
         // Deploy OptimisticVerifier
-        contracts.optimisticVerifier = new OptimisticVerifier(
-            address(coordinator),
-            initialFeeRecipient, // Using initialFeeRecipient as paymentRecipient for tests
-            deployerAddress // Using deployerAddress as initialOwner
-        );
+        //        contracts.optimisticVerifier = new OptimisticVerifier(
+        //            address(coordinator),
+        //            initialFeeRecipient, // Using initialFeeRecipient as paymentRecipient for tests
+        //            deployerAddress // Using deployerAddress as initialOwner
+        //        );
+
+        // Deploy the ImmediateFinalizeVerifier
+        contracts.immediateFinalizeVerifier = new ImmediateFinalizeVerifier(address(coordinator), deployerAddress);
 
         // Register Coordinator into the Router's contract registry so lookups succeed.
         bytes32[] memory ids = new bytes32[](1);
