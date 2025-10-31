@@ -145,25 +145,12 @@ async function main() {
             // 3. Generate an EIP-712 proof
             console.log("   3. Generating EIP-712 proof...");
 
-            // Reconstruct the full commitment data to generate its hash
-            const subscription = await routerContract.getComputeSubscription(subscriptionId);
-            const commitmentForProof = {
-                requestId: requestId,
-                subscriptionId: subscriptionId,
-                containerId: subscription.containerId,
-                interval: commitmentDataFromEvent.interval,
-                useDeliveryInbox: subscription.useDeliveryInbox,
-                redundancy: subscription.redundancy,
-                walletAddress: subscription.wallet,
-                feeAmount: subscription.feeAmount,
-                feeToken: subscription.feeToken,
-                verifier: subscription.verifier,
-                coordinator: COORDINATOR_ADDRESS
-            };
-            const commitmentInstance = new Commitment(commitmentForProof);
+            // Use the commitment data directly from the event to ensure hash consistency.
+            const commitmentInstance = new Commitment(commitmentDataFromEvent);
             const encodedCommitmentData = commitmentInstance.encode();
 
             // 1. Define the EIP-712 domain and types, which must match the Verifier contract.
+
             const domain = {
                 name: 'Noosphere Onchain Verifier',
                 version: '1',
@@ -181,8 +168,8 @@ async function main() {
                     { name: 'timestamp', type: 'uint256' }
                 ]
             };
-
-            // 2. Prepare the data structure (value) to be signed.
+            //
+            // // 2. Prepare the data structure (value) to be signed.
             const timestamp = now();
             const commitmentHash = ethers.keccak256(encodedCommitmentData);
             const inputHash = ethers.keccak256(inputs);
@@ -196,24 +183,102 @@ async function main() {
                 nodeAddress: nodeSigner.address,
                 timestamp: timestamp
             };
-
-            // 3. Sign the typed data. `ethers` handles the digest creation internally.
+            //
+            // // 3. Sign the typed data. `ethers` handles the digest creation internally.
             const signature = await nodeSigner.signTypedData(domain, types, proofValue);
-
-            const proof = ethers.AbiCoder.defaultAbiCoder().encode(
+            //
+            const proof1 = ethers.AbiCoder.defaultAbiCoder().encode(
                 ['bytes32', 'bytes32', 'bytes32', 'bytes32', 'address', 'uint256', 'bytes'],
                 [proofValue.requestId, proofValue.commitmentHash, proofValue.inputHash, proofValue.resultHash, proofValue.nodeAddress, proofValue.timestamp, signature]
             );
             console.log(`      ✅ Proof generated successfully.`);
 
+            const proofServiceUrl = 'http://localhost:3000/api/service_output';
+            const requestBody = {
+                type: 'on-chain',
+                data: {
+                    requestId: requestId.toString(),
+                    commitment: { type: 'inline', value: encodedCommitmentData},
+                    input: { type: 'inline', value: inputs },
+                    output: { type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(output)) },
+                    timestamp: now(),
+                }
+            };
+
+            let proof;
+            try {
+                const response = await fetch(proofServiceUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Proof service returned an error: ${response.status} ${response.statusText}`);
+                }
+
+                const responseData = await response.json();
+                proof = responseData.proof;
+                console.log(`      ✅ Proof received successfully from service.`);
+
+                // --- 🐛 START DEBUGGING: Compare local proof with API proof ---
+                console.log("\n   --- 🔍 DEBUG: Comparing Local vs. API Proof Data ---");
+
+                // 1. Generate proof locally for comparison
+                const localTimestamp = requestBody.data.timestamp; // Use the same timestamp sent to the API
+                const localCommitmentHash = ethers.keccak256(encodedCommitmentData);
+                const localInputHash = ethers.keccak256(inputs);
+                // Use the same hexlified output for hashing
+                const localResultHash = ethers.keccak256(ethers.hexlify(ethers.toUtf8Bytes(output)));
+
+                const localProofValue = {
+                    requestId: requestId,
+                    commitmentHash: localCommitmentHash,
+                    inputHash: localInputHash,
+                    resultHash: localResultHash,
+                    nodeAddress: nodeSigner.address,
+                    timestamp: localTimestamp
+                };
+
+                const localSignature = await nodeSigner.signTypedData(domain, types, localProofValue);
+                const localProof = ethers.AbiCoder.defaultAbiCoder().encode(
+                    ['bytes32', 'bytes32', 'bytes32', 'bytes32', 'address', 'uint256', 'bytes'],
+                    [localProofValue.requestId, localProofValue.commitmentHash, localProofValue.inputHash, localProofValue.resultHash, localProofValue.nodeAddress, localProofValue.timestamp, localSignature]
+                );
+
+                // 2. Log both sets of data
+                console.log("   [Local Generation]:");
+                console.log(`     - Timestamp:      ${localTimestamp}`);
+                console.log(`     - Commitment Hash: ${localCommitmentHash}`);
+                console.log(`     - Input Hash:      ${localInputHash}`);
+                console.log(`     - Result Hash:     ${localResultHash}`);
+                console.log(`     - Signature:       ${localSignature}`);
+                console.log(`     - Final Proof:     ${localProof}`);
+
+                console.log("\n   [API Response]:");
+                console.log(`     - Timestamp:      ${responseData.timestamp}`);
+                console.log(`     - Commitment Hash: ${responseData.commitmentHash}`);
+                console.log(`     - Input Hash:      ${responseData.inputHash}`);
+                console.log(`     - Result Hash:     ${responseData.resultHash}`);
+                console.log(`     - Signature:       ${responseData.signature}`);
+                console.log(`     - Final Proof:     ${responseData.proof}`);
+                // --- 🐛 END DEBUGGING ---
+
+            } catch (e) {
+                console.error("   ❌ Error getting proof from service:", e);
+                throw e; // Stop processing this request if proof generation fails
+            }
 
             // 4. Report the result back to the Coordinator
             console.log("   4. Reporting compute result to Coordinator...");
             const reportTx = await coordinatorContract.reportComputeResult(
                 commitmentDataFromEvent.interval,
                 inputs,
-                ethers.toUtf8Bytes(output),
-                proof, // Use the generated proof
+                ethers.hexlify(ethers.toUtf8Bytes(output)),
+                proof,
+                // proof, // Use the generated proof
                 encodedCommitmentData,
                 nodePaymentWalletAddress
             );
