@@ -35,11 +35,12 @@ const now = () => Math.floor(Date.now() / 1000);
 // --- Constants ---
 const MIN_FUNDS = ethers.parseEther("0.1"); // Minimum funds for bond + gas
 
+// Global map to store initial balances for requests
+const initialBalances = new Map();
+
 async function main() {
     console.log("🤖 Onchain-Verify Agent (ImmediateFinalize) starting up...");
-
     const rpcUrl = process.env.RPC_URL;
-
     const COORDINATOR_ADDRESS = getLatestDeploymentAddress('Coordinator');
     const CLIENT_ADDRESS = getLatestDeploymentAddress('MyTransientClient');
     const ROUTER_ADDRESS = getLatestDeploymentAddress('Router');
@@ -65,6 +66,7 @@ async function main() {
     const coordinatorContract = new ethers.Contract(COORDINATOR_ADDRESS, CoordinatorArtifact.abi, nodeSigner);
     const clientContract = new ethers.Contract(CLIENT_ADDRESS, ClientArtifact.abi, provider); // Read-only is fine
     const routerContract = new ethers.Contract(ROUTER_ADDRESS, RouterArtifact.abi, provider);
+    const verifierContract = new ethers.Contract(IMMEDIATE_FINALIZE_VERIFIER_ADDRESS, ImmediateFinalizeVerifierArtifact.abi, provider);
 
     // --- Create a dedicated Wallet for the Node to receive payments ---
     console.log("\n🤖 Ensuring node has a payment wallet...");
@@ -113,7 +115,98 @@ async function main() {
     await approveTx.wait(1);
     console.log("   ✅ Node Signer approved for ETH.");
 
+    // --- 🔍 START DEBUGGING: Add a catch-all event listener for the Verifier ---
+    console.log("\n[DEBUG] Attaching a catch-all event listener to the routerContract...");
+    routerContract.on("*", (event) => {
+        console.log(`\n[DEBUG] <<-- 🔬 Router Event Received: ${event.log.eventName} -->>`);
+        const argNames = event.log.fragment.inputs.map(input => input.name);
+        event.log.args.forEach((arg, i) => {
+            console.log(`       - ${argNames[i]} (${event.log.fragment.inputs[i].type}): ${arg.toString()}`);
+        });
+        console.log(`       (Raw Event: ${JSON.stringify(event, null, 2)})`);
+        console.log(`[DEBUG] <<------------------------------------>>`);
+    });
+    // --- 🔍 END DEBUGGING ---
+
+    // --- 🔍 START DEBUGGING: Add a catch-all event listener for the Verifier ---
+    console.log("\n[DEBUG] Attaching a catch-all event listener to the Verifier contract...");
+    verifierContract.on("*", (event) => {
+        console.log(`\n[DEBUG] <<-- 🔬 Verifier Event Received: ${event.log.eventName} -->>`);
+        const argNames = event.log.fragment.inputs.map(input => input.name);
+        event.log.args.forEach((arg, i) => {
+            console.log(`       - ${argNames[i]} (${event.log.fragment.inputs[i].type}): ${arg.toString()}`);
+        });
+        console.log(`       (Raw Event: ${JSON.stringify(event, null, 2)})`);
+        console.log(`[DEBUG] <<------------------------------------>>`);
+    });
+    // --- 🔍 END DEBUGGING ---
+
+    // --- 🔍 START DEBUGGING: Add a catch-all event listener ---
+    console.log("\n[DEBUG] Attaching a catch-all event listener to the Coordinator contract...");
+    coordinatorContract.on("*", (event) => {
+        // The event object has a `log` property which is the raw log,
+        // and an `args` property with the decoded arguments.
+        console.log(`\n[DEBUG] <<-- 📬 Coordinator Event Received: ${event.log.eventName} -->>`);
+        const argNames = event.log.fragment.inputs.map(input => input.name);
+        event.log.args.forEach((arg, i) => {
+            console.log(`       - ${argNames[i]} (${event.log.fragment.inputs[i].type}): ${arg.toString()}`);
+        });
+        console.log(`       (Raw Event: ${JSON.stringify(event, null, 2)})`);
+        console.log(`[DEBUG] <<------------------------------------>>`);
+    });
+
+
     console.log(`   Listening for 'RequestStarted' events on Coordinator at ${COORDINATOR_ADDRESS}...`);
+
+    // --- Event Listener for Payment Verification ---
+    // This listener waits for the final `ProofVerified` event to check the balance.
+    coordinatorContract.on("ProofVerified", async (eventSubscriptionId, interval, eventNode, valid) => {
+        // The `node` in ProofVerified is the msg.sender to reportVerificationResult, which is the Coordinator.
+        // The logic inside the coordinator then uses the submitter address. Let's check against our node's signer address.
+        if (valid && eventNode.toLowerCase() === nodeSigner.address.toLowerCase()) { // This condition is for the submitter of the proof
+            console.log("\n✅ Proof verified successfully! Checking for payment...");
+        } else {
+            console.log("\n✅ Proof verified Failed! Checking for payment...");
+        }
+
+        // Reconstruct the requestId to look up the initial balance.
+        const requestId = ethers.solidityPackedKeccak256(['uint64', 'uint32'], [eventSubscriptionId, interval]);
+        const balanceBefore = initialBalances.get(requestId);
+
+        if (balanceBefore === undefined) {
+            console.warn(`   ⚠️ Could not retrieve initial balance for requestId ${requestId}. Skipping payment verification.`);
+            return;
+        }
+        initialBalances.delete(requestId); // Clean up the map
+
+        let balanceAfter = balanceBefore; // Initialize with the balance before payment
+
+        // Poll for balance change
+        const pollInterval = 2000; // 2 seconds
+        const maxAttempts = 15; // 30 seconds timeout
+        for (let i = 0; i < maxAttempts; i++) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+            balanceAfter = await provider.getBalance(nodePaymentWalletAddress);
+            if (balanceAfter > balanceBefore) {
+                console.log(`   🎉 Payment confirmed after ~${(i + 1) * 2} seconds!`);
+                break;
+            }
+            console.log(`   ...waiting for payment confirmation (${i + 1}/${maxAttempts})`);
+        }
+
+        const balanceChange = balanceAfter - balanceBefore;
+        console.log("\n      --- 💰 Balance Snapshot ---");
+        console.log(`      - Balance Before: ${ethers.formatEther(balanceBefore)} ETH`);
+        console.log(`      - Balance After:  ${ethers.formatEther(balanceAfter)} ETH`);
+        console.log(`      - Change:         ${ethers.formatEther(balanceChange)} ETH`);
+        console.log("      --------------------------");
+
+        if (balanceAfter > balanceBefore) {
+            console.log("      ✅ Payment confirmed successfully!");
+        } else {
+            console.warn("      🤔 Payment not reflected in balance. This is expected if the fee was 0 or the Coordinator does not implement settlement.");
+        }
+    });
 
     // Listen for the RequestStarted event from the Coordinator
     coordinatorContract.on("RequestStarted", async (requestId, subscriptionId, containerId, commitmentDataFromEvent) => {
@@ -129,9 +222,6 @@ async function main() {
         const clientWalletAddress = commitmentDataFromEvent.walletAddress;
         const clientWalletContract = new ethers.Contract(clientWalletAddress, WalletArtifact.abi, provider);
 
-        const balanceBefore = await provider.getBalance(nodePaymentWalletAddress);
-        console.log(`   Node Payment Wallet balance before report: ${ethers.formatEther(balanceBefore)} ETH`);
-
         try {
             // 1. Get the inputs for the computation from the client contract
             console.log("   1. Fetching compute inputs...");
@@ -142,66 +232,27 @@ async function main() {
             const output = "0x5678"; // Our "computed" result
             console.log(`   2. Computation finished. Output: ${output}`);
 
+            const balanceBeforeReport = await provider.getBalance(nodePaymentWalletAddress);
+            console.log(`   Node Payment Wallet balance before report: ${ethers.formatEther(balanceBeforeReport)} ETH`);
+            initialBalances.set(requestId, balanceBeforeReport); // Store initial balance for later payment verification
+
             // 3. Generate an EIP-712 proof
             console.log("   3. Generating EIP-712 proof...");
 
-            // Use the commitment data directly from the event to ensure hash consistency.
+            // // Use the commitment data directly from the event to ensure hash consistency.
             const commitmentInstance = new Commitment(commitmentDataFromEvent);
             const encodedCommitmentData = commitmentInstance.encode();
 
-            // 1. Define the EIP-712 domain and types, which must match the Verifier contract.
-
-            const domain = {
-                name: 'Noosphere Onchain Verifier',
-                version: '1',
-                chainId: (await provider.getNetwork()).chainId,
-                verifyingContract: IMMEDIATE_FINALIZE_VERIFIER_ADDRESS
-            };
-
-            const types = {
-                ComputeSubmission: [
-                    { name: 'requestId', type: 'bytes32' },
-                    { name: 'commitmentHash', type: 'bytes32' },
-                    { name: 'inputHash', type: 'bytes32' },
-                    { name: 'resultHash', type: 'bytes32' },
-                    { name: 'nodeAddress', type: 'address' },
-                    { name: 'timestamp', type: 'uint256' }
-                ]
-            };
-            //
-            // // 2. Prepare the data structure (value) to be signed.
-            const timestamp = now();
-            const commitmentHash = ethers.keccak256(encodedCommitmentData);
-            const inputHash = ethers.keccak256(inputs);
-            const resultHash = ethers.keccak256(ethers.toUtf8Bytes(output));
-
-            const proofValue = {
-                requestId: requestId,
-                commitmentHash: commitmentHash,
-                inputHash: inputHash,
-                resultHash: resultHash,
-                nodeAddress: nodeSigner.address,
-                timestamp: timestamp
-            };
-            //
-            // // 3. Sign the typed data. `ethers` handles the digest creation internally.
-            const signature = await nodeSigner.signTypedData(domain, types, proofValue);
-            //
-            const proof1 = ethers.AbiCoder.defaultAbiCoder().encode(
-                ['bytes32', 'bytes32', 'bytes32', 'bytes32', 'address', 'uint256', 'bytes'],
-                [proofValue.requestId, proofValue.commitmentHash, proofValue.inputHash, proofValue.resultHash, proofValue.nodeAddress, proofValue.timestamp, signature]
-            );
-            console.log(`      ✅ Proof generated successfully.`);
-
             const proofServiceUrl = 'http://localhost:3000/api/service_output';
             const requestBody = {
-                type: 'on-chain',
+                // type: 'on-chain',
                 data: {
-                    requestId: requestId.toString(),
-                    commitment: { type: 'inline', value: encodedCommitmentData},
-                    input: { type: 'inline', value: inputs },
-                    output: { type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(output)) },
-                    timestamp: now(),
+                    requestId: requestId,
+                    commitment: {type: 'inline', value: encodedCommitmentData},
+                    // Ensure inputs and outputs are consistently hexlified to prevent hash mismatches.
+                    input: {type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(inputs))},
+                    output: {type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(output))},
+                    timestamp: now()
                 }
             };
 
@@ -223,48 +274,8 @@ async function main() {
                 proof = responseData.proof;
                 console.log(`      ✅ Proof received successfully from service.`);
 
-                // --- 🐛 START DEBUGGING: Compare local proof with API proof ---
-                console.log("\n   --- 🔍 DEBUG: Comparing Local vs. API Proof Data ---");
-
-                // 1. Generate proof locally for comparison
-                const localTimestamp = requestBody.data.timestamp; // Use the same timestamp sent to the API
-                const localCommitmentHash = ethers.keccak256(encodedCommitmentData);
-                const localInputHash = ethers.keccak256(inputs);
-                // Use the same hexlified output for hashing
-                const localResultHash = ethers.keccak256(ethers.hexlify(ethers.toUtf8Bytes(output)));
-
-                const localProofValue = {
-                    requestId: requestId,
-                    commitmentHash: localCommitmentHash,
-                    inputHash: localInputHash,
-                    resultHash: localResultHash,
-                    nodeAddress: nodeSigner.address,
-                    timestamp: localTimestamp
-                };
-
-                const localSignature = await nodeSigner.signTypedData(domain, types, localProofValue);
-                const localProof = ethers.AbiCoder.defaultAbiCoder().encode(
-                    ['bytes32', 'bytes32', 'bytes32', 'bytes32', 'address', 'uint256', 'bytes'],
-                    [localProofValue.requestId, localProofValue.commitmentHash, localProofValue.inputHash, localProofValue.resultHash, localProofValue.nodeAddress, localProofValue.timestamp, localSignature]
-                );
-
-                // 2. Log both sets of data
-                console.log("   [Local Generation]:");
-                console.log(`     - Timestamp:      ${localTimestamp}`);
-                console.log(`     - Commitment Hash: ${localCommitmentHash}`);
-                console.log(`     - Input Hash:      ${localInputHash}`);
-                console.log(`     - Result Hash:     ${localResultHash}`);
-                console.log(`     - Signature:       ${localSignature}`);
-                console.log(`     - Final Proof:     ${localProof}`);
-
-                console.log("\n   [API Response]:");
-                console.log(`     - Timestamp:      ${responseData.timestamp}`);
-                console.log(`     - Commitment Hash: ${responseData.commitmentHash}`);
-                console.log(`     - Input Hash:      ${responseData.inputHash}`);
-                console.log(`     - Result Hash:     ${responseData.resultHash}`);
-                console.log(`     - Signature:       ${responseData.signature}`);
-                console.log(`     - Final Proof:     ${responseData.proof}`);
-                // --- 🐛 END DEBUGGING ---
+                // The local proof generation block has been removed for clarity.
+                // The proof service is the single source of truth for the proof.
 
             } catch (e) {
                 console.error("   ❌ Error getting proof from service:", e);
@@ -275,34 +286,17 @@ async function main() {
             console.log("   4. Reporting compute result to Coordinator...");
             const reportTx = await coordinatorContract.reportComputeResult(
                 commitmentDataFromEvent.interval,
-                inputs,
+                ethers.hexlify(ethers.toUtf8Bytes(inputs)),
                 ethers.hexlify(ethers.toUtf8Bytes(output)),
                 proof,
-                // proof, // Use the generated proof
                 encodedCommitmentData,
                 nodePaymentWalletAddress
             );
 
             console.log(`      Transaction sent! Hash: ${reportTx.hash}`);
-            const reportReceipt = await reportTx.wait(1);
-            console.log("   ✅ Result reported to Coordinator successfully!");
-
-            // 5. Verify payment
-            // With ImmediateFinalizeVerifier, the payment is processed in the same transaction.
-            // We can check the balance immediately after the transaction is mined.
-            console.log("   5. Verifying payment...");
-            // A small delay might be needed for the node to update its state.
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            const balanceAfter = await provider.getBalance(nodePaymentWalletAddress);
-            console.log(`   Node Payment Wallet balance after report:  ${ethers.formatEther(balanceAfter)} ETH`);
-            if (balanceAfter > balanceBefore) {
-                console.log("   🎉 Payment received successfully!");
-            } else {
-                console.warn("   🤔 Payment not reflected in balance. This might happen if the fee was 0 or due to network delays.");
-            }
 
         } catch (error) {
-            console.error("   ❌ Error processing request:", error);
+            console.error("\n   ❌ Error processing request:", error);
         }
     });
 }

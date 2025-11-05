@@ -731,9 +731,44 @@ contract ComputeVerifierTest is ComputeTest {
         // 4. Expect the transaction to revert with InvalidEOASignature
         vm.warp(timestamp);
         vm.startPrank(bob);
-        vm.expectRevert(ImmediateFinalizeVerifier.InvalidEOASignature.selector);
+        vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
+        emit ImmediateFinalizeVerifier.VerificationFailed(
+            commitment.subscriptionId,
+            commitment.interval,
+            nodeWallet,
+            "signer_mismatch"
+        );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
+
+        // 5. Assert final balances after slashing
+        // Alice's wallet: 50e6 (initial) - 4,088,000 (protocol fee) + 40e6 (slashed funds) = 85,912,000
+        // The original 40e6 payment is refunded, and an additional 40e6 is received from the slashed node.
+        assertEq(erc20Token.balanceOf(aliceWallet), 85_912_000, "Alice's balance is incorrect");
+
+        // Bob's wallet (node): 50e6 (initial) - 40e6 (slashed) = 10e6
+        assertEq(erc20Token.balanceOf(nodeWallet), 10_000_000, "Bob's balance is incorrect");
+
+        // Verifier's balance should be 0
+        assertEq(erc20Token.balanceOf(address(immediateFinalizeVerifier)), 0, "Verifier's balance should be 0");
+
+        // Protocol wallet: 4,088,000 (fees from the original payment attempt)
+        assertEq(erc20Token.balanceOf(protocolWalletAddress), 4_088_000, "Protocol wallet balance is incorrect");
+
+        // 6. Assert consumed allowances
+        // Alice's allowance is partially consumed by the protocol fee.
+        // Initial: 50e6, Consumed: 4,088,000, Remaining: 45,912,000
+        assertEq(
+            Wallet(payable(aliceWallet)).allowance(address(transientClient), address(erc20Token)),
+            45_912_000,
+            "Alice's allowance is incorrect"
+        );
+
+        // Bob's allowance is consumed by the escrow lock.
+        // Initial: 50e6, Consumed by lockEscrow: 40e6, Remaining: 10e6
+        assertEq(
+            Wallet(payable(nodeWallet)).allowance(bob, address(erc20Token)), 10_000_000, "Bob's allowance is incorrect"
+        );
     }
 
     /// @notice Test: Reverts if the nodeAddress in the proof data does not match the signer.
@@ -755,6 +790,7 @@ contract ComputeVerifierTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 50e6);
         vm.prank(bob);
         Wallet(payable(nodeWallet)).approve(bob, address(erc20Token), 50e6);
+        immediateFinalizeVerifier.setFee(address(erc20Token), 5e6);
 
         // 2. Create a subscription
         (, Commitment memory commitment) = transientClient.createMockRequest(
@@ -784,12 +820,46 @@ contract ComputeVerifierTest is ComputeTest {
         bytes memory proof =
             abi.encode(requestId, commitmentHash, inputHash, resultHash, randomAddress, timestamp, signature);
 
-        // 4. Expect the transaction to revert because the recovered signer (Bob) will not match `proofData.nodeAddress` (randomAddress).
+        // 4. Expect a `VerificationFailed` event because the recovered signer (Bob) will not match `proofData.nodeAddress` (randomAddress).
+        // The transaction itself should not revert, but the verifier will report the failure to the coordinator.
         vm.warp(timestamp);
         vm.startPrank(bob);
-        vm.expectRevert(ImmediateFinalizeVerifier.InvalidEOASignature.selector);
+        vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
+        emit ImmediateFinalizeVerifier.VerificationFailed(
+            commitment.subscriptionId, commitment.interval, nodeWallet, "signer_mismatch"
+        );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
+
+        // 5. Assert final balances after slashing
+        // Alice's wallet: 50e6 (initial) - 4,088,000 (protocol fee) - 5e6 (verifier fee) + 40e6 (slashed funds) = 80,912,000
+        // The original 40e6 payment is refunded, and an additional 40e6 is received from the slashed node.
+        assertEq(erc20Token.balanceOf(aliceWallet), 80_912_000, "Alice's balance is incorrect");
+
+        // Bob's wallet (node): 50e6 (initial) - 40e6 (slashed) = 10e6
+        assertEq(erc20Token.balanceOf(nodeWallet), 10_000_000, "Bob's balance is incorrect");
+
+        // Verifier fee: 5e6 - (5e6 * 5.11%) = 4,744,500
+        assertEq(
+            erc20Token.balanceOf(address(immediateFinalizeVerifier)), 4_744_500, "Verifier's balance should be incorrect"
+        );
+
+        // Protocol wallet: 4,088,000 (fees from the original payment attempt)
+        // Protocol fee: 4,088,000 (from payment) + 255,500 (from verifier fee) = 4,343,500
+        assertEq(erc20Token.balanceOf(protocolWalletAddress), 4_343_500, "Protocol wallet balance is incorrect");
+
+        // 6. Assert consumed allowances
+        // Alice's allowance is partially consumed by the protocol fee.
+        // Initial: 50e6, Consumed: 4,088,000 (protocol) + 5,000,000 (verifier) = 9,088,000. Remaining: 40,912,000
+        uint256 expectedAliceAllowance = 50e6 - 4_088_000 - 5e6;
+        assertEq(Wallet(payable(aliceWallet)).allowance(address(transientClient), address(erc20Token)),
+            expectedAliceAllowance, "Alice's allowance is incorrect");
+
+        // Bob's allowance is consumed by the escrow lock.
+        // Initial: 50e6, Consumed by lockEscrow: 40e6, Remaining: 10e6
+        assertEq(
+            Wallet(payable(nodeWallet)).allowance(bob, address(erc20Token)), 10_000_000, "Bob's allowance is incorrect"
+        );
     }
 
     /// @notice Test: Reverts if the commitment hash in the proof does not match the one from the Coordinator.
@@ -838,7 +908,10 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 4. Expect revert because the hash from the proof will not match the hash from the coordinator's parameters.
         vm.startPrank(bob);
-        vm.expectRevert(ImmediateFinalizeVerifier.CommitmentHashMismatch.selector);
+        vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
+        emit ImmediateFinalizeVerifier.VerificationFailed(
+            commitment.subscriptionId, commitment.interval, nodeWallet, "commitmentHash_mismatch"
+        );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
     }

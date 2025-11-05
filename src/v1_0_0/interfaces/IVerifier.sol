@@ -11,8 +11,8 @@ interface IVerifier {
     /// @notice Emitted when a verification request has been accepted by the verifier.
     /// @param subscriptionId Subscription identifier that this verification relates to.
     /// @param interval Interval index (or round) that this verification concerns.
-    /// @param node Address of the agent/node that submitted the proof.
-    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address node);
+    /// @param nodeWallet Address of the agent/node that submitted the proof.
+    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address nodeWallet);
 
     /// @notice Returns the fee required by the verifier when paid in `token`.
     /// @param token ERC20 token address (or `address(0)` for native ETH).

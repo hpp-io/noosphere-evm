@@ -146,13 +146,13 @@ async function main() {
         const coordinatorAddress = await routerContract.getContractById(coordinatorId);
         console.log(`   Coordinator Address for routeId "Coordinator_v1.0.0" : ${coordinatorAddress}`);
 
-        console.log("\n1️⃣  Sending transaction to create a new compute subscription with OptimisticVerifier...");
+        console.log("\n1️⃣  Sending transaction to create a new compute subscription with Verifier...");
         const subscriptionParams = {
             containerId: "my-optimistic-container-id",
             redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress, // Native ETH
-            feeAmount: ethers.parseEther("0.0001"),
+            feeAmount: ethers.parseEther("0.1"),
             wallet: newWalletAddress, // The wallet that will pay for the compute
             verifier: IMMEDIATE_FINALIZE_VERIFIER_ADDRESS,
             routeId: coordinatorId
@@ -197,6 +197,8 @@ async function main() {
         console.log("\n2️⃣  Sending transaction to request a compute job...");
         const computeInputs = "0x1234"; // Example input data
 
+        const clientWalletBalanceBefore = await provider.getBalance(newWalletAddress);
+
         console.log(`   Using nonce for requestCompute: ${nonce}`);
         const requestTx = await clientContract.requestCompute.send(subscriptionId, computeInputs, {
             nonce
@@ -224,8 +226,6 @@ async function main() {
         // --- 3. Wait for the result and verify settlement ---
         console.log("\n3️⃣  Waiting for the node to fulfill the request and receive the result...");
 
-        const clientWalletBalanceBefore = await provider.getBalance(newWalletAddress);
-
         let lastOutput = "0x";
         const pollInterval = 2000; // 2 seconds
         const maxAttempts = 15; // 30 seconds timeout
@@ -247,15 +247,32 @@ async function main() {
         // --- 4. Verify settlement by checking the client's wallet balance ---
         console.log("\n4️⃣  Verifying settlement from client's perspective...");
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        const clientWalletBalanceAfter = await provider.getBalance(newWalletAddress);
+        let clientWalletBalanceAfter = clientWalletBalanceBefore;
+        // Poll for balance change to ensure settlement is reflected.
+        for (let i = 0; i < maxAttempts; i++) {
+            clientWalletBalanceAfter = await provider.getBalance(newWalletAddress);
+            if (clientWalletBalanceAfter < clientWalletBalanceBefore) {
+                console.log(`   ...settlement detected after ~${(i + 1) * 2} seconds.`);
+                break;
+            }
+            if (i < maxAttempts - 1) {
+                console.log(`   ...waiting for settlement confirmation (${i + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+            }
+        }
 
-        console.log(`   Client Wallet Balance: ${ethers.formatEther(clientWalletBalanceBefore)} -> ${ethers.formatEther(clientWalletBalanceAfter)} ETH`);
+        const balanceChange = clientWalletBalanceAfter - clientWalletBalanceBefore;
+
+        console.log("\n      --- 💰 Client Balance Snapshot ---");
+        console.log(`      - Balance Before: ${ethers.formatEther(clientWalletBalanceBefore)} ETH`);
+        console.log(`      - Balance After:  ${ethers.formatEther(clientWalletBalanceAfter)} ETH`);
+        console.log(`      - Change:         ${ethers.formatEther(balanceChange)} ETH`);
+        console.log("      ---------------------------------");
 
         if (clientWalletBalanceAfter < clientWalletBalanceBefore) {
-            console.log("   ✅ Payment sent successfully! Client's wallet balance has decreased.");
+            console.log("      ✅ Payment sent successfully! Client's wallet balance has decreased.");
         } else {
-            console.warn("   ⚠️ Settlement verification inconclusive. Client's wallet balance did not decrease as expected.");
+            console.warn("      ⚠️ Settlement verification inconclusive. Client's wallet balance did not decrease as expected.");
         }
 
         console.log("\n🎉 Optimistic E2E test completed successfully!");

@@ -28,7 +28,6 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
         bytes signature;
     }
 
-    // keccak256("ComputeSubmission(string requestId,bytes32 commitmentHash,bytes32 inputHash,bytes32 resultHash,address nodeAddress,uint256 timestamp)")
     bytes32 private constant _COMPUTE_SUBMISSION_TYPEHASH = keccak256(
         "ComputeSubmission(bytes32 requestId,bytes32 commitmentHash,bytes32 inputHash,bytes32 resultHash,address nodeAddress,uint256 timestamp)"
     );
@@ -36,9 +35,20 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     /// @notice Mapping from token address to whether it is supported for fee payments.
     mapping(address => bool) public supportedTokens;
 
+    /// @notice Mapping from token address to the fee amount.
+    mapping(address => uint256) public tokenFees;
+
     ICoordinator public coordinator;
 
     event CoordinatorChanged(address indexed oldCoordinator, address indexed newCoordinator);
+
+    /// Emitted when verification fails with a reason (for observability).
+    event VerificationFailed(
+        uint64 indexed subscriptionId,
+        uint32 indexed interval,
+        address indexed nodeWallet,
+        string reason
+    );
 
     // --- Custom Errors ---
     error OnlyCoordinator();
@@ -56,8 +66,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
      * @param initialOwner_ The initial owner of this contract.
      */
     constructor(address coordinator_, address initialOwner_)
-        EIP712("Noosphere Onchain Verifier", "1")
-        Ownable(initialOwner_)
+    EIP712("Noosphere On-chain Verifier", "1")
+    Ownable(initialOwner_)
     {
         require(coordinator_ != address(0), "coordinator zero");
         coordinator = ICoordinator(coordinator_);
@@ -69,15 +79,14 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
 
     /// @inheritdoc IVerifier
     function fee(
-        address /* token */
+        address token
     )
-        external
-        view
-        override
-        returns (uint256 amount)
+    external
+    view
+    override
+    returns (uint256 amount)
     {
-        // This verifier does not charge a fee.
-        return 0;
+        return tokenFees[token];
     }
 
     /// @inheritdoc IVerifier
@@ -129,16 +138,16 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     /**
      * @notice Submits proof data for immediate verification using an EIP-712 signature.
      * @dev Only callable by the Coordinator. The `proof` bytes are expected to be the ABI-encoded
-     *      (string requestId, bytes32 commitmentHash, bytes32 inputHash, bytes32 resultHash, uint256 timestamp, bytes signature).
-     *      The `node` address from the arguments is expected to be the signer.
+     *      (bytes32 requestId, bytes32 commitmentHash, bytes32 inputHash, bytes32 resultHash, address nodeAddress, uint256 timestamp, bytes signature).
+     *      The `nodeWallet` address argument is the registered node wallet (contract or EOA).
      * @param subscriptionId The ID of the subscription being verified.
      * @param interval The interval number for the computation being verified.
      * @param submitter The EOA address of the node that submitted the proof.
-     * @param nodeWallet The smart contract wallet address of the node.
+     * @param nodeWallet The smart contract wallet address of the node (or EOA if not a contract).
      * @param proof The ABI-encoded proof data and signature from the node.
-     * @param commitmentHash The hash of the commitment data.
-     * @param inputHash The hash of the input data.
-     * @param resultHash The hash of the output data.
+     * @param commitmentHash The hash of the commitment data (from Coordinator).
+     * @param inputHash The hash of the input data (from Coordinator).
+     * @param resultHash The hash of the output data (from Coordinator).
      */
     function submitProofForVerification(
         uint64 subscriptionId,
@@ -164,16 +173,24 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             proofData.timestamp,
             proofData.signature
         ) = abi.decode(proof, (bytes32, bytes32, bytes32, bytes32, address, uint256, bytes));
+
         emit VerificationRequested(subscriptionId, interval, nodeWallet);
 
+        // hash checks -> failure reports (no revert)
         if (commitmentHash != proofData.commitmentHash) {
-            revert CommitmentHashMismatch();
+            emit VerificationFailed(subscriptionId, interval, nodeWallet, "commitmentHash_mismatch");
+            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            return;
         }
         if (inputHash != proofData.inputHash) {
-            revert InputHashMismatch();
+            emit VerificationFailed(subscriptionId, interval, nodeWallet, "inputHash_mismatch");
+            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            return;
         }
         if (resultHash != proofData.resultHash) {
-            revert ResultHashMismatch();
+            emit VerificationFailed(subscriptionId, interval, nodeWallet, "resultHash_mismatch");
+            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            return;
         }
 
         bytes32 digest = getTypedDataHash(
@@ -187,20 +204,39 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             )
         );
 
-        address signer = ECDSA.recover(digest, proofData.signature);
+        // ALWAYS attempt ECDSA.recover first to get signer
+        address signer;
+        signer = ECDSA.recover(digest, proofData.signature);
 
-        if (signer != proofData.nodeAddress) {
-            revert InvalidEOASignature();
-        }
         if (signer == address(0)) {
-            revert ZeroAddressSigner();
+            emit VerificationFailed(subscriptionId, interval, nodeWallet, "zero_address_signer");
+            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            return;
         }
-        bytes4 magicValue = IERC1271(nodeWallet).isValidSignature(digest, proofData.signature);
-        if (magicValue != IERC1271.isValidSignature.selector) {
-            revert InvalidContractSignature();
+
+        // key rule: recovered signer MUST match the nodeAddress claimed in the proof
+        if (signer != proofData.nodeAddress) {
+//            emit VerificationFailed(subscriptionId, interval, nodeWallet, "signer_mismatch");
+            emit VerificationFailed(subscriptionId, interval, signer, "signer_mismatch");
+            emit VerificationFailed(subscriptionId, interval, proofData.nodeAddress, "signer_mismatch");
+            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            return;
         }
+
+        // If node wallet is a contract, additionally require ERC1271 acceptance
+        if (isContract(nodeWallet)) {
+            bytes4 magic = IERC1271(nodeWallet).isValidSignature(digest, proofData.signature);
+            if (magic != IERC1271.isValidSignature.selector) {
+                emit VerificationFailed(subscriptionId, interval, nodeWallet, "invalid_contract_signature");
+                coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+                return;
+            }
+        }
+
+        // passed all checks
         coordinator.reportVerificationResult(subscriptionId, interval, submitter, true);
     }
+
 
     /*//////////////////////////////////////////////////////////////
                             OWNER-ONLY ACTIONS
@@ -220,10 +256,18 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     /**
      * @notice Owner-only function to update whether a token is supported.
      * @param token The address of the token to support or unsupport.
-     * @param isSupported True to support the token, false to unsupport.
      */
     function setTokenSupported(address token, bool isSupported) external onlyOwner {
         supportedTokens[token] = isSupported;
+    }
+
+    /**
+     * @notice Owner-only function to update the fee for a specific token.
+     * @param token The address of the token.
+     * @param amount The new fee amount.
+     */
+    function setFee(address token, uint256 amount) external onlyOwner {
+        tokenFees[token] = amount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -232,4 +276,16 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
 
     // Allow the contract to receive ETH, even though it doesn't charge fees.
     receive() external payable {}
+
+    /*//////////////////////////////////////////////////////////////
+                              INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function isContract(address account) internal view returns (bool) {
+        return account.code.length > 0;
+    }
+
+    function domainSeparator() public view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
 }

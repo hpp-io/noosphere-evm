@@ -83,6 +83,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         address feeToken,
         address verifier,
         address coordinator,
+        address nodeWallet,
         FulfillResult result
     );
 
@@ -91,6 +92,15 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
     /// @notice Emitted when funds are unlocked for verification.
     event VerificationFundsUnlocked(bytes32 indexed requestId, address indexed spender, uint256 amount);
+
+    /// @notice Emitted when a payment is made via a coordinator.
+    event PaymentMade(
+        uint64 indexed subscriptionId,
+        address indexed spenderWallet,
+        address indexed recipient,
+        address token,
+        uint256 amount
+    );
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -181,6 +191,11 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             revert OnlyCallableFromCoordinator();
         }
         _pay(spenderWallet, spenderAddress, payments);
+        for (uint256 i = 0; i < payments.length; i++) {
+            Payment memory p = payments[i];
+            emit PaymentMade(subscriptionId, spenderWallet, p.recipient, p.feeToken, p.feeAmount);
+        }
+
     }
 
     /**
@@ -246,6 +261,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment.feeToken,
             commitment.verifier,
             commitment.coordinator,
+            nodeWallet,
             resultCode
         );
     }

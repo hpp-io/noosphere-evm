@@ -288,11 +288,8 @@ abstract contract Billing is IBilling, Routable {
             revert UnauthorizedVerifier();
         }
 
-        // Unlock funds regardless of outcome, as the verification process is complete.
         _getRouter().unlockForVerification(request);
-
         Payment[] memory payments = new Payment[](1);
-        // Pay the node if the proof is valid OR if the verification intervalSeconds has expired.
         if (valid || expired) {
             payments[0] = Payment({
                 recipient: request.submitterWallet, feeToken: request.escrowToken, feeAmount: request.escrowedAmount
