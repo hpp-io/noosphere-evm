@@ -733,10 +733,7 @@ contract ComputeVerifierTest is ComputeTest {
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
-            commitment.subscriptionId,
-            commitment.interval,
-            nodeWallet,
-            "signer_mismatch"
+            commitment.subscriptionId, commitment.interval, nodeWallet, "signer_mismatch"
         );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
@@ -841,7 +838,9 @@ contract ComputeVerifierTest is ComputeTest {
 
         // Verifier fee: 5e6 - (5e6 * 5.11%) = 4,744,500
         assertEq(
-            erc20Token.balanceOf(address(immediateFinalizeVerifier)), 4_744_500, "Verifier's balance should be incorrect"
+            erc20Token.balanceOf(address(immediateFinalizeVerifier)),
+            4_744_500,
+            "Verifier's balance should be incorrect"
         );
 
         // Protocol wallet: 4,088,000 (fees from the original payment attempt)
@@ -852,8 +851,11 @@ contract ComputeVerifierTest is ComputeTest {
         // Alice's allowance is partially consumed by the protocol fee.
         // Initial: 50e6, Consumed: 4,088,000 (protocol) + 5,000,000 (verifier) = 9,088,000. Remaining: 40,912,000
         uint256 expectedAliceAllowance = 50e6 - 4_088_000 - 5e6;
-        assertEq(Wallet(payable(aliceWallet)).allowance(address(transientClient), address(erc20Token)),
-            expectedAliceAllowance, "Alice's allowance is incorrect");
+        assertEq(
+            Wallet(payable(aliceWallet)).allowance(address(transientClient), address(erc20Token)),
+            expectedAliceAllowance,
+            "Alice's allowance is incorrect"
+        );
 
         // Bob's allowance is consumed by the escrow lock.
         // Initial: 50e6, Consumed by lockEscrow: 40e6, Remaining: 10e6

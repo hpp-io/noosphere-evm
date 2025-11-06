@@ -7,6 +7,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Coordinator} from "../Coordinator.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {IVerifier} from "../interfaces/IVerifier.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ICoordinator} from "../interfaces/ICoordinator.sol";
 
 /**
@@ -42,12 +43,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
 
     event CoordinatorChanged(address indexed oldCoordinator, address indexed newCoordinator);
 
-    /// Emitted when verification fails with a reason (for observability).
     event VerificationFailed(
-        uint64 indexed subscriptionId,
-        uint32 indexed interval,
-        address indexed nodeWallet,
-        string reason
+        uint64 indexed subscriptionId, uint32 indexed interval, address indexed nodeWallet, string reason
     );
 
     // --- Custom Errors ---
@@ -66,8 +63,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
      * @param initialOwner_ The initial owner of this contract.
      */
     constructor(address coordinator_, address initialOwner_)
-    EIP712("Noosphere On-chain Verifier", "1")
-    Ownable(initialOwner_)
+        EIP712("Noosphere On-chain Verifier", "1")
+        Ownable(initialOwner_)
     {
         require(coordinator_ != address(0), "coordinator zero");
         coordinator = ICoordinator(coordinator_);
@@ -78,14 +75,7 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IVerifier
-    function fee(
-        address token
-    )
-    external
-    view
-    override
-    returns (uint256 amount)
-    {
+    function fee(address token) external view override returns (uint256 amount) {
         return tokenFees[token];
     }
 
@@ -204,7 +194,6 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             )
         );
 
-        // ALWAYS attempt ECDSA.recover first to get signer
         address signer;
         signer = ECDSA.recover(digest, proofData.signature);
 
@@ -214,16 +203,12 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             return;
         }
 
-        // key rule: recovered signer MUST match the nodeAddress claimed in the proof
         if (signer != proofData.nodeAddress) {
-//            emit VerificationFailed(subscriptionId, interval, nodeWallet, "signer_mismatch");
-            emit VerificationFailed(subscriptionId, interval, signer, "signer_mismatch");
-            emit VerificationFailed(subscriptionId, interval, proofData.nodeAddress, "signer_mismatch");
+            emit VerificationFailed(subscriptionId, interval, nodeWallet, "signer_mismatch");
             coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
             return;
         }
 
-        // If node wallet is a contract, additionally require ERC1271 acceptance
         if (isContract(nodeWallet)) {
             bytes4 magic = IERC1271(nodeWallet).isValidSignature(digest, proofData.signature);
             if (magic != IERC1271.isValidSignature.selector) {
@@ -232,11 +217,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
                 return;
             }
         }
-
-        // passed all checks
         coordinator.reportVerificationResult(subscriptionId, interval, submitter, true);
     }
-
 
     /*//////////////////////////////////////////////////////////////
                             OWNER-ONLY ACTIONS
@@ -268,6 +250,32 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
      */
     function setFee(address token, uint256 amount) external onlyOwner {
         tokenFees[token] = amount;
+    }
+
+    /**
+     * @notice Allows the owner to withdraw the entire ETH balance of the contract.
+     */
+    function withdraw() external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No ETH to withdraw");
+        (bool success,) = owner().call{value: balance}("");
+        require(success, "ETH transfer failed");
+    }
+
+    /**
+     * @notice Allows the owner to withdraw a specific amount of an ERC20 token.
+     * @param token The address of the ERC20 token.
+     * @param amount The amount of the token to withdraw.
+     */
+    function withdrawToken(address token, uint256 amount) external onlyOwner {
+        require(token != address(0), "Invalid token address");
+        IERC20 erc20 = IERC20(token);
+        uint256 balance = erc20.balanceOf(address(this));
+        require(amount > 0, "Amount must be greater than zero");
+        require(amount <= balance, "Insufficient token balance");
+        if (!erc20.transfer(owner(), amount)) {
+            revert("Token transfer failed");
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

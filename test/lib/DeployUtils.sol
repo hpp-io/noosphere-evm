@@ -8,6 +8,7 @@ import {Router} from "../../src/v1_0_0/Router.sol";
 import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
+import {MockToken} from "../mocks/MockToken.sol";
 
 /// @title LibDeploy
 /// @notice Small deployment helpers used by tests to deploy and wire protocol contracts.
@@ -20,6 +21,7 @@ library DeployUtils {
         SubscriptionBatchReader reader;
         ImmediateFinalizeVerifier immediateFinalizeVerifier;
         WalletFactory walletFactory;
+        MockToken mockToken;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -50,7 +52,8 @@ library DeployUtils {
         Router router;
         DelegateeCoordinator coordinator;
 
-        // Deploy Router first (dependency for the other contracts).
+        contracts.mockToken = new MockToken();
+        contracts.mockToken.mint(deployerAddress, 1_000_000e18);
         router = new Router();
 
         // Deploy delegatee coordinator and initialize its billing config via helper.
@@ -60,13 +63,6 @@ library DeployUtils {
         contracts.reader = new SubscriptionBatchReader(address(router), address(coordinator));
         contracts.walletFactory = new WalletFactory(address(router));
         coordinator.setSubscriptionBatchReader(address(contracts.reader));
-
-        // Deploy OptimisticVerifier
-        //        contracts.optimisticVerifier = new OptimisticVerifier(
-        //            address(coordinator),
-        //            initialFeeRecipient, // Using initialFeeRecipient as paymentRecipient for tests
-        //            deployerAddress // Using deployerAddress as initialOwner
-        //        );
 
         // Deploy the ImmediateFinalizeVerifier
         contracts.immediateFinalizeVerifier = new ImmediateFinalizeVerifier(address(coordinator), deployerAddress);

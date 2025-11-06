@@ -46,9 +46,9 @@ contract Deploy is Script {
         console.log("MyTransientClient:    ", address(myClient));
         console.log("Coordinator:        ", address(contracts.coordinator));
         console.log("Reader:             ", address(contracts.reader));
-//        console.log("OptimisticVerifier: ", address(contracts.optimisticVerifier));
         console.log("ImmediateFinalizeVerifier: ", address(contracts.immediateFinalizeVerifier));
         console.log("WalletFactory:      ", address(contracts.walletFactory));
+        console.log("MockToken:             ", address(contracts.mockToken));
         console.log("=========================");
 
         // Stop broadcasting transactions

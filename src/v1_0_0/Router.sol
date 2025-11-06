@@ -195,7 +195,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             Payment memory p = payments[i];
             emit PaymentMade(subscriptionId, spenderWallet, p.recipient, p.feeToken, p.feeAmount);
         }
-
     }
 
     /**
