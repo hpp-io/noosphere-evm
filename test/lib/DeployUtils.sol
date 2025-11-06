@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.23;
 
+import "../../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {BillingConfig} from "../../src/v1_0_0/types/BillingConfig.sol";
 import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
-import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
+import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {OptimisticVerifier} from "../../src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
+import {MockToken} from "../mocks/MockToken.sol";
 
 /// @title LibDeploy
 /// @notice Small deployment helpers used by tests to deploy and wire protocol contracts.
@@ -18,8 +19,9 @@ library DeployUtils {
         Router router;
         DelegateeCoordinator coordinator;
         SubscriptionBatchReader reader;
-        OptimisticVerifier optimisticVerifier;
+        ImmediateFinalizeVerifier immediateFinalizeVerifier;
         WalletFactory walletFactory;
+        MockToken mockToken;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -41,16 +43,15 @@ library DeployUtils {
     /// @param initialFee Protocol fee (basis points or protocol-defined unit).
     /// @param tokenAddr Optional token address used for tick fees / mocks (may be address(0)).
     /// @return contracts A struct containing all deployed contract instances.
-    function deployContracts(
-        address deployerAddress,
-        address initialFeeRecipient,
-        uint16 initialFee,
-        address tokenAddr
-    ) internal returns (DeployedContracts memory contracts) {
+    function deployContracts(address deployerAddress, address initialFeeRecipient, uint16 initialFee, address tokenAddr)
+        internal
+        returns (DeployedContracts memory contracts)
+    {
         Router router;
         DelegateeCoordinator coordinator;
 
-        // Deploy Router first (dependency for the other contracts).
+        contracts.mockToken = new MockToken();
+        contracts.mockToken.mint(deployerAddress, 1_000_000e18);
         router = new Router();
 
         // Deploy delegatee coordinator and initialize its billing config via helper.
@@ -61,12 +62,8 @@ library DeployUtils {
         contracts.walletFactory = new WalletFactory(address(router));
         coordinator.setSubscriptionBatchReader(address(contracts.reader));
 
-        // Deploy OptimisticVerifier
-        contracts.optimisticVerifier = new OptimisticVerifier(
-            address(coordinator),
-            initialFeeRecipient, // Using initialFeeRecipient as paymentRecipient for tests
-            deployerAddress // Using deployerAddress as initialOwner
-        );
+        // Deploy the ImmediateFinalizeVerifier
+        contracts.immediateFinalizeVerifier = new ImmediateFinalizeVerifier(address(coordinator), deployerAddress);
 
         // Register Coordinator into the Router's contract registry so lookups succeed.
         bytes32[] memory ids = new bytes32[](1);

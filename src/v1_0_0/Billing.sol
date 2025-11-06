@@ -173,8 +173,20 @@ abstract contract Billing is IBilling, Routable {
         _initiateVerification(commitment, proofSubmitter, nodeWallet);
         _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         // Initiate verifier verification
+        bytes32 commitmentHash = keccak256(abi.encode(commitment));
+        bytes32 inputHash = keccak256(input);
+        bytes32 resultHash = keccak256(output);
         IVerifier(commitment.verifier)
-            .submitProofForVerification(commitment.subscriptionId, commitment.interval, proofSubmitter, proof);
+            .submitProofForVerification(
+                commitment.subscriptionId,
+                commitment.interval,
+                proofSubmitter,
+                nodeWallet,
+                proof,
+                commitmentHash,
+                inputHash,
+                resultHash
+            );
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.
@@ -276,11 +288,8 @@ abstract contract Billing is IBilling, Routable {
             revert UnauthorizedVerifier();
         }
 
-        // Unlock funds regardless of outcome, as the verification process is complete.
         _getRouter().unlockForVerification(request);
-
         Payment[] memory payments = new Payment[](1);
-        // Pay the node if the proof is valid OR if the verification intervalSeconds has expired.
         if (valid || expired) {
             payments[0] = Payment({
                 recipient: request.submitterWallet, feeToken: request.escrowToken, feeAmount: request.escrowedAmount

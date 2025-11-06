@@ -45,17 +45,24 @@ contract MockImmediateVerifier is MockVerifier {
     ///      `coordinator.finalizeProofVerification(...)` with the preconfigured outcome.
     /// @param subscriptionId Identifier of the subscription this proof belongs to.
     /// @param interval Interval index (or round) that this proof corresponds to.
-    /// @param node Address of the agent/node that produced the proof.
+    /// @param submitter Address of the agent/node that produced the proof.
     /// @param proof Arbitrary proof bytes consumed by the verifier (ignored by mock).
-    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
-        external
-    {
+    function submitProofForVerification(
+        uint64 subscriptionId,
+        uint32 interval,
+        address submitter,
+        address, /* nodeWallet */
+        bytes calldata proof,
+        bytes32, /* commitmentHash */
+        bytes32, /* inputHash */
+        bytes32 /* resultHash */
+    ) external {
         // emit the acceptance event so tests/integrations can observe the submission
-        emit VerificationRequested(subscriptionId, interval, node);
+        emit VerificationRequested(subscriptionId, interval, submitter);
 
         // Immediately finalize the verification on the coordinator using the configured outcome.
         // The mock intentionally ignores the proof bytes and uses `nextValidity`.
-        COORDINATOR.reportVerificationResult(subscriptionId, interval, node, nextValidity);
+        COORDINATOR.reportVerificationResult(subscriptionId, interval, submitter, nextValidity);
     }
 
     /*//////////////////////////////////////////////////////////////

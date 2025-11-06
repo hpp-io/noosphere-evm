@@ -6,12 +6,14 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "openzeppelin-contracts/contracts/utils/Address.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import {IERC1271} from "openzeppelin-contracts/contracts/interfaces/IERC1271.sol";
 import {Routable} from "../utility/Routable.sol";
 import {Payment} from "../types/Payment.sol";
 
 /// @title Wallet
 /// @notice A smart contract wallet that manages funds, allowances, and request-level locks for various tokens (including native ETH).
-contract Wallet is Ownable, Routable, ReentrancyGuard {
+contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -429,5 +431,23 @@ contract Wallet is Ownable, Routable, ReentrancyGuard {
 
     function typeAndVersion() external pure returns (string memory) {
         return "Wallet 1.0.0";
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                EIP-1271
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Verifies that a signature is valid for this contract.
+     * @dev Implements EIP-1271. It checks if the signature was made by the owner of this wallet.
+     * @param hash_ The hash of the message that was signed.
+     * @param signature_ The signature to verify.
+     * @return `bytes4(keccak256("isValidSignature(bytes32,bytes)"))` if the signature is valid, and `0xffffffff` otherwise.
+     */
+    function isValidSignature(bytes32 hash_, bytes memory signature_) external view override returns (bytes4) {
+        if (ECDSA.recover(hash_, signature_) == owner()) {
+            return IERC1271.isValidSignature.selector;
+        }
+        return bytes4(0xffffffff);
     }
 }

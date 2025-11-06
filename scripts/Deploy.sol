@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
-import {OptimisticVerifier} from "../src/v1_0_0/verifier/OptimisticVerifier.sol";
-import {DeployUtils} from "../test/lib/DeployUtils.sol";
-import {MyTransientClient} from "../src/v1_0_0/sample/MyTransientClient.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
 import {Script} from "forge-std/Script.sol";
-import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
-import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {console} from "forge-std/console.sol";
+import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
+import {DeployUtils} from "../test/lib/DeployUtils.sol";
+import {ImmediateFinalizeVerifier} from "../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
+import {MyTransientClient} from "../src/v1_0_0/sample/MyTransientClient.sol";
 
 /// @title Deploy
 /// @notice Deploys noosphere SDK to destination chain defined in environment
@@ -41,15 +38,17 @@ contract Deploy is Script {
 
         // Wire the Router to the WalletFactory
         contracts.router.setWalletFactory(address(contracts.walletFactory));
+        contracts.immediateFinalizeVerifier.setTokenSupported(address(0), true);
 
         // Summary logs
         console.log("=== Deploy: summary ===");
-        console.log("Router:        ", address(contracts.router));
-        console.log("MyTransientClient: ", address(myClient));
-        console.log("Coordinator:   ", address(contracts.coordinator));
-        console.log("Reader:        ", address(contracts.reader));
-        console.log("OptimisticVerifier: ", address(contracts.optimisticVerifier));
-        console.log("WalletFactory: ", address(contracts.walletFactory));
+        console.log("Router:             ", address(contracts.router));
+        console.log("MyTransientClient:    ", address(myClient));
+        console.log("Coordinator:        ", address(contracts.coordinator));
+        console.log("Reader:             ", address(contracts.reader));
+        console.log("ImmediateFinalizeVerifier: ", address(contracts.immediateFinalizeVerifier));
+        console.log("WalletFactory:      ", address(contracts.walletFactory));
+        console.log("MockToken:             ", address(contracts.mockToken));
         console.log("=========================");
 
         // Stop broadcasting transactions
