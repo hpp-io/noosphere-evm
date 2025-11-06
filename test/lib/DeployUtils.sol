@@ -43,12 +43,10 @@ library DeployUtils {
     /// @param initialFee Protocol fee (basis points or protocol-defined unit).
     /// @param tokenAddr Optional token address used for tick fees / mocks (may be address(0)).
     /// @return contracts A struct containing all deployed contract instances.
-    function deployContracts(
-        address deployerAddress,
-        address initialFeeRecipient,
-        uint16 initialFee,
-        address tokenAddr
-    ) internal returns (DeployedContracts memory contracts) {
+    function deployContracts(address deployerAddress, address initialFeeRecipient, uint16 initialFee, address tokenAddr)
+        internal
+        returns (DeployedContracts memory contracts)
+    {
         Router router;
         DelegateeCoordinator coordinator;
 
