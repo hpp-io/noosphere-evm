@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {MockTransientComputeClient} from "./mocks/client/MockTransientComputeClient.sol";

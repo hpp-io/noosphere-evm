@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {OptimisticVerifier} from "src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol";

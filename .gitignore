@@ -1,20 +1,26 @@
-# Compiler files
+# Dependencies
+node_modules/
+
+# Build artifacts
 cache/
 out/
-.idea/
 broadcast/
-node_modules/
+reports/
+
+# IDE & Editor specific
+.idea/
+.vscode/
 
 # Ignores development broadcast logs
 !/broadcast
 /broadcast/*/31337/
 /broadcast/**/dry-run/
 
-# Docs
+# Documentation
 docs/
 
-# Dotenv file
+# Environment
 .env
 
-# lock file
+# Lock file
 package-lock.json

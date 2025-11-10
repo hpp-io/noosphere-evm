@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ConfirmedOwner} from "./utility/ConfirmedOwner.sol";
 import {BillingConfig} from "./types/BillingConfig.sol";
@@ -161,9 +161,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev Internal: prepare the next interval by sending a request via Router and calculating fees.
     function _prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) internal {
         // instruct router to create/send the request for the next interval
-        _getRouter().sendRequest(subscriptionId, nextInterval);
-
-        // pre-calculate and reserve any next-tick fees needed for nodes (Billing helper)
+        (bytes32 requestId, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, nextInterval);
+        delete requestId;
+        delete commitment;
         _calculateNextTickFee(subscriptionId, nodeWallet);
     }
 
@@ -181,8 +181,8 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
 
         // check redundancy limit for this request: if already reached, revert
-        uint16 numRedundantDeliveries = redundancyCount[commitment.requestId];
-        if (numRedundantDeliveries == commitment.redundancy) {
+        uint16 currentRedundancy = redundancyCount[commitment.requestId];
+        if (currentRedundancy >= commitment.redundancy) {
             revert IntervalCompleted();
         }
 
@@ -196,18 +196,18 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         if (_getRouter().isValidWallet(nodeWallet) == false) {
             revert InvalidWallet();
         }
-
-        // increment redundancy count (unchecked for gas; safe under normal operation)
-        unchecked {
-            redundancyCount[commitment.requestId] = numRedundantDeliveries + 1;
-        }
-
         // prevent the same node (msg.sender) from responding twice for the same subscription/interval
         bytes32 key = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
         if (nodeResponded[key]) {
             revert NodeRespondedAlready();
         }
         nodeResponded[key] = true;
+        // increment redundancy count (unchecked for gas; safe as it's bounded by commitment.redundancy)
+        uint16 newRedundancyCount;
+        unchecked {
+            newRedundancyCount = currentRedundancy + 1;
+        }
+        redundancyCount[commitment.requestId] = newRedundancyCount;
 
         // delegate to delivery processing routine (handles payments/settlement/notify)
         _processDelivery(
@@ -217,12 +217,12 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             input,
             output,
             proof,
-            redundancyCount[commitment.requestId],
-            numRedundantDeliveries == commitment.redundancy - 1
+            newRedundancyCount,
+            newRedundancyCount == commitment.redundancy
         );
 
         // emit human-friendly event for off-chain indexing
-        emit ComputeDelivered(commitment.requestId, nodeWallet, redundancyCount[commitment.requestId]);
+        emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount);
     }
 
     /// @dev ConfirmedOwner abstract hook (required override).

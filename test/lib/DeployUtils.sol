@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import "../../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {BillingConfig} from "../../src/v1_0_0/types/BillingConfig.sol";

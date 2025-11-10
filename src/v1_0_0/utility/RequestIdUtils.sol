@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 /// @title RequestId utils
 /// @notice Utility helpers to compute requestId := keccak256(abi.encodePacked(...))

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Routable} from "./utility/Routable.sol";
 import {IBilling} from "./interfaces/IBilling.sol";
@@ -9,6 +9,7 @@ import {Payment} from "./types/Payment.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
+import {FulfillResult} from "./types/FulfillResult.sol";
 
 /// @title Billing
 /// @notice An abstract contract that provides the core logic for billing, fee calculation,
@@ -142,19 +143,20 @@ abstract contract Billing is IBilling, Routable {
         if (storedHash == bytes32(0)) {
             revert InvalidRequestCommitment(commitment.requestId);
         }
-        if (keccak256(abi.encode(commitment)) != storedHash) {
+        bytes32 commitmentHash = keccak256(abi.encode(commitment));
+        if (commitmentHash != storedHash) {
             revert InvalidRequestCommitment(commitment.requestId);
         }
-
+        FulfillResult result;
         if (commitment.verifier != address(0)) {
-            _processVerifiedDelivery(
-                commitment, proofSubmitter, nodeWallet, input, output, proof, numRedundantDeliveries
+            result = _processVerifiedDelivery(
+                commitment, commitmentHash, proofSubmitter, nodeWallet, input, output, proof, numRedundantDeliveries
             );
         } else {
-            _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
+            result = _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
         }
 
-        if (isLastDelivery == true) {
+        if (result == FulfillResult.FULFILLED && isLastDelivery == true) {
             delete requestCommitments[commitment.requestId];
         }
     }
@@ -162,31 +164,34 @@ abstract contract Billing is IBilling, Routable {
     /// @dev Private helper to handle the logic for a delivery that requires verification.
     function _processVerifiedDelivery(
         Commitment memory commitment,
+        bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
         bytes memory input,
         bytes memory output,
         bytes memory proof,
         uint16 numRedundantDeliveries
-    ) private {
+    ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareVerificationPayments(commitment);
         _initiateVerification(commitment, proofSubmitter, nodeWallet);
-        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
-        // Initiate verifier verification
-        bytes32 commitmentHash = keccak256(abi.encode(commitment));
-        bytes32 inputHash = keccak256(input);
-        bytes32 resultHash = keccak256(output);
-        IVerifier(commitment.verifier)
-            .submitProofForVerification(
-                commitment.subscriptionId,
-                commitment.interval,
-                proofSubmitter,
-                nodeWallet,
-                proof,
-                commitmentHash,
-                inputHash,
-                resultHash
-            );
+        FulfillResult result =
+            _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        if (result == FulfillResult.FULFILLED) {
+            bytes32 inputHash = keccak256(input);
+            bytes32 resultHash = keccak256(output);
+            IVerifier(commitment.verifier)
+                .submitProofForVerification(
+                    commitment.subscriptionId,
+                    commitment.interval,
+                    proofSubmitter,
+                    nodeWallet,
+                    proof,
+                    commitmentHash,
+                    inputHash,
+                    resultHash
+                );
+        }
+        return result;
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.
@@ -197,9 +202,9 @@ abstract contract Billing is IBilling, Routable {
         bytes memory output,
         bytes memory proof,
         uint16 numRedundantDeliveries
-    ) private {
+    ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
-        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        return _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
     }
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.
@@ -219,7 +224,6 @@ abstract contract Billing is IBilling, Routable {
         Payment[] memory payments = new Payment[](2);
         payments[0] = Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, paidToProtocol);
         payments[1] = Payment(nodeWallet, commitment.feeToken, paidToNode);
-
         return payments;
     }
 
@@ -282,6 +286,9 @@ abstract contract Billing is IBilling, Routable {
     /// @param request The proof verification request details.
     /// @param valid True if the proof was valid, false otherwise.
     function _finalizeVerification(ProofVerificationRequest memory request, bool valid) internal virtual {
+        // Note: block.timestamp is used for expiry checks. This is considered safe here
+        // because the expiry duration (e.g., 1 week) is significantly longer than the
+        // potential manipulation window of block.timestamp by miners.
         bool expired = uint32(block.timestamp) >= request.expiry;
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(request.subscriptionId);
         if (msg.sender != sub.verifier) {
@@ -311,6 +318,8 @@ abstract contract Billing is IBilling, Routable {
             payments[0] = Payment({
                 recipient: nodeWallet, feeToken: billingConfig.tickNodeFeeToken, feeAmount: billingConfig.tickNodeFee
             });
+        } else {
+            payments = new Payment[](0);
         }
 
         // The spender is the protocol fee recipient itself, as it's paying from its own wallet.

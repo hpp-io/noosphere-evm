@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Vm} from "forge-std/Vm.sol";

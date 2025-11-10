@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {Commitment} from "./types/Commitment.sol";
@@ -201,9 +201,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function fulfill(
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] memory payments,
