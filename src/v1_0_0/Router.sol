@@ -16,13 +16,14 @@ import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Router
  * @notice Main entry point for network. Manages contract resolution, subscription management,
  * and provides a unified interface for interacting with the protocol.
  */
-contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, ConfirmedOwner {
+contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, ConfirmedOwner, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                  STATE
     //////////////////////////////////////////////////////////////*/
@@ -88,10 +89,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     );
 
     /// @notice Emitted when funds are locked for verification.
-    event VerificationFundsLocked(bytes32 indexed requestId, address indexed spender, uint256 amount);
+    event VerificationFundsLocked(uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount);
 
     /// @notice Emitted when funds are unlocked for verification.
-    event VerificationFundsUnlocked(bytes32 indexed requestId, address indexed spender, uint256 amount);
+    event VerificationFundsUnlocked(uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount);
 
     /// @notice Emitted when a payment is made via a coordinator.
     event PaymentMade(
@@ -123,15 +124,13 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @notice Constructor initializes the Router with essential dependencies
      */
-    constructor() ConfirmedOwner(msg.sender) {
-        //        inbox = initInbox;
-    }
+    constructor() ConfirmedOwner(msg.sender) {}
+
     /**
      * @notice Sets the WalletFactory contract address.
      * @dev Can only be called once by the client to break the circular dependency at deployment.
      * @param _walletFactory The address of the deployed WalletFactory contract.
      */
-
     function setWalletFactory(address _walletFactory) external onlyOwner {
         require(address(walletFactory) == address(0), "WalletFactory already set");
         require(_walletFactory != address(0), "Invalid WalletFactory address");
@@ -181,19 +180,17 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         uint64 subscriptionId,
         address spenderWallet,
         address spenderAddress,
-        Payment[] memory payments
+        Payment[] calldata payments
     ) external override {
-        if (_isExistingSubscription(subscriptionId) == false) {
-            revert InvalidSubscription();
-        }
-        ComputeSubscription memory sub = subscriptions[subscriptionId];
-        if (msg.sender != getContractById(sub.routeId)) {
-            revert OnlyCallableFromCoordinator();
-        }
+        if (!_isExistingSubscription(subscriptionId)) revert InvalidSubscription();
+        ComputeSubscription storage sub = subscriptions[subscriptionId];
+        if (msg.sender != getContractById(sub.routeId)) revert OnlyCallableFromCoordinator();
         _pay(spenderWallet, spenderAddress, payments);
-        for (uint256 i = 0; i < payments.length; i++) {
-            Payment memory p = payments[i];
+        uint256 len = payments.length;
+        for (uint256 i = 0; i < len; ) {
+            Payment calldata p = payments[i];
             emit PaymentMade(subscriptionId, spenderWallet, p.recipient, p.feeToken, p.feeAmount);
+            unchecked { ++i; }
         }
     }
 
@@ -206,9 +203,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         bytes calldata proof,
         uint16 numRedundantDeliveries,
         address nodeWallet,
-        Payment[] memory payments,
-        Commitment memory commitment
-    ) external override returns (FulfillResult resultCode) {
+        Payment[] calldata payments,
+        Commitment calldata commitment
+    ) external override nonReentrant returns (FulfillResult resultCode) {
         if (msg.sender != commitment.coordinator) {
             revert OnlyCallableFromCoordinator();
         }
@@ -242,10 +239,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         // Deactivate the subscription only if the current delivery is the last one for this interval
         // and there are no more intervals to execute.
-        if (
-            numRedundantDeliveries == commitment.redundancy
-                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false
-        ) {
+        if (numRedundantDeliveries == commitment.redundancy
+                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false) {
             _makeSubscriptionInactive(commitment.subscriptionId);
         }
 
@@ -268,23 +263,25 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @inheritdoc IRouter
      */
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
-        external
-        override
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, bytes32 commitmentHash)
+    external
+    override
     {
-        if (msg.sender != commitment.coordinator) {
+        ComputeSubscription storage sub = subscriptions[proofRequest.subscriptionId];
+        if (msg.sender != getContractById(sub.routeId)) {
             revert OnlyCallableFromCoordinator();
         }
-        bytes32 commitmentHash = requestCommitments[commitment.requestId];
-        if (commitmentHash == bytes32(0)) {
-            revert InvalidRequestCommitment(commitment.requestId);
+
+        bytes32 requestId = RequestIdUtils.requestIdPacked(proofRequest.subscriptionId, proofRequest.interval);
+        bytes32 storedCommitmentHash = requestCommitments[requestId];
+
+        // ensure commitment exists and matches the caller-provided commitmentHash
+        if (storedCommitmentHash == bytes32(0) || storedCommitmentHash != commitmentHash) {
+            revert InvalidRequestCommitment(requestId);
         }
 
-        if (keccak256(abi.encode(commitment)) != commitmentHash) {
-            revert InvalidRequestCommitment(commitment.requestId);
-        }
         _lockForVerification(proofRequest);
-        emit VerificationFundsLocked(proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount);
+        emit VerificationFundsLocked(proofRequest.subscriptionId, proofRequest.interval, proofRequest.submitterAddress, proofRequest.escrowedAmount);
     }
 
     /**
@@ -298,7 +295,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
         _unlockForVerification(proofRequest);
         emit VerificationFundsUnlocked(
-            proofRequest.requestId, proofRequest.submitterAddress, proofRequest.escrowedAmount
+            proofRequest.subscriptionId, proofRequest.interval, proofRequest.submitterAddress, proofRequest.escrowedAmount
         );
     }
 
@@ -360,20 +357,19 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
-        external
-        override
+    external
+    override
     {
-        if (proposalSetIds.length != proposalSetAddresses.length || proposalSetIds.length == 0) {
-            revert InvalidProposedUpdate();
-        }
+        uint256 len = proposalSetIds.length;
+        if (len == 0 || len != proposalSetAddresses.length) revert InvalidProposedUpdate();
 
-        uint256 idsArrayLength = proposalSetIds.length;
-        for (uint256 i = 0; i < idsArrayLength; ++i) {
+        for (uint256 i = 0; i < len; ) {
             bytes32 id = proposalSetIds[i];
             address proposedContract = proposalSetAddresses[i];
             if (proposedContract == address(0) || route[id] == proposedContract) {
                 revert InvalidProposedUpdate();
             }
+            unchecked { ++i; }
         }
 
         proposedContractSet.ids = proposalSetIds;
@@ -385,9 +381,13 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function updateContracts() external override onlyOwner {
-        for (uint256 i = 0; i < proposedContractSet.ids.length; i++) {
-            route[proposedContractSet.ids[i]] = proposedContractSet.to[i];
-            emit ContractsUpdated(proposedContractSet.ids[i], proposedContractSet.to[i]);
+        uint256 len = proposedContractSet.ids.length;
+        for (uint256 i = 0; i < len; ) {
+            bytes32 id = proposedContractSet.ids[i];
+            address dst = proposedContractSet.to[i];
+            route[id] = dst;
+            emit ContractsUpdated(id, dst);
+            unchecked { ++i; }
         }
         delete proposedContractSet;
     }
@@ -451,7 +451,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32, Commitment memory) {
+    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32 requestId, Commitment memory commitment) {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
 
@@ -459,9 +459,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         address coordinatorAddr = getContractById(subscription.routeId);
         require(coordinatorAddr != address(0), "Coordinator not found");
 
-        bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
-        Commitment memory commitment;
-
+        requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         if (requestCommitments[requestId] != bytes32(0)) {
             // Request already exists, reconstruct the commitment to make the call idempotent.
             commitment = CommitmentUtils.build(subscription, subscriptionId, interval, coordinatorAddr);

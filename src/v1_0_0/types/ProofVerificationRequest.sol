@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 struct ProofVerificationRequest {
     uint64 subscriptionId;
-    bytes32 requestId;
+    uint32 interval;
     address submitterAddress;
     address submitterWallet;
     uint256 escrowedAmount;

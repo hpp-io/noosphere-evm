@@ -21,10 +21,10 @@ abstract contract Billing is IBilling, Routable {
 
     /// @notice A mapping from a request's unique identifier to its commitment hash.
     /// @dev The key is typically keccak256(abi.encodePacked(subscriptionId, interval)).
-    mapping(bytes32 => bytes32) public requestCommitments;
+    mapping(bytes32 => bytes32) internal s_requestCommitments;
 
-    /// @notice hash(subscriptionId, interval, caller) => proof request
-    mapping(bytes32 => ProofVerificationRequest) public proofRequests;
+    /// @notice hash(subscriptionId, interval, caller) => proof request hash
+    mapping(bytes32 => bytes32) internal s_proofRequests;
 
     error InvalidRequestCommitment(bytes32 requestId);
     error ProtocolFeeExceeds();
@@ -120,10 +120,10 @@ abstract contract Billing is IBilling, Routable {
             walletAddress: wallet,
             feeAmount: feeAmount,
             feeToken: feeToken,
-            verifier: verifier, // Use the address of the verifier
+            verifier: verifier,
             coordinator: address(this)
         });
-        requestCommitments[requestId] = keccak256(abi.encode(commitment));
+        s_requestCommitments[requestId] = keccak256(abi.encode(commitment));
         return commitment;
     }
 
@@ -133,13 +133,13 @@ abstract contract Billing is IBilling, Routable {
         Commitment memory commitment,
         address proofSubmitter,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         uint16 numRedundantDeliveries,
         bool isLastDelivery
     ) internal virtual {
-        bytes32 storedHash = requestCommitments[commitment.requestId];
+        bytes32 storedHash = s_requestCommitments[commitment.requestId];
         if (storedHash == bytes32(0)) {
             revert InvalidRequestCommitment(commitment.requestId);
         }
@@ -157,7 +157,7 @@ abstract contract Billing is IBilling, Routable {
         }
 
         if (result == FulfillResult.FULFILLED && isLastDelivery == true) {
-            delete requestCommitments[commitment.requestId];
+            delete s_requestCommitments[commitment.requestId];
         }
     }
 
@@ -167,29 +167,19 @@ abstract contract Billing is IBilling, Routable {
         bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         uint16 numRedundantDeliveries
     ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareVerificationPayments(commitment);
-        _initiateVerification(commitment, proofSubmitter, nodeWallet);
-        FulfillResult result =
-            _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        ProofVerificationRequest memory request = _initiateVerification(commitment, commitmentHash,proofSubmitter, nodeWallet);
+        FulfillResult result = _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         if (result == FulfillResult.FULFILLED) {
             bytes32 inputHash = keccak256(input);
             bytes32 resultHash = keccak256(output);
             IVerifier(commitment.verifier)
-                .submitProofForVerification(
-                    commitment.subscriptionId,
-                    commitment.interval,
-                    proofSubmitter,
-                    nodeWallet,
-                    proof,
-                    commitmentHash,
-                    inputHash,
-                    resultHash
-                );
+                .submitProofForVerification(request, proof, commitmentHash, inputHash, resultHash);
         }
         return result;
     }
@@ -198,9 +188,9 @@ abstract contract Billing is IBilling, Routable {
     function _processStandardDelivery(
         Commitment memory commitment,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         uint16 numRedundantDeliveries
     ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
@@ -209,13 +199,12 @@ abstract contract Billing is IBilling, Routable {
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.
     function _prepareStandardPayments(Commitment memory commitment, address nodeWallet)
-        internal
-        view
-        virtual
-        returns (Payment[] memory)
+    internal
+    view
+    virtual
+    returns (Payment[] memory)
     {
         uint256 feeAmount = commitment.feeAmount;
-
         // The original logic applies the fee twice, representing a fee on both
         // the consumer and the node from the total payment amount.
         uint256 paidToProtocol = _calculateFee(feeAmount, billingConfig.protocolFee * 2);
@@ -229,10 +218,10 @@ abstract contract Billing is IBilling, Routable {
 
     /// @dev Prepares the immediate payment array for a verified fulfillment (pays protocol and verifier).
     function _prepareVerificationPayments(Commitment memory commitment)
-        internal
-        view
-        virtual
-        returns (Payment[] memory)
+    internal
+    view
+    virtual
+    returns (Payment[] memory)
     {
         uint256 tokenAvailable = commitment.feeAmount;
         IVerifier verifier = IVerifier(commitment.verifier);
@@ -249,36 +238,42 @@ abstract contract Billing is IBilling, Routable {
         uint256 verifierProtocolFee = _calculateFee(verifierFee, billingConfig.protocolFee);
         Payment[] memory immediatePayments = new Payment[](2);
         immediatePayments[0] =
-            Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, baseProtocolFee + verifierProtocolFee);
+                        Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, baseProtocolFee + verifierProtocolFee);
         immediatePayments[1] =
-            Payment(verifier.paymentRecipient(), commitment.feeToken, verifierFee - verifierProtocolFee);
+                        Payment(verifier.paymentRecipient(), commitment.feeToken, verifierFee - verifierProtocolFee);
         return immediatePayments;
     }
 
     /// @dev Handles post-fulfillment steps for verification (locking funds, calling verifier).
-    function _initiateVerification(Commitment memory commitment, address proofSubmitter, address submitterWallet)
-        internal
-        virtual
-    {
+    function _initiateVerification(
+        Commitment memory commitment,
+        bytes32 commitmentHash,
+        address proofSubmitter,
+        address submitterWallet
+    ) internal virtual returns (ProofVerificationRequest memory) {
         // Calculate the final amount that will be paid to the node after fees.
         // This is the amount that will be escrowed and potentially slashed.
         uint256 tokenAvailable = commitment.feeAmount;
         uint256 baseProtocolFee = _calculateFee(tokenAvailable, billingConfig.protocolFee) * 2;
         IVerifier verifier = IVerifier(commitment.verifier);
         uint256 verifierFee = verifier.fee(commitment.feeToken);
-        uint256 nodePaymentAmount = tokenAvailable - baseProtocolFee - verifierFee;
-        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, msg.sender));
-        proofRequests[key] = ProofVerificationRequest({
+        uint256 nodePaymentAmount = tokenAvailable - (baseProtocolFee + verifierFee);
+
+        ProofVerificationRequest memory proofRequest = ProofVerificationRequest({
             subscriptionId: commitment.subscriptionId,
-            requestId: commitment.requestId,
+            interval: commitment.interval,
             submitterAddress: proofSubmitter,
             submitterWallet: submitterWallet,
-            expiry: uint32(block.timestamp + 1 weeks), // Example expiry
+            expiry: uint32(block.timestamp) + 1 weeks,
             escrowedAmount: nodePaymentAmount,
             escrowToken: commitment.feeToken,
             slashAmount: tokenAvailable
         });
-        _getRouter().lockForVerification(proofRequests[key], commitment);
+
+        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, proofSubmitter));
+        s_proofRequests[key] = keccak256(abi.encode(proofRequest));
+        _getRouter().lockForVerification(proofRequest, commitmentHash);
+        return proofRequest;
     }
 
     /// @notice Finalizes the verification process based on the verifier's result.
@@ -294,19 +289,25 @@ abstract contract Billing is IBilling, Routable {
         if (msg.sender != sub.verifier) {
             revert UnauthorizedVerifier();
         }
-
         _getRouter().unlockForVerification(request);
         Payment[] memory payments = new Payment[](1);
         if (valid || expired) {
             payments[0] = Payment({
                 recipient: request.submitterWallet, feeToken: request.escrowToken, feeAmount: request.escrowedAmount
             });
-            _getRouter().payFromCoordinator(request.subscriptionId, sub.wallet, sub.client, payments);
+            _getRouter().payFromCoordinator(
+                request.subscriptionId,
+                sub.wallet,
+                sub.client,
+                payments);
         } else {
             // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({recipient: sub.wallet, feeToken: sub.feeToken, feeAmount: sub.feeAmount});
-            _getRouter()
-                .payFromCoordinator(request.subscriptionId, request.submitterWallet, request.submitterAddress, payments);
+            _getRouter().payFromCoordinator(
+                request.subscriptionId,
+                request.submitterWallet,
+                request.submitterAddress,
+                payments);
         }
     }
 
@@ -321,19 +322,17 @@ abstract contract Billing is IBilling, Routable {
         } else {
             payments = new Payment[](0);
         }
-
-        // The spender is the protocol fee recipient itself, as it's paying from its own wallet.
         _getRouter()
-            .payFromCoordinator(
-                subscriptionId,
-                billingConfig.protocolFeeRecipient, // spenderWallet
-                billingConfig.protocolFeeRecipient, // spenderAddress
-                payments
-            );
+        .payFromCoordinator(
+            subscriptionId,
+            billingConfig.protocolFeeRecipient,
+            billingConfig.protocolFeeRecipient,
+            payments
+        );
     }
 
     function _cancelRequest(bytes32 requestId) internal virtual {
-        delete requestCommitments[requestId];
+        delete s_requestCommitments[requestId];
     }
 
     function _onlyOwner() internal view virtual;

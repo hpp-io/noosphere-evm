@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.23;
 
+import "../types/ProofVerificationRequest.sol";
 import {Commitment} from "../types/Commitment.sol";
 
 /// @title ICoordinator
@@ -114,12 +115,7 @@ interface ICoordinator {
     /// @notice Finalize the result of a proof verification for a node's delivery.
     /// @dev Called by verifier adapters (or mocks) after verification completes (sync or async).
     ///      Coordinator should act on `valid` (settle payments, mark interval completion, etc.).
-    /// @param subscriptionId Subscription identifier.
-    /// @param interval Interval index whose verification is being finalized.
-    /// @param node Address of the node whose proof outcome is being reported.
-    /// @param valid Boolean indicating whether the proof was valid.
-    function reportVerificationResult(uint64 subscriptionId, uint32 interval, address node, bool valid) external;
-
+    function reportVerificationResult(ProofVerificationRequest memory request, bool valid) external;
     /*//////////////////////////////////////////////////////////////////////////
                             INTERVAL / SCHEDULING HELPERS
     //////////////////////////////////////////////////////////////////////////*/
@@ -137,4 +133,11 @@ interface ICoordinator {
     /// @param interval The interval index.
     /// @return commitment The Commitment struct associated with the given subscription and interval.
     function getCommitment(uint64 subscriptionId, uint32 interval) external view returns (Commitment memory);
+
+
+    /// @notice Retrieve the request ID associated with a given commitment.
+    /// @dev This is a read-only operation.
+    /// @param requestId The request ID to query.
+    /// @return The request ID.
+    function requestCommitments(bytes32 requestId) external view returns (bytes32);
 }

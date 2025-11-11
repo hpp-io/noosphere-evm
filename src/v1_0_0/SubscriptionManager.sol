@@ -93,20 +93,20 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         return _getSubscriptionInterval(subscriptionId);
     }
 
-    //    /**
-    //     * @inheritdoc ISubscriptionsManager
-    //     */
-    //    function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
-    //        external
-    //        view
-    //        virtual
-    //        returns (bool)
-    //    {
-    //        return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
-    //    }
-
+    /// @notice Creates a new compute subscription.
+    /// @param containerId The ID of the container to execute.
+    /// @param maxExecutions The maximum number of times the subscription can be executed.
+    /// @param intervalSeconds The time interval between executions in seconds.
+    /// @param redundancy The number of redundant executions expected.
+    /// @param useDeliveryInbox Whether to use a delivery inbox for results.
+    /// @param feeToken The address of the ERC20 token used for fees.
+    /// @param feeAmount The amount of fee per execution.
+    /// @param wallet The address of the wallet associated with the subscription.
+    /// @param verifier The address of the verifier contract.
+    /// @param routeId The ID of the route for the subscription.
+    /// @return The ID of the newly created subscription.
     function createComputeSubscription(
-        string memory containerId,
+        string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
         uint16 redundancy,
@@ -121,7 +121,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
             revert InvalidWallet();
         }
         uint64 subscriptionId = ++currentSubscriptionId;
-        // If intervalSeconds is = 0 (one-time), active immediately
         subscriptions[subscriptionId] = ComputeSubscription({
             activeAt: type(uint32).max,
             client: msg.sender,
@@ -182,7 +181,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         // Hash the full delegated subscription data.
         bytes32 digest =
-            _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
+                        _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
 
         // Recover the signer from the signature.
         address recoveredSigner = ECDSA.recover(digest, signature);
@@ -229,48 +228,59 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     mapping(uint64 => uint32) internal subscriptionLastProcessedInterval; // optional progress tracker
 
     /// @notice Batch timeout up to `uptoInterval` for a subscription; bounded by `maxIter`.
-    /// @dev Uses Wallet.releaseForRequest for each timed-out request.
+    /// @dev Uses Wallet.releaseForRequest for each timed-out request. Optimized to reduce SLOAD/SSTORE in loops.
     function timeoutSubscriptionIntervalsUpTo(uint64 subscriptionId, uint32 uptoInterval, uint32 maxIter) external {
+        // Load subscription once (storage) and some hot fields into locals
         ComputeSubscription storage sub = subscriptions[subscriptionId];
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
         if (currentInterval == 0) {
-            return; // not active yet
+            return;
         }
-        if (uptoInterval > currentInterval) uptoInterval = currentInterval;
 
-        uint32 start = subscriptionLastProcessedInterval[subscriptionId] + 1;
-        if (start == 0) start = 1;
+        if (uptoInterval > currentInterval) uptoInterval = currentInterval;
+        uint32 lastProcessed = subscriptionLastProcessedInterval[subscriptionId];
+        uint32 start = lastProcessed + 1;
+        if (start == 0) start = 1; // guard (though lastProcessed default is 0 -> start = 1)
 
         uint32 processed = 0;
-        for (uint32 i = start; i <= uptoInterval && processed < maxIter; ++i) {
+        uint32 intervalSeconds = sub.intervalSeconds;
+        uint32 activeAt = sub.activeAt;
+        address payable walletAddr = sub.wallet;
+
+        Wallet consumer = Wallet(walletAddr);
+
+        for (uint32 i = start; i <= uptoInterval && processed < maxIter;) {
             bytes32 rid = RequestIdUtils.requestIdPacked(subscriptionId, i);
             bytes32 stored = requestCommitments[rid];
+
             if (stored != bytes32(0)) {
                 bool timeoutable;
-                if (sub.intervalSeconds == 0) {
-                    timeoutable = uint32(block.timestamp) >= sub.activeAt;
+                if (intervalSeconds == 0) {
+                    timeoutable = uint32(block.timestamp) >= activeAt;
                 } else {
                     timeoutable = i < currentInterval;
                 }
 
                 if (timeoutable) {
-                    Wallet consumer = Wallet(sub.wallet);
                     consumer.releaseForRequest(rid);
                     delete requestCommitments[rid];
                     emit CommitmentTimedOut(rid, subscriptionId, i);
                 }
-                processed++;
+                unchecked {++processed;}
             } else {
-                // advance lastProcessed even when no commitment exists, to avoid revisiting
-                subscriptionLastProcessedInterval[subscriptionId] = i;
+                lastProcessed = i;
+            }
+            unchecked {++i;}
+        }
+        if (processed > 0) {
+            uint32 last = start + processed - 1;
+            if (last > lastProcessed) {
+                lastProcessed = last;
             }
         }
 
-        if (processed > 0) {
-            uint32 last = start + processed - 1;
-            if (last > subscriptionLastProcessedInterval[subscriptionId]) {
-                subscriptionLastProcessedInterval[subscriptionId] = last;
-            }
+        if (lastProcessed > subscriptionLastProcessedInterval[subscriptionId]) {
+            subscriptionLastProcessedInterval[subscriptionId] = lastProcessed;
         }
     }
 
@@ -305,7 +315,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
     function _getSubscriptionInterval(uint64 subscriptionId) internal view returns (uint32) {
         ComputeSubscription storage sub = subscriptions[subscriptionId];
-        if (!_isExistingSubscription(subscriptionId)) {
+        if (subscriptionId == 0 || sub.client == address(0)) {
             revert SubscriptionNotFound();
         }
         uint32 activeAt = sub.activeAt;
@@ -364,22 +374,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         submitterWallet.releaseEscrow(proofRequest.submitterAddress, proofRequest.escrowToken, proofRequest.slashAmount);
     }
 
-    function _payForFulfillment(bytes32 requestId, address walletAddress, Payment[] memory payments) internal {
-        if (requestCommitments[requestId] == bytes32(0)) {
-            revert NoSuchCommitment();
-        }
+    function _payForFulfillment(bytes32 requestId, address walletAddress, Payment[] calldata payments) internal {
         Wallet consumer = Wallet(payable(walletAddress));
-        if (_getWalletFactory().isValidWallet(address(consumer)) == false) {
-            revert InvalidWallet();
-        }
         consumer.disburseForFulfillment(requestId, payments);
     }
 
-    function _pay(address walletAddress, address spenderAddress, Payment[] memory payments) internal {
-        Wallet wallet = Wallet(payable(walletAddress));
-        if (_getWalletFactory().isValidWallet(address(wallet)) == false) {
+    function _pay(address walletAddress, address spenderAddress, Payment[] calldata payments) internal {
+        if (_getWalletFactory().isValidWallet(address(walletAddress)) == false) {
             revert InvalidWallet();
         }
+        Wallet wallet = Wallet(payable(walletAddress));
         wallet.transferByRouter(spenderAddress, payments);
     }
 
@@ -389,23 +393,23 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof
     ) internal {
-        ComputeSubscription memory subscription = subscriptions[subscriptionId];
-        ComputeClient(subscription.client)
-            .receiveRequestCompute(
-                subscriptionId,
-                interval,
-                numRedundantDeliveries,
-                useDeliveryInbox,
-                node,
-                input,
-                output,
-                proof,
-                bytes32(0)
-            );
+        address client = subscriptions[subscriptionId].client;
+        ComputeClient(client)
+        .receiveRequestCompute(
+            subscriptionId,
+            interval,
+            numRedundantDeliveries,
+            useDeliveryInbox,
+            node,
+            input,
+            output,
+            proof,
+            bytes32(0)
+        );
     }
 
     function _makeSubscriptionInactive(uint64 subscriptionId) internal {
@@ -433,14 +437,10 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         emit SubscriptionCancelled(subscriptionId);
     }
 
-    function _timeoutPrepareNextIntervalRequests(uint32 subscriptionId) internal {
-        // Internal implementation placeholder
-    }
-
     function _computeCommitmentHash(uint64 subscriptionId, uint32 interval, address coordinator)
-        internal
-        view
-        returns (bytes32)
+    internal
+    view
+    returns (bytes32)
     {
         ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
@@ -466,8 +466,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions)
-        {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
             return false;
         }
         ComputeSubscription storage sub = subscriptions[subscriptionId];

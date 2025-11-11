@@ -102,6 +102,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     error ZeroAmount();
     error RedundancyExhausted();
     error InconsistentLockedBalance();
+    error MismatchPaymentToken();
 
     /*//////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
@@ -204,17 +205,11 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     function transferByRouter(address spender, Payment[] calldata payments) external onlyRouter nonReentrant {
         for (uint256 i = 0; i < payments.length; i++) {
             Payment calldata p = payments[i];
-
             if (p.feeAmount > 0) {
                 uint256 currentAllowance = allowance[spender][p.feeToken];
                 if (currentAllowance < p.feeAmount) revert InsufficientAllowance();
-
-                // Effect: decrement allowance prior to external transfer
                 allowance[spender][p.feeToken] = currentAllowance - p.feeAmount;
-
-                // Interaction: transfer to recipient
                 _transferToken(p.feeToken, p.recipient, p.feeAmount);
-
                 emit Transfer(spender, p.feeToken, p.recipient, p.feeAmount);
             }
         }
@@ -305,46 +300,52 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         if (!rl.exists) revert NoSuchRequestLock();
         if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
 
+        uint256 len = payments.length;
+        address token = rl.token;
+        address spender = rl.spender;
+        uint16 redundancy = rl.redundancy;
+        uint16 paidCount = rl.paidCount;
+        uint256 remaining = rl.remainingAmount;
+
         uint256 totalToDisburse = 0;
-        for (uint256 i = 0; i < payments.length; i++) {
-            // Ensure token matches lock token for consistency
-            if (payments[i].feeToken != rl.token) revert("Mismatched payment token");
-            totalToDisburse += payments[i].feeAmount;
-        }
-
-        if (totalToDisburse > rl.remainingAmount) revert ExceedsRemaining();
-
-        // Bookkeeping before interactions
-        uint256 lockedForSpender = lockedBalanceOf[rl.spender][rl.token];
-        if (totalToDisburse > lockedForSpender) revert InconsistentLockedBalance();
-        lockedBalanceOf[rl.spender][rl.token] = lockedForSpender - totalToDisburse;
-        totalLocked[rl.token] -= totalToDisburse;
-
-        rl.remainingAmount -= totalToDisburse;
-        unchecked {
-            rl.paidCount += 1;
-        }
-        uint16 paid = rl.paidCount;
-
-        // Perform transfers
-        for (uint256 i = 0; i < payments.length; i++) {
+        for (uint256 i = 0; i < len; ) {
             Payment calldata p = payments[i];
-            _transferToken(rl.token, p.recipient, p.feeAmount);
-            emit RequestDisbursed(requestId, p.recipient, rl.token, p.feeAmount, paid);
+            if (p.feeToken != token) revert MismatchPaymentToken();
+            unchecked { totalToDisburse += p.feeAmount; }
+            unchecked { ++i; }
         }
 
-        // If redundancy exhausted, refund leftover and cleanup
-        if (paid == rl.redundancy) {
-            uint256 amountToRefund = rl.remainingAmount;
-            address spender = rl.spender;
-            address token = rl.token;
+        if (totalToDisburse > remaining) revert ExceedsRemaining();
+
+        uint256 lockedForSpender = lockedBalanceOf[spender][token];
+        if (totalToDisburse > lockedForSpender) revert InconsistentLockedBalance();
+
+        lockedBalanceOf[spender][token] = lockedForSpender - totalToDisburse;
+        totalLocked[token] -= totalToDisburse;
+
+        remaining -= totalToDisburse;
+        unchecked { ++paidCount; }
+        rl.remainingAmount = remaining;
+        rl.paidCount = paidCount;
+        uint16 paid = paidCount;
+        for (uint256 i = 0; i < len; ) {
+            Payment calldata p = payments[i];
+            _transferToken(token, p.recipient, p.feeAmount);
+            emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount, paid);
+            unchecked { ++i; }
+        }
+
+        if (paid == redundancy) {
+            uint256 amountToRefund = remaining;
             if (amountToRefund > 0) {
+                // increase allowance for spender (payback)
                 allowance[spender][token] += amountToRefund;
             }
             delete requestLocks[requestId];
             emit RequestReleased(requestId, spender, token, amountToRefund);
         }
     }
+
 
     /// @notice Release remaining funds for a request (e.g., on timeout/cancel). Refunds remaining amount to spender allowance.
     /// @param requestId request identifier
@@ -393,29 +394,6 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     function paidCountOfRequest(bytes32 requestId) external view returns (uint16) {
         return requestLocks[requestId].exists ? requestLocks[requestId].paidCount : 0;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                                DEPRECATED WRAPPERS
-    //////////////////////////////////////////////////////////////*/
-
-    //    /// @notice Deprecated compatibility wrapper for `lockEscrow`.
-    //    /// @dev Kept for backwards compatibility with callers that still call `cLock`.
-    //    function cLock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
-    //        emit DeprecatedWrapperCalled(msg.sender, "cLock");
-    //        lockEscrow(spender, token, amount);
-    //    }
-    //
-    //    /// @notice Deprecated compatibility wrapper for `releaseEscrow`.
-    //    function cUnlock(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
-    //        emit DeprecatedWrapperCalled(msg.sender, "cUnlock");
-    //        releaseEscrow(spender, token, amount);
-    //    }
-    //
-    //    /// @notice Deprecated compatibility wrapper for `transferByRouter`.
-    //    function cTransfer(address spender, Payment[] calldata payments) external onlyRouter nonReentrant {
-    //        emit DeprecatedWrapperCalled(msg.sender, "cTransfer");
-    //        transferByRouter(spender, payments);
-    //    }
 
     /*//////////////////////////////////////////////////////////////
                                 FALLBACK

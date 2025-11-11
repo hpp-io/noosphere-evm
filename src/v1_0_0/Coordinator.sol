@@ -13,13 +13,12 @@ import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 
 /// @title Coordinator
 /// @notice Orchestrates request lifecycle: start -> deliver -> verify -> settlement.
-/// @dev This is a straightforward coordinator example used in tests — production-grade logic
-///      (node selection, slashing, bonding, advanced settlement) is out of scope.
+/// @dev This contract manages the entire lifecycle of compute requests, from initiation to settlement.
+
 contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     // ---------- TYPE & VERSION ----------
     // solhint-disable-next-line const-name-snakecase
     string public constant override typeAndVersion = "Coordinator_v1.0.0";
-
     /*//////////////////////////////////////////////////////////////////////////
                                      STORAGE
     //////////////////////////////////////////////////////////////////////////*/
@@ -87,10 +86,10 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev Entrypoint for nodes to submit compute outputs. Non-reentrant to protect settlement paths.
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        bytes memory commitmentData,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
+        bytes calldata commitmentData,
         address nodeWallet
     ) external override nonReentrant {
         _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
@@ -98,40 +97,27 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
 
     /// @inheritdoc ICoordinator
     /// @dev Cancel a pending request (router-only). Delegates to internal helper.
-    function cancelRequest(bytes32 requestId) external override onlyRouter {
+    function cancelRequest(bytes32 requestId) external override onlyRouter nonReentrant {
         _cancelRequest(requestId);
         emit RequestCancelled(requestId);
     }
 
     /// @inheritdoc ICoordinator
     /// @dev Called by verifier adapters (mocks or real) to publish verification outcome.
-    function reportVerificationResult(uint64 subscriptionId, uint32 interval, address node, bool valid)
-        external
-        override
-    {
-        // Lookup the proof request entry keyed by (subscriptionId, interval, node)
-        bytes32 key = keccak256(abi.encode(subscriptionId, interval, node));
-        ProofVerificationRequest memory request = proofRequests[key];
-
-        // Remove the stored request to avoid replay
-        delete proofRequests[key];
-
-        // If no request existed (expiry == 0), treat as error
-        if (request.expiry == 0) {
+    function reportVerificationResult(ProofVerificationRequest memory request, bool valid) external override {
+        bytes32 key = keccak256(abi.encode(request.subscriptionId, request.interval, request.submitterAddress));
+        bytes32 storedHash = s_proofRequests[key];
+        if (storedHash == bytes32(0) || keccak256(abi.encode(request)) != storedHash) {
             revert ProofVerificationRequestNotFound();
         }
-
-        // finalize verification (internal handles settlement/state update)
+        delete s_proofRequests[key];
         _finalizeVerification(request, valid);
-
-        // emit a high-level event for observability
-        emit ProofVerified(subscriptionId, interval, node, valid, msg.sender);
+        emit ProofVerified(request.subscriptionId, request.interval, request.submitterAddress,  valid, msg.sender);
     }
 
     /// @inheritdoc ICoordinator
     /// @dev Prepare next interval for subscription if previous interval indicates a next exists.
-    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override {
-        // ask router whether subscription should advance (guard)
+    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override nonReentrant {
         if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
             _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
         }
@@ -154,6 +140,15 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         return CommitmentUtils.build(sub, subscriptionId, interval, address(this));
     }
 
+    /**
+     * @notice Returns the commitment hash for a given request ID.
+     * @param requestId The unique identifier of the request.
+     * @return The keccak256 hash of the commitment struct.
+     */
+    function requestCommitments(bytes32 requestId) external view override returns (bytes32) {
+        return s_requestCommitments[requestId];
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                   INTERNAL HELPERS
     //////////////////////////////////////////////////////////////////////////*/
@@ -171,29 +166,27 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     ///      Validates interval, redundancy, node wallet, deduplicates per-node responses, then processes delivery.
     function _reportComputeResult(
         uint32 deliveryInterval,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         bytes memory commitmentData,
         address nodeWallet
     ) internal {
         // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
-
         // check redundancy limit for this request: if already reached, revert
         uint16 currentRedundancy = redundancyCount[commitment.requestId];
         if (currentRedundancy >= commitment.redundancy) {
             revert IntervalCompleted();
         }
-
         // verify the delivery interval matches subscription's current interval
         uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
         if (interval != deliveryInterval) {
             revert IntervalMismatch(deliveryInterval);
         }
-
         // validate the nodeWallet is a recognized wallet produced by the WalletFactory
-        if (_getRouter().isValidWallet(nodeWallet) == false) {
+        if (_getRouter().isValidWallet(nodeWallet) == false ||
+            _getRouter().isValidWallet(commitment.walletAddress) == false) {
             revert InvalidWallet();
         }
         // prevent the same node (msg.sender) from responding twice for the same subscription/interval
@@ -202,14 +195,11 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             revert NodeRespondedAlready();
         }
         nodeResponded[key] = true;
-        // increment redundancy count (unchecked for gas; safe as it's bounded by commitment.redundancy)
         uint16 newRedundancyCount;
         unchecked {
             newRedundancyCount = currentRedundancy + 1;
         }
         redundancyCount[commitment.requestId] = newRedundancyCount;
-
-        // delegate to delivery processing routine (handles payments/settlement/notify)
         _processDelivery(
             commitment,
             msg.sender,
@@ -220,8 +210,6 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             newRedundancyCount,
             newRedundancyCount == commitment.redundancy
         );
-
-        // emit human-friendly event for off-chain indexing
         emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount);
     }
 
