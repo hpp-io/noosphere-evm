@@ -11,7 +11,6 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ICoordinator} from "../interfaces/ICoordinator.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 
-
 /**
  * @title ImmediateFinalizeVerifier
  * @author Noosphere

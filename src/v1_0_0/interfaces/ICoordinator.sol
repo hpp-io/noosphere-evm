@@ -134,7 +134,6 @@ interface ICoordinator {
     /// @return commitment The Commitment struct associated with the given subscription and interval.
     function getCommitment(uint64 subscriptionId, uint32 interval) external view returns (Commitment memory);
 
-
     /// @notice Retrieve the request ID associated with a given commitment.
     /// @dev This is a read-only operation.
     /// @param requestId The request ID to query.

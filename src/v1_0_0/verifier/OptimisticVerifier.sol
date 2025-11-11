@@ -18,6 +18,7 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     mapping(address => uint256) private _fee;
     uint256 public defaultChallengeWindow = 10 seconds;
     uint256 public defaultBondLock = 7 days;
+
     struct SubmissionRecord {
         IOptimisticVerifier.Submission data;
         ProofVerificationRequest request;
@@ -137,20 +138,19 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         uint256 cEnd = nowTs + defaultChallengeWindow;
         uint256 bEnd = nowTs + defaultBondLock;
 
-        submissions[key].data =
-            IOptimisticVerifier.Submission({
-                subscriptionId: request.subscriptionId,
-                interval: request.interval,
-                node: request.submitterAddress,
-                execCommitment: execCommitment,
-                resultDigest: resultDigest,
-                dataHash: dataHash,
-                submitAt: nowTs,
-                challengeWindowEnds: cEnd,
-                bondLockEnds: bEnd,
-                finalized: false,
-                slashed: false
-            });
+        submissions[key].data = IOptimisticVerifier.Submission({
+            subscriptionId: request.subscriptionId,
+            interval: request.interval,
+            node: request.submitterAddress,
+            execCommitment: execCommitment,
+            resultDigest: resultDigest,
+            dataHash: dataHash,
+            submitAt: nowTs,
+            challengeWindowEnds: cEnd,
+            bondLockEnds: bEnd,
+            finalized: false,
+            slashed: false
+        });
         submissions[key].request = request;
 
         // Interface event (IVerifier.expected)
@@ -170,7 +170,13 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         );
 
         emit ProvisionalSubmitted(
-            request.subscriptionId, request.interval, request.submitterAddress, key, execCommitment, resultDigest, dataHash
+            request.subscriptionId,
+            request.interval,
+            request.submitterAddress,
+            key,
+            execCommitment,
+            resultDigest,
+            dataHash
         );
     }
 
@@ -236,7 +242,8 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     /// @notice Finalize multiple submissions in a batch (gas-efficient for relayers).
     /// @dev Accepts arrays of equal length for subscriptionId/interval/node.
     function finalizeBatch(uint64[] calldata subscriptionIds, uint32[] calldata intervals, address[] calldata nodes)
-        external {
+        external
+    {
         uint256 len = subscriptionIds.length;
         require(intervals.length == len && nodes.length == len, "length mismatch");
 

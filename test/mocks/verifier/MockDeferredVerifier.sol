@@ -58,9 +58,7 @@ contract MockDeferredVerifier is MockVerifier {
     ///      Requires that the `requestId` exists. This calls `coordinator.finalizeProofVerification(...)`.
     /// @param subscriptionId The ID of the subscription.
     /// @param valid True if the proof is valid, false otherwise.
-    function mockFinalizeVerification(uint64 subscriptionId, uint32 interval, address submitter, bool valid)
-        external
-    {
+    function mockFinalizeVerification(uint64 subscriptionId, uint32 interval, address submitter, bool valid) external {
         bytes32 key = keccak256(abi.encode(subscriptionId, interval, submitter));
         ProofVerificationRequest memory request = proofRequests[key];
         // call into the Coordinator to finalize the verification outcome

@@ -308,11 +308,15 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         uint256 remaining = rl.remainingAmount;
 
         uint256 totalToDisburse = 0;
-        for (uint256 i = 0; i < len; ) {
+        for (uint256 i = 0; i < len;) {
             Payment calldata p = payments[i];
             if (p.feeToken != token) revert MismatchPaymentToken();
-            unchecked { totalToDisburse += p.feeAmount; }
-            unchecked { ++i; }
+            unchecked {
+                totalToDisburse += p.feeAmount;
+            }
+            unchecked {
+                ++i;
+            }
         }
 
         if (totalToDisburse > remaining) revert ExceedsRemaining();
@@ -324,15 +328,19 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         totalLocked[token] -= totalToDisburse;
 
         remaining -= totalToDisburse;
-        unchecked { ++paidCount; }
+        unchecked {
+            ++paidCount;
+        }
         rl.remainingAmount = remaining;
         rl.paidCount = paidCount;
         uint16 paid = paidCount;
-        for (uint256 i = 0; i < len; ) {
+        for (uint256 i = 0; i < len;) {
             Payment calldata p = payments[i];
             _transferToken(token, p.recipient, p.feeAmount);
             emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount, paid);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (paid == redundancy) {
@@ -345,7 +353,6 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
             emit RequestReleased(requestId, spender, token, amountToRefund);
         }
     }
-
 
     /// @notice Release remaining funds for a request (e.g., on timeout/cancel). Refunds remaining amount to spender allowance.
     /// @param requestId request identifier

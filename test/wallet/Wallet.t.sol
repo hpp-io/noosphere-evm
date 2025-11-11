@@ -130,114 +130,113 @@ contract WalletTest is Test, IWalletFactoryEvents {
     }
 
     /*//////////////////////////////////////////////////////////////
-                               WITHDRAW AFTER LOCK
-   //////////////////////////////////////////////////////////////*/
+                                WITHDRAW AFTER LOCK
+    //////////////////////////////////////////////////////////////*/
 
     function test_withdraw_after_lockEscrow_erc20() public {
-         uint256 initialBalance = 1000e6;
-         uint256 lockAmount = 400e6;
-         uint256 unlockedAmount = initialBalance - lockAmount;
- 
-         token.mint(address(wallet), initialBalance);
-         vm.prank(owner);
-         wallet.approve(spender, address(token), initialBalance);
- 
-         // Lock a portion of the funds
-         vm.prank(address(router));
-         wallet.lockEscrow(spender, address(token), lockAmount);
- 
-         assertEq(wallet.totalLockedFor(address(token)), lockAmount);
- 
-         // Try to withdraw more than the unlocked balance (should fail)
-         vm.prank(owner);
-         vm.expectRevert(Wallet.InsufficientFunds.selector);
-         wallet.withdraw(address(token), unlockedAmount + 1);
- 
-         // Withdraw the exact unlocked balance (should succeed)
-         uint256 ownerBalanceBefore = token.balanceOf(owner);
-         vm.prank(owner);
-         wallet.withdraw(address(token), unlockedAmount);
-         uint256 ownerBalanceAfter = token.balanceOf(owner);
- 
-         assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
-         assertEq(token.balanceOf(address(wallet)), lockAmount);
+        uint256 initialBalance = 1000e6;
+        uint256 lockAmount = 400e6;
+        uint256 unlockedAmount = initialBalance - lockAmount;
+
+        token.mint(address(wallet), initialBalance);
+        vm.prank(owner);
+        wallet.approve(spender, address(token), initialBalance);
+
+        // Lock a portion of the funds
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(token), lockAmount);
+
+        assertEq(wallet.totalLockedFor(address(token)), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(token), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = token.balanceOf(owner);
+        vm.prank(owner);
+        wallet.withdraw(address(token), unlockedAmount);
+        uint256 ownerBalanceAfter = token.balanceOf(owner);
+
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
+        assertEq(token.balanceOf(address(wallet)), lockAmount);
     }
 
     function test_withdraw_after_lockEscrow_eth() public {
-         uint256 initialBalance = 10 ether;
-         uint256 lockAmount = 4 ether;
-         uint256 unlockedAmount = initialBalance - lockAmount;
- 
-         deal(address(wallet), initialBalance);
-         vm.prank(owner);
-         wallet.approve(spender, address(0), initialBalance);
- 
-         // Lock a portion of the funds
-         vm.prank(address(router));
-         wallet.lockEscrow(spender, address(0), lockAmount);
- 
-         assertEq(wallet.totalLockedFor(address(0)), lockAmount);
- 
-         // Try to withdraw more than the unlocked balance (should fail)
-         vm.prank(owner);
-         vm.expectRevert(Wallet.InsufficientFunds.selector);
-         wallet.withdraw(address(0), unlockedAmount + 1);
- 
-         // Withdraw the exact unlocked balance (should succeed)
-         uint256 ownerBalanceBefore = owner.balance;
-         vm.prank(owner);
-         wallet.withdraw(address(0), unlockedAmount);
-         uint256 ownerBalanceAfter = owner.balance;
- 
-         assertTrue(ownerBalanceAfter > ownerBalanceBefore); // Gas makes exact check tricky
-         assertEq(address(wallet).balance, lockAmount);
+        uint256 initialBalance = 10 ether;
+        uint256 lockAmount = 4 ether;
+        uint256 unlockedAmount = initialBalance - lockAmount;
+
+        deal(address(wallet), initialBalance);
+        vm.prank(owner);
+        wallet.approve(spender, address(0), initialBalance);
+
+        // Lock a portion of the funds
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(0), lockAmount);
+
+        assertEq(wallet.totalLockedFor(address(0)), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(0), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = owner.balance;
+        vm.prank(owner);
+        wallet.withdraw(address(0), unlockedAmount);
+        uint256 ownerBalanceAfter = owner.balance;
+
+        assertTrue(ownerBalanceAfter > ownerBalanceBefore); // Gas makes exact check tricky
+        assertEq(address(wallet).balance, lockAmount);
     }
 
     function test_revert_withdraw_when_all_funds_locked_erc20() public {
-         uint256 amount = 1000e6;
-         token.mint(address(wallet), amount);
- 
-         vm.prank(owner);
-         wallet.approve(spender, address(token), amount);
- 
-         vm.prank(address(router));
-         wallet.lockEscrow(spender, address(token), amount);
- 
-         vm.expectRevert(Wallet.InsufficientFunds.selector);
-         vm.prank(owner);
-         wallet.withdraw(address(token), 1);
+        uint256 amount = 1000e6;
+        token.mint(address(wallet), amount);
+
+        vm.prank(owner);
+        wallet.approve(spender, address(token), amount);
+
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(token), amount);
+
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        vm.prank(owner);
+        wallet.withdraw(address(token), 1);
     }
 
     function test_revert_withdraw_more_than_unlocked_after_lockForRequest() public {
-         uint256 initialBalance = 1000e6;
-         uint256 lockAmount = 600e6;
-         uint256 unlockedAmount = initialBalance - lockAmount;
- 
-         token.mint(address(wallet), initialBalance);
- 
-         vm.prank(owner);
-         wallet.approve(spender, address(token), initialBalance);
- 
-         // Lock funds for a request
-         vm.prank(address(router));
-         wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID, 1);
- 
-         assertEq(wallet.totalLockedFor(address(token)), lockAmount);
-         assertEq(wallet.lockedOfRequest(REQUEST_ID), lockAmount);
- 
-         // Try to withdraw more than the unlocked balance (should fail)
-         vm.prank(owner);
-         vm.expectRevert(Wallet.InsufficientFunds.selector);
-         wallet.withdraw(address(token), unlockedAmount + 1);
- 
-         // Withdraw the exact unlocked balance (should succeed)
-         uint256 ownerBalanceBefore = token.balanceOf(owner);
-         vm.prank(owner);
-         wallet.withdraw(address(token), unlockedAmount);
-         uint256 ownerBalanceAfter = token.balanceOf(owner);
- 
-         assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
-         assertEq(token.balanceOf(address(wallet)), lockAmount);
-    }
+        uint256 initialBalance = 1000e6;
+        uint256 lockAmount = 600e6;
+        uint256 unlockedAmount = initialBalance - lockAmount;
 
+        token.mint(address(wallet), initialBalance);
+
+        vm.prank(owner);
+        wallet.approve(spender, address(token), initialBalance);
+
+        // Lock funds for a request
+        vm.prank(address(router));
+        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID, 1);
+
+        assertEq(wallet.totalLockedFor(address(token)), lockAmount);
+        assertEq(wallet.lockedOfRequest(REQUEST_ID), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(token), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = token.balanceOf(owner);
+        vm.prank(owner);
+        wallet.withdraw(address(token), unlockedAmount);
+        uint256 ownerBalanceAfter = token.balanceOf(owner);
+
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
+        assertEq(token.balanceOf(address(wallet)), lockAmount);
+    }
 }

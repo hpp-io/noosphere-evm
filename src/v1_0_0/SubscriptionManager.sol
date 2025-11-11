@@ -181,7 +181,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         // Hash the full delegated subscription data.
         bytes32 digest =
-                        _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
+            _hashTypedDataV4(keccak256(abi.encode(EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH, nonce, expiry, subHash)));
 
         // Recover the signer from the signature.
         address recoveredSigner = ECDSA.recover(digest, signature);
@@ -266,11 +266,15 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                     delete requestCommitments[rid];
                     emit CommitmentTimedOut(rid, subscriptionId, i);
                 }
-                unchecked {++processed;}
+                unchecked {
+                    ++processed;
+                }
             } else {
                 lastProcessed = i;
             }
-            unchecked {++i;}
+            unchecked {
+                ++i;
+            }
         }
         if (processed > 0) {
             uint32 last = start + processed - 1;
@@ -399,17 +403,17 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     ) internal {
         address client = subscriptions[subscriptionId].client;
         ComputeClient(client)
-        .receiveRequestCompute(
-            subscriptionId,
-            interval,
-            numRedundantDeliveries,
-            useDeliveryInbox,
-            node,
-            input,
-            output,
-            proof,
-            bytes32(0)
-        );
+            .receiveRequestCompute(
+                subscriptionId,
+                interval,
+                numRedundantDeliveries,
+                useDeliveryInbox,
+                node,
+                input,
+                output,
+                proof,
+                bytes32(0)
+            );
     }
 
     function _makeSubscriptionInactive(uint64 subscriptionId) internal {
@@ -438,9 +442,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _computeCommitmentHash(uint64 subscriptionId, uint32 interval, address coordinator)
-    internal
-    view
-    returns (bytes32)
+        internal
+        view
+        returns (bytes32)
     {
         ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
@@ -466,7 +470,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions)
+        {
             return false;
         }
         ComputeSubscription storage sub = subscriptions[subscriptionId];

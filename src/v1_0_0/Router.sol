@@ -89,10 +89,14 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     );
 
     /// @notice Emitted when funds are locked for verification.
-    event VerificationFundsLocked(uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount);
+    event VerificationFundsLocked(
+        uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount
+    );
 
     /// @notice Emitted when funds are unlocked for verification.
-    event VerificationFundsUnlocked(uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount);
+    event VerificationFundsUnlocked(
+        uint64 indexed subscriptionId, uint32 indexed interval, address indexed spender, uint256 amount
+    );
 
     /// @notice Emitted when a payment is made via a coordinator.
     event PaymentMade(
@@ -187,10 +191,12 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         if (msg.sender != getContractById(sub.routeId)) revert OnlyCallableFromCoordinator();
         _pay(spenderWallet, spenderAddress, payments);
         uint256 len = payments.length;
-        for (uint256 i = 0; i < len; ) {
+        for (uint256 i = 0; i < len;) {
             Payment calldata p = payments[i];
             emit PaymentMade(subscriptionId, spenderWallet, p.recipient, p.feeToken, p.feeAmount);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -239,8 +245,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         // Deactivate the subscription only if the current delivery is the last one for this interval
         // and there are no more intervals to execute.
-        if (numRedundantDeliveries == commitment.redundancy
-                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false) {
+        if (
+            numRedundantDeliveries == commitment.redundancy
+                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false
+        ) {
             _makeSubscriptionInactive(commitment.subscriptionId);
         }
 
@@ -264,8 +272,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function lockForVerification(ProofVerificationRequest calldata proofRequest, bytes32 commitmentHash)
-    external
-    override
+        external
+        override
     {
         ComputeSubscription storage sub = subscriptions[proofRequest.subscriptionId];
         if (msg.sender != getContractById(sub.routeId)) {
@@ -281,7 +289,12 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
 
         _lockForVerification(proofRequest);
-        emit VerificationFundsLocked(proofRequest.subscriptionId, proofRequest.interval, proofRequest.submitterAddress, proofRequest.escrowedAmount);
+        emit VerificationFundsLocked(
+            proofRequest.subscriptionId,
+            proofRequest.interval,
+            proofRequest.submitterAddress,
+            proofRequest.escrowedAmount
+        );
     }
 
     /**
@@ -295,7 +308,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         }
         _unlockForVerification(proofRequest);
         emit VerificationFundsUnlocked(
-            proofRequest.subscriptionId, proofRequest.interval, proofRequest.submitterAddress, proofRequest.escrowedAmount
+            proofRequest.subscriptionId,
+            proofRequest.interval,
+            proofRequest.submitterAddress,
+            proofRequest.escrowedAmount
         );
     }
 
@@ -357,19 +373,21 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
-    external
-    override
+        external
+        override
     {
         uint256 len = proposalSetIds.length;
         if (len == 0 || len != proposalSetAddresses.length) revert InvalidProposedUpdate();
 
-        for (uint256 i = 0; i < len; ) {
+        for (uint256 i = 0; i < len;) {
             bytes32 id = proposalSetIds[i];
             address proposedContract = proposalSetAddresses[i];
             if (proposedContract == address(0) || route[id] == proposedContract) {
                 revert InvalidProposedUpdate();
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         proposedContractSet.ids = proposalSetIds;
@@ -382,12 +400,14 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      */
     function updateContracts() external override onlyOwner {
         uint256 len = proposedContractSet.ids.length;
-        for (uint256 i = 0; i < len; ) {
+        for (uint256 i = 0; i < len;) {
             bytes32 id = proposedContractSet.ids[i];
             address dst = proposedContractSet.to[i];
             route[id] = dst;
             emit ContractsUpdated(id, dst);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         delete proposedContractSet;
     }
@@ -451,7 +471,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _sendRequest(uint64 subscriptionId, uint32 interval) private returns (bytes32 requestId, Commitment memory commitment) {
+    function _sendRequest(uint64 subscriptionId, uint32 interval)
+        private
+        returns (bytes32 requestId, Commitment memory commitment)
+    {
         _whenNotPaused();
         require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
 

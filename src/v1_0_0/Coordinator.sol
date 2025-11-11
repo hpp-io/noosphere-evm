@@ -112,12 +112,16 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         }
         delete s_proofRequests[key];
         _finalizeVerification(request, valid);
-        emit ProofVerified(request.subscriptionId, request.interval, request.submitterAddress,  valid, msg.sender);
+        emit ProofVerified(request.subscriptionId, request.interval, request.submitterAddress, valid, msg.sender);
     }
 
     /// @inheritdoc ICoordinator
     /// @dev Prepare next interval for subscription if previous interval indicates a next exists.
-    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet) external override nonReentrant {
+    function prepareNextInterval(uint64 subscriptionId, uint32 nextInterval, address nodeWallet)
+        external
+        override
+        nonReentrant
+    {
         if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
             _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
         }
@@ -185,8 +189,10 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             revert IntervalMismatch(deliveryInterval);
         }
         // validate the nodeWallet is a recognized wallet produced by the WalletFactory
-        if (_getRouter().isValidWallet(nodeWallet) == false ||
-            _getRouter().isValidWallet(commitment.walletAddress) == false) {
+        if (
+            _getRouter().isValidWallet(nodeWallet) == false
+                || _getRouter().isValidWallet(commitment.walletAddress) == false
+        ) {
             revert InvalidWallet();
         }
         // prevent the same node (msg.sender) from responding twice for the same subscription/interval
