@@ -11,7 +11,7 @@
   "scripts": {
     "build": "forge build",
     "deploy": "make deploy",
-    "anvil": "anvil",
+    "anvil": "anvil --host 0.0.0.0",
     "agent": "node webapp/src/agent.js",
     "client": "node webapp/src/client.js",
     "test:e2e": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 15 && npm run agent\" \"sleep 20 && npm run client && npx kill-port 8545\"",
