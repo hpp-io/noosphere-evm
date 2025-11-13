@@ -51,7 +51,7 @@ abstract contract Billing is IBilling, Routable {
 
     /// @inheritdoc IBilling
     function updateConfig(BillingConfig memory config) external virtual override {
-        // In a concrete implementation, this should have access control (e.g., onlyOwner).
+        _onlyOwner();
         _updateConfig(config);
     }
 

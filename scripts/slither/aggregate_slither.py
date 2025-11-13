@@ -113,6 +113,7 @@ def summarise_and_build_table(all_files):
     total = 0
     by_check = Counter()
     by_severity = Counter()
+    by_confidence = Counter()
     per_file = defaultdict(list)
     table_rows = []
 
@@ -125,7 +126,10 @@ def summarise_and_build_table(all_files):
             check = normalize_check_name(check)
             severity = d.get("severity") or d.get("impact") or "unknown"
             description = d.get("description") or d.get("info") or d.get("message") or ""
-            confidence = d.get("confidence") or d.get("confidence_level") or ""
+            # normalize confidence: present -> str(value), else "Unknown"
+            raw_conf = d.get("confidence") or d.get("confidence_level") or d.get("confidenceString") or ""
+            confidence = str(raw_conf).strip() if raw_conf not in (None, "") else "Unknown"
+
             # elements: try to pick a primary element for file/line
             file_field = ""
             lines_field = ""
@@ -146,25 +150,28 @@ def summarise_and_build_table(all_files):
                 # sometimes detectors have 'filename' directly
                 file_field = d.get("filename") or d.get("file")
                 lines_field = d.get("line") or ""
+
             # short description: first line
             short_desc = description.strip().splitlines()[0] if description else ""
             rec_action = recommend_for(check)
             # append aggregated counters and table rows
             by_check[check] += 1
             by_severity[severity] += 1
+            by_confidence[confidence] += 1
             per_file[fname].append(d)
             table_rows.append({
                 "check": check,
                 "severity": severity,
+                "confidence": confidence,
                 "file": file_field or fname,
                 "lines": lines_field or "",
                 "short": short_desc,
                 "recommendation": rec_action
             })
 
-    return total, by_check, by_severity, per_file, table_rows
+    return total, by_check, by_severity, by_confidence, per_file, table_rows
 
-def write_markdown(total, by_check, by_severity, per_file, table_rows, out_path):
+def write_markdown(total, by_check, by_severity, by_confidence, per_file, table_rows, out_path):
     lines = []
     lines.append("# Slither aggregated report\n")
     lines.append(f"- Generated from JSON files in `reports/json/`\n")
@@ -173,6 +180,13 @@ def write_markdown(total, by_check, by_severity, per_file, table_rows, out_path)
     if by_severity:
         for sev, cnt in by_severity.most_common():
             lines.append(f"- **{sev}**: {cnt}")
+    else:
+        lines.append("- none\n")
+
+    lines.append("\n## Findings by confidence\n")
+    if by_confidence:
+        for conf, cnt in by_confidence.most_common():
+            lines.append(f"- **{conf}**: {cnt}")
     else:
         lines.append("- none\n")
 
@@ -185,10 +199,10 @@ def write_markdown(total, by_check, by_severity, per_file, table_rows, out_path)
 
     lines.append("\n---\n")
     lines.append("\n## Detailed findings table\n")
-    lines.append("\n(Columns: #, Check, Severity, File, Lines, Short description, Recommended action)\n")
+    lines.append("\n(Columns: #, Check, Severity, Confidence, File, Lines, Short description, Recommended action)\n")
     # header
-    lines.append("\n| # | Check | Severity | File | Lines | Short description | Recommended action |")
-    lines.append("|---:|---|---|---|---|---|---|")
+    lines.append("\n| # | Check | Severity | Confidence | File | Lines | Short description | Recommended action |")
+    lines.append("|---:|---|---|---|---|---|---|---|")
 
     # sort rows by severity (High, Medium, Low, Informational, unknown) then check name
     severity_order = {"High": 0, "Critical": 0, "Medium": 1, "Low": 2, "Informational": 3, "Unknown": 4, "unknown": 4}
@@ -201,7 +215,8 @@ def write_markdown(total, by_check, by_severity, per_file, table_rows, out_path)
         # escape pipe in text
         short = r["short"].replace("|", "\\|")
         rec = r["recommendation"].replace("|", "\\|")
-        lines.append(f"| {i} | {r['check']} | {r['severity']} | {file_cell} | {r['lines']} | {short} | {rec} |")
+        conf = r.get("confidence", "").replace("|", "\\|")
+        lines.append(f"| {i} | {r['check']} | {r['severity']} | {conf} | {file_cell} | {r['lines']} | {short} | {rec} |")
 
     # small per-file summary
     lines.append("\n---\n\n## Per-file findings (count)\n")
@@ -217,8 +232,8 @@ def main():
     if not files:
         print("No JSON files found in", JSON_DIR)
         return
-    total, by_check, by_severity, per_file, table_rows = summarise_and_build_table(files)
-    write_markdown(total, by_check, by_severity, per_file, table_rows, OUT_MD)
+    total, by_check, by_severity, by_confidence, per_file, table_rows = summarise_and_build_table(files)
+    write_markdown(total, by_check, by_severity, by_confidence, per_file, table_rows, OUT_MD)
 
 if __name__ == "__main__":
     main()

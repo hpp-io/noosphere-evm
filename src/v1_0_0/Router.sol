@@ -128,7 +128,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /**
      * @notice Constructor initializes the Router with essential dependencies
      */
-    constructor() ConfirmedOwner(msg.sender) {}
+    constructor(address _initialOwner) ConfirmedOwner(_initialOwner) {}
 
     /**
      * @notice Sets the WalletFactory contract address.
@@ -375,6 +375,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
         external
         override
+        onlyOwner
     {
         uint256 len = proposalSetIds.length;
         if (len == 0 || len != proposalSetAddresses.length) revert InvalidProposedUpdate();

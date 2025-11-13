@@ -10,12 +10,12 @@
   },
   "scripts": {
     "build": "forge build",
-    "deploy": "make deploy",
+    "deploy": "make deploy-anvil",
     "anvil": "anvil",
     "agent": "node webapp/src/agent.js",
     "client": "node webapp/src/client.js",
     "test:e2e": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 15 && npm run agent\" \"sleep 20 && npm run client && npx kill-port 8545\"",
-    "test:e2e:optimistic": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 15 && node webapp/src/optimistic_agent.js\" \"sleep 20 && node webapp/src/optimistic_client.js && npx kill-port 8545\""
+    "test:e2e:verfier": "concurrently --kill-others-on-fail -s client --names \"ANVIL,DEPLOY,AGENT,CLIENT\" -c \"blue,yellow,magenta,green\" \"npm run anvil\" \"sleep 2 && npm run deploy\" \"sleep 15 && node webapp/src/onchain_verify_agent.js.js\" \"sleep 20 && node webapp/src/onchain_verify_client.js && npx kill-port 8545\""
   },
   "keywords": [],
   "author": "",

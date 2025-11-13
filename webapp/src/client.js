@@ -20,7 +20,7 @@ function getLatestDeploymentAddress(contractName) {
     try {
         // Load the broadcast file which contains the results of the last deployment.
         const chainId = 31337; // Assuming local Anvil chain
-        const broadcastPath = path.join(projectRoot, `broadcast/Deploy.sol/${chainId}/run-latest.json`);
+        const broadcastPath = path.join(projectRoot, `broadcast/DeployTest.sol/${chainId}/run-latest.json`);
         const broadcast = require(broadcastPath);
         // Find the transaction for the contract deployment.
         const deployment = broadcast.transactions.find(

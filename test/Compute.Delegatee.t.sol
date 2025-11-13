@@ -91,21 +91,14 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         // Deploy core contracts and supporting utilities via helper
         DeployUtils.DeployedContracts memory contracts =
-            DeployUtils.deployContracts(address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token));
+            DeployUtils.deployContracts(address(this), address(this), MOCK_PROTOCOL_FEE, address(token));
+
         router = contracts.router;
         coordinator = contracts.coordinator;
         walletFactory = contracts.walletFactory;
 
-        router.setWalletFactory(address(contracts.walletFactory));
-
         // instantiate mocks used by tests
-        protocolMock = new MockProtocol(Coordinator(address(contracts.coordinator)));
         token = new MockToken();
-
-        // create and register mock nodes
-        nodeAlice = new MockAgent(router);
-        nodeBob = new MockAgent(router);
-        nodeCharlie = new MockAgent(router);
 
         // create wallets for test actors
         userWalletAddr = walletFactory.createWallet(address(this));
@@ -113,10 +106,14 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         bobWalletAddr = walletFactory.createWallet(address(this));
         protocolWalletAddr = walletFactory.createWallet(ownerProtocolWalletAddress);
 
-        // configure billing settings for coordinator (protocol fee recipient / wallet)
-        DeployUtils.updateBillingConfig(
-            coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0 ether, address(0)
-        );
+        DeployUtils.configureContracts(contracts, address(this), protocolWalletAddr, MOCK_PROTOCOL_FEE, address(token));
+
+        // instantiate mocks used by tests
+        protocolMock = new MockProtocol(Coordinator(address(contracts.coordinator)));
+        // create and register mock nodes
+        nodeAlice = new MockAgent(router);
+        nodeBob = new MockAgent(router);
+        nodeCharlie = new MockAgent(router);
 
         // setup delegatee and backup keys/addresses
         delegateeKey = 0xA11CE;

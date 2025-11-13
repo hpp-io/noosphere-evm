@@ -128,16 +128,22 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Initialize contracts
-        DeployUtils.DeployedContracts memory contracts = DeployUtils.deployContracts(
-            address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(erc20Token)
-        );
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(address(this), address(this), MOCK_PROTOCOL_FEE, address(erc20Token));
+
         ROUTER = contracts.router;
         COORDINATOR = contracts.coordinator;
         walletFactory = contracts.walletFactory;
+        erc20Token = contracts.mockToken;
 
-        ROUTER.setWalletFactory(address(contracts.walletFactory));
+        protocolWalletAddress = walletFactory.createWallet(ownerProtocolWalletAddress);
+
+        // Configure contracts
+        DeployUtils.configureContracts(
+            contracts, address(this), protocolWalletAddress, MOCK_PROTOCOL_FEE, address(erc20Token)
+        );
+
         PROTOCOL = new MockProtocol(COORDINATOR);
-        erc20Token = new MockToken();
 
         // Initalize mock nodes
         alice = new MockAgent(ROUTER);
@@ -160,12 +166,6 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         Wallet userWallet = Wallet(payable(userWalletAddress));
         aliceWalletAddress = walletFactory.createWallet(address(this));
         bobWalletAddress = walletFactory.createWallet(address(this));
-        protocolWalletAddress = walletFactory.createWallet(ownerProtocolWalletAddress);
-
-        // Approve the coordinator to spend from the protocol wallet for native token
-        DeployUtils.updateBillingConfig(
-            COORDINATOR, 1 weeks, protocolWalletAddress, MOCK_PROTOCOL_FEE, 0 ether, address(0)
-        );
 
         // 2. Define payment details for a paid request.
         uint256 feeAmount = 0.1 ether;
