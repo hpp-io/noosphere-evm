@@ -7,6 +7,7 @@ import {Coordinator} from "../Coordinator.sol";
 import {IVerifier} from "../interfaces/IVerifier.sol";
 import {ICoordinator} from "../interfaces/ICoordinator.sol";
 import {IOptimisticVerifier} from "../interfaces/IOptimisticVerifier.sol";
+import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 
 contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     using MerkleProof for bytes32[];
@@ -17,7 +18,12 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     mapping(address => uint256) private _fee;
     uint256 public defaultChallengeWindow = 10 seconds;
     uint256 public defaultBondLock = 7 days;
-    mapping(bytes32 => IOptimisticVerifier.Submission) public submissions;
+
+    struct SubmissionRecord {
+        IOptimisticVerifier.Submission data;
+        ProofVerificationRequest request;
+    }
+    mapping(bytes32 => SubmissionRecord) public submissions;
 
     event SubmissionRegistered(
         bytes32 indexed key,
@@ -81,18 +87,15 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
      * and emits events so watchers can fetch the DA via daBatchId from the off-chain proof bytes.
      */
     function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address submitter,
-        address, /* nodeWallet */
+        ProofVerificationRequest calldata request,
         bytes calldata proof,
         bytes32, /* commitmentHash */
         bytes32, /* inputHash */
         bytes32 /* resultHash */
     ) external override {
         require(msg.sender == address(coordinator), "only coordinator");
-        bytes32 key = submissionKey(subscriptionId, interval, submitter);
-        require(!submissions[key].finalized && !submissions[key].slashed, "submission closed");
+        bytes32 key = submissionKey(request.subscriptionId, request.interval, request.submitterAddress);
+        require(!submissions[key].data.finalized && !submissions[key].data.slashed, "submission closed");
 
         // Default empty values
         bytes32 execCommitment = bytes32(0);
@@ -135,10 +138,10 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         uint256 cEnd = nowTs + defaultChallengeWindow;
         uint256 bEnd = nowTs + defaultBondLock;
 
-        submissions[key] = IOptimisticVerifier.Submission({
-            subscriptionId: subscriptionId,
-            interval: interval,
-            node: submitter,
+        submissions[key].data = IOptimisticVerifier.Submission({
+            subscriptionId: request.subscriptionId,
+            interval: request.interval,
+            node: request.submitterAddress,
             execCommitment: execCommitment,
             resultDigest: resultDigest,
             dataHash: dataHash,
@@ -148,16 +151,33 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
             finalized: false,
             slashed: false
         });
+        submissions[key].request = request;
 
         // Interface event (IVerifier.expected)
-        emit VerificationRequested(subscriptionId, interval, submitter);
+        emit VerificationRequested(request.subscriptionId, request.interval, request.submitterAddress);
 
         // Keep the original registration event with dataHash for watchers
         emit SubmissionRegistered(
-            key, subscriptionId, interval, submitter, execCommitment, resultDigest, dataHash, cEnd, bEnd
+            key,
+            request.subscriptionId,
+            request.interval,
+            request.submitterAddress,
+            execCommitment,
+            resultDigest,
+            dataHash,
+            cEnd,
+            bEnd
         );
 
-        emit ProvisionalSubmitted(subscriptionId, interval, submitter, key, execCommitment, resultDigest, dataHash);
+        emit ProvisionalSubmitted(
+            request.subscriptionId,
+            request.interval,
+            request.submitterAddress,
+            key,
+            execCommitment,
+            resultDigest,
+            dataHash
+        );
     }
 
     /**
@@ -173,42 +193,42 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
         bytes32[] calldata proof
     ) external onlyOwner {
         bytes32 key = submissionKey(subscriptionId, interval, node);
-        IOptimisticVerifier.Submission storage s = submissions[key];
-        require(s.subscriptionId != 0 || s.node != address(0), "unknown submission");
-        require(!s.finalized, "already finalized");
-        require(!s.slashed, "already slashed");
-        require(block.timestamp <= s.challengeWindowEnds, "challenge window passed");
-        require(s.execCommitment != bytes32(0), "no execCommitment");
+        SubmissionRecord storage sub = submissions[key];
+        require(sub.data.subscriptionId != 0 || sub.data.node != address(0), "unknown submission");
+        require(!sub.data.finalized, "already finalized");
+        require(!sub.data.slashed, "already slashed");
+        require(block.timestamp <= sub.data.challengeWindowEnds, "challenge window passed");
+        require(sub.data.execCommitment != bytes32(0), "no execCommitment");
 
-        bool included = MerkleProof.verify(proof, s.execCommitment, leafHash);
+        bool included = MerkleProof.verify(proof, sub.data.execCommitment, leafHash);
         require(included, "leaf not included in commitment");
 
         emit ChallengeAccepted(key, msg.sender, leafHash);
 
-        if (s.resultDigest != bytes32(0) && leafHash != s.resultDigest) {
-            s.slashed = true;
-            try coordinator.reportVerificationResult(subscriptionId, interval, node, false) {} catch {}
+        if (sub.data.resultDigest != bytes32(0) && leafHash != sub.data.resultDigest) {
+            sub.data.slashed = true;
+            try coordinator.reportVerificationResult(sub.request, false) {} catch {}
             emit Slashed(key, msg.sender);
         }
     }
 
     /// @notice Finalize a single submission as valid if the challenge window passed with no slash.
     /// @dev Anyone (relayer/off-chain) may call this after `challengeWindowEnds`.
-    function finalizeSubmission(uint64 subscriptionId, uint32 interval, address node) external onlyOwner {
+    function finalizeSubmission(uint64 subscriptionId, uint32 interval, address node) external {
         bytes32 key = submissionKey(subscriptionId, interval, node);
-        IOptimisticVerifier.Submission storage s = submissions[key];
+        SubmissionRecord storage s = submissions[key];
 
-        require(s.subscriptionId != 0 || s.node != address(0), "unknown submission");
-        require(!s.finalized, "already finalized");
-        require(!s.slashed, "already slashed");
-        require(block.timestamp > s.challengeWindowEnds, "challenge window not ended");
-        require(s.execCommitment != bytes32(0), "no execCommitment");
+        require(s.data.subscriptionId != 0 || s.data.node != address(0), "unknown submission");
+        require(!s.data.finalized, "already finalized");
+        require(!s.data.slashed, "already slashed");
+        require(block.timestamp > s.data.challengeWindowEnds, "challenge window not ended");
+        require(s.data.execCommitment != bytes32(0), "no execCommitment");
 
         // mark finalized first (prevent reentrancy / double-calls)
-        s.finalized = true;
+        s.data.finalized = true;
 
         // Try to notify Coordinator. Use try/catch so if Coordinator call reverts we still mark finalized.
-        try coordinator.reportVerificationResult(subscriptionId, interval, node, true) {
+        try coordinator.reportVerificationResult(s.request, true) {
         // ok
         }
             catch {
@@ -223,26 +243,26 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     /// @dev Accepts arrays of equal length for subscriptionId/interval/node.
     function finalizeBatch(uint64[] calldata subscriptionIds, uint32[] calldata intervals, address[] calldata nodes)
         external
-        onlyOwner
     {
         uint256 len = subscriptionIds.length;
         require(intervals.length == len && nodes.length == len, "length mismatch");
 
         for (uint256 i = 0; i < len; i++) {
             bytes32 key = submissionKey(subscriptionIds[i], intervals[i], nodes[i]);
-            IOptimisticVerifier.Submission storage s = submissions[key];
+            SubmissionRecord storage s = submissions[key];
 
             // Instead of skipping, revert with a reason to make debugging easier for the relayer.
-            require(s.subscriptionId != 0 || s.node != address(0), "unknown submission");
-            require(!s.finalized, "already finalized");
-            require(!s.slashed, "already slashed");
-            require(block.timestamp > s.challengeWindowEnds, "challenge window not ended");
-            require(s.execCommitment != bytes32(0), "no execCommitment");
+            if (
+                s.data.subscriptionId == 0 && s.data.node == address(0) || s.data.finalized || s.data.slashed
+                    || block.timestamp <= s.data.challengeWindowEnds || s.data.execCommitment == bytes32(0)
+            ) {
+                continue;
+            }
 
-            s.finalized = true;
+            s.data.finalized = true;
 
             // Try to notify Coordinator per item. Optionally this could be a single batch call if Coordinator supports it.
-            try coordinator.reportVerificationResult(subscriptionIds[i], intervals[i], nodes[i], true) {
+            try coordinator.reportVerificationResult(s.request, true) {
             // ok
             }
                 catch {
@@ -292,7 +312,7 @@ contract OptimisticVerifier is IVerifier, IOptimisticVerifier, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     function getSubmission(bytes32 key) external view override returns (IOptimisticVerifier.Submission memory) {
-        return submissions[key];
+        return submissions[key].data;
     }
 
     /*//////////////////////////////////////////////////////////////

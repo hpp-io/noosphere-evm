@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {OptimisticVerifier} from "src/v1_0_0/verifier/OptimisticVerifier.sol";
 import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol";
@@ -733,7 +733,7 @@ contract ComputeVerifierTest is ComputeTest {
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
-            commitment.subscriptionId, commitment.interval, nodeWallet, "signer_mismatch"
+            commitment.subscriptionId, commitment.interval, bob, "signer_mismatch"
         );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
@@ -823,7 +823,7 @@ contract ComputeVerifierTest is ComputeTest {
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
-            commitment.subscriptionId, commitment.interval, nodeWallet, "signer_mismatch"
+            commitment.subscriptionId, commitment.interval, bob, "signer_mismatch"
         );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();
@@ -912,7 +912,7 @@ contract ComputeVerifierTest is ComputeTest {
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
-            commitment.subscriptionId, commitment.interval, nodeWallet, "commitmentHash_mismatch"
+            commitment.subscriptionId, commitment.interval, bob, "commitmentHash_mismatch"
         );
         COORDINATOR.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, nodeWallet);
         vm.stopPrank();

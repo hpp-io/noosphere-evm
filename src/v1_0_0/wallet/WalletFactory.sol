@@ -46,14 +46,9 @@ contract WalletFactory is Routable {
     /// @return walletAddr Address of the newly deployed Wallet contract.
     function createWallet(address initialOwner) external returns (address walletAddr) {
         require(initialOwner != address(0), "WalletFactory: zero owner");
-
-        // Deploy wallet with the Router address known to this factory (Routable provides `_getRouter()`).
         Wallet deployed = new Wallet(address(_getRouter()), initialOwner);
         walletAddr = address(deployed);
-
-        // Register the deployed wallet for provenance checks.
         createdWallets[walletAddr] = true;
-
         emit WalletCreated(msg.sender, initialOwner, walletAddr);
     }
 

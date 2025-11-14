@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
@@ -20,7 +20,7 @@ library CommitmentUtils {
      */
     function build(ComputeSubscription memory sub, uint64 subscriptionId, uint32 interval, address coordinator)
         internal
-        view
+        pure
         returns (Commitment memory)
     {
         bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);

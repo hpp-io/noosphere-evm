@@ -38,3 +38,28 @@ jobs:
         run: |
           forge test -vvv
         id: test
+
+      # ---------------------------
+      # Slither analysis (minimal)
+      # - produce JSON in reports/json/
+      # - do not immediately fail on slither exit; we explicitly fail only if High/High findings are present
+      # ---------------------------
+
+      - name: Prepare slither output directory
+        run: |
+          mkdir -p reports/json
+
+      - name: Run Slither (Docker)
+        run: |
+          # Run Slither inside official container and write JSON to reports/json/slither.json
+          # If slither returns non-zero, don't kill the workflow here (we'll check results explicitly).
+          docker run --rm -v "${{ github.workspace }}":/src -w /src crytic/slither slither . --json reports/json/slither.json || true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Fail on High severity + High confidence findings
+        run: |
+          python3 scripts/slither/slither_fail_on_high.py

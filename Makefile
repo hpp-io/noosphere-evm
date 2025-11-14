@@ -71,6 +71,28 @@ deploy:
 		--extra-output-files abi \
 		--rpc-url $(RPC_URL)
 
+deploy-anvil:
+	@if [ -z "$(RPC_URL)" ] || [ -z "$(PRIVATE_KEY)" ] || [ -z "$(PRODUCTION_OWNER_ADDR)" ] || [ -z "$(CHAIN_ID)" ] || [ -z "$(INITIAL_FEE_RECIPIENT_ADDR)" ]; then \
+		echo "ERROR: RPC_URL, PRIVATE_KEY, PRODUCTION_OWNER, CHAIN_ID, and INITIAL_FEE_RECIPIENT environment variables are required."; \
+		exit 1; \
+	fi
+	@echo "=> Running production deployment to $(RPC_URL)..."
+	@echo "  Chain ID:         $(CHAIN_ID)"
+	@echo "  Deployer:         (address derived from PRIVATE_KEY)"
+	@echo "  Production Owner:   $(PRODUCTION_OWNER)"
+	@echo "  Initial Fee Recipient: $(INITIAL_FEE_RECIPIENT)"
+	@forge script scripts/DeployTest.sol:DeployTest \
+		--skip-simulation \
+		--gas-estimate-multiplier 130 \
+		--optimize \
+		--optimizer-runs 1000000 \
+		--extra-output-files abi \
+		--rpc-url ${RPC_URL} \
+		--chain-id $(CHAIN_ID) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		--sig "run(address,address)" $(PRODUCTION_OWNER_ADDR) $(INITIAL_FEE_RECIPIENT_ADDR)
+
 # -----------------------------------------------------------------------------
 # Save gas snapshot (using forge snapshot)
 # -----------------------------------------------------------------------------

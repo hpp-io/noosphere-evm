@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Coordinator} from "./Coordinator.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
@@ -18,7 +18,7 @@ contract DelegateeCoordinator is Coordinator {
         bytes calldata output,
         bytes calldata proof,
         address nodeWallet
-    ) external {
+    ) external nonReentrant {
         // By breaking the logic into helper functions, we reduce the stack depth in any single function.
         bytes memory commitmentData =
             _createSubscriptionAndGetCommitmentData(nonce, expiry, sub, signature, deliveryInterval);

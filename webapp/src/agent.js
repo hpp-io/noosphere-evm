@@ -19,7 +19,7 @@ const WalletArtifact = require(path.join(projectRoot, 'out/Wallet.sol/Wallet.jso
 // Dynamically load a contract address from the latest deployment.
 function getLatestDeploymentAddress(contractName) {
     try {
-        const broadcast = require(path.join(projectRoot, 'broadcast/Deploy.sol/31337/run-latest.json'));
+        const broadcast = require(path.join(projectRoot, 'broadcast/DeployTest.sol/31337/run-latest.json'));
         const deployment = broadcast.transactions.find(
             (tx) => tx.transactionType === 'CREATE' && (tx.contractName === contractName || (contractName === 'Coordinator' && tx.contractName === 'DelegateeCoordinator'))
         );

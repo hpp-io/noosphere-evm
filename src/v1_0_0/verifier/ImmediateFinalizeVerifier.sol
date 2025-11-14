@@ -9,6 +9,7 @@ import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {IVerifier} from "../interfaces/IVerifier.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ICoordinator} from "../interfaces/ICoordinator.sol";
+import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 
 /**
  * @title ImmediateFinalizeVerifier
@@ -44,7 +45,7 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     event CoordinatorChanged(address indexed oldCoordinator, address indexed newCoordinator);
 
     event VerificationFailed(
-        uint64 indexed subscriptionId, uint32 indexed interval, address indexed nodeWallet, string reason
+        uint64 indexed subscriptionId, uint32 indexed interval, address indexed nodeaddress, string reason
     );
 
     // --- Custom Errors ---
@@ -125,25 +126,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
                             VERIFICATION
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Submits proof data for immediate verification using an EIP-712 signature.
-     * @dev Only callable by the Coordinator. The `proof` bytes are expected to be the ABI-encoded
-     *      (bytes32 requestId, bytes32 commitmentHash, bytes32 inputHash, bytes32 resultHash, address nodeAddress, uint256 timestamp, bytes signature).
-     *      The `nodeWallet` address argument is the registered node wallet (contract or EOA).
-     * @param subscriptionId The ID of the subscription being verified.
-     * @param interval The interval number for the computation being verified.
-     * @param submitter The EOA address of the node that submitted the proof.
-     * @param nodeWallet The smart contract wallet address of the node (or EOA if not a contract).
-     * @param proof The ABI-encoded proof data and signature from the node.
-     * @param commitmentHash The hash of the commitment data (from Coordinator).
-     * @param inputHash The hash of the input data (from Coordinator).
-     * @param resultHash The hash of the output data (from Coordinator).
-     */
     function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address submitter,
-        address nodeWallet,
+        ProofVerificationRequest calldata request,
         bytes calldata proof,
         bytes32 commitmentHash,
         bytes32 inputHash,
@@ -164,22 +148,28 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             proofData.signature
         ) = abi.decode(proof, (bytes32, bytes32, bytes32, bytes32, address, uint256, bytes));
 
-        emit VerificationRequested(subscriptionId, interval, nodeWallet);
+        emit VerificationRequested(request.subscriptionId, request.interval, request.submitterAddress);
 
         // hash checks -> failure reports (no revert)
         if (commitmentHash != proofData.commitmentHash) {
-            emit VerificationFailed(subscriptionId, interval, nodeWallet, "commitmentHash_mismatch");
-            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            emit VerificationFailed(
+                request.subscriptionId, request.interval, request.submitterAddress, "commitmentHash_mismatch"
+            );
+            coordinator.reportVerificationResult(request, false);
             return;
         }
         if (inputHash != proofData.inputHash) {
-            emit VerificationFailed(subscriptionId, interval, nodeWallet, "inputHash_mismatch");
-            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            emit VerificationFailed(
+                request.subscriptionId, request.interval, request.submitterAddress, "inputHash_mismatch"
+            );
+            coordinator.reportVerificationResult(request, false);
             return;
         }
         if (resultHash != proofData.resultHash) {
-            emit VerificationFailed(subscriptionId, interval, nodeWallet, "resultHash_mismatch");
-            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            emit VerificationFailed(
+                request.subscriptionId, request.interval, request.submitterAddress, "resultHash_mismatch"
+            );
+            coordinator.reportVerificationResult(request, false);
             return;
         }
 
@@ -198,26 +188,32 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
         signer = ECDSA.recover(digest, proofData.signature);
 
         if (signer == address(0)) {
-            emit VerificationFailed(subscriptionId, interval, nodeWallet, "zero_address_signer");
-            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            emit VerificationFailed(
+                request.subscriptionId, request.interval, request.submitterAddress, "zero_address_signer"
+            );
+            coordinator.reportVerificationResult(request, false);
             return;
         }
 
         if (signer != proofData.nodeAddress) {
-            emit VerificationFailed(subscriptionId, interval, nodeWallet, "signer_mismatch");
-            coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+            emit VerificationFailed(
+                request.subscriptionId, request.interval, request.submitterAddress, "signer_mismatch"
+            );
+            coordinator.reportVerificationResult(request, false);
             return;
         }
 
-        if (isContract(nodeWallet)) {
-            bytes4 magic = IERC1271(nodeWallet).isValidSignature(digest, proofData.signature);
+        if (isContract(request.submitterWallet)) {
+            bytes4 magic = IERC1271(request.submitterWallet).isValidSignature(digest, proofData.signature);
             if (magic != IERC1271.isValidSignature.selector) {
-                emit VerificationFailed(subscriptionId, interval, nodeWallet, "invalid_contract_signature");
-                coordinator.reportVerificationResult(subscriptionId, interval, submitter, false);
+                emit VerificationFailed(
+                    request.subscriptionId, request.interval, request.submitterAddress, "invalid_contract_signature"
+                );
+                coordinator.reportVerificationResult(request, false);
                 return;
             }
         }
-        coordinator.reportVerificationResult(subscriptionId, interval, submitter, true);
+        coordinator.reportVerificationResult(request, true);
     }
 
     /*//////////////////////////////////////////////////////////////
