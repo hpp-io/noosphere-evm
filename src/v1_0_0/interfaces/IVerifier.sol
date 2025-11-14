@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.23;
 
+import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
+
 /// @title IVerifier
 /// @notice Minimal asynchronous verifier interface used by the protocol.
 /// @dev Verification requests are processed asynchronously. Implementations should either emit
@@ -11,8 +13,8 @@ interface IVerifier {
     /// @notice Emitted when a verification request has been accepted by the verifier.
     /// @param subscriptionId Subscription identifier that this verification relates to.
     /// @param interval Interval index (or round) that this verification concerns.
-    /// @param nodeWallet Address of the agent/node that submitted the proof.
-    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address nodeWallet);
+    /// @param nodeAddress Address of the agent/node that submitted the proof.
+    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address nodeAddress);
 
     /// @notice Returns the fee required by the verifier when paid in `token`.
     /// @param token ERC20 token address (or `address(0)` for native ETH).
@@ -28,23 +30,14 @@ interface IVerifier {
     /// @return accepted True when the token is accepted for payment.
     function isPaymentTokenSupported(address token) external view returns (bool accepted);
 
-    /// @notice Submit a proof for asynchronous verification.
-    /// @dev Implementations MUST either emit `VerificationRequested(requestId, ...)` or return a non-zero
+    /// @notice Submit a proof for asynchronous verification using a structured request.
+    /// @dev This is an overloaded function that accepts a `ProofVerificationRequest` struct.
+    ///      Implementations MUST either emit `VerificationRequested(requestId, ...)` or return a non-zero
     ///      `requestId` when a submission is accepted. Verification results are delivered out-of-band
     ///      (events, callbacks, or off-chain notifications). Do not expect synchronous verification here.
-    /// @param subscriptionId Subscription identifier associated with this proof.
-    /// @param interval Interval index (or round) that this proof corresponds to.
-    /// @param submitter Address of the agent/node that produced and submitted the proof.
-    /// @param nodeWallet Address of the node wallet.
-    /// @param proof Arbitrary proof bytes understood by the verifier implementation.
-    /// @param commitmentHash Hash of the commitment being verified.
-    /// @param inputHash Hash of the input data used to generate the proof.
-    /// @param resultHash Hash of the result data produced by the proof.
+    /// @param request A struct containing subscriptionId, interval, submitter, and nodeWallet.
     function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address submitter,
-        address nodeWallet,
+        ProofVerificationRequest calldata request,
         bytes calldata proof,
         bytes32 commitmentHash,
         bytes32 inputHash,

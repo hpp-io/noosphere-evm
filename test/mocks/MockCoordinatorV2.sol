@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import "../../src/v1_0_0/types/BillingConfig.sol";
+import {ProofVerificationRequest} from "../../src/v1_0_0/types/ProofVerificationRequest.sol";
 import {Commitment} from "../../src/v1_0_0/types/Commitment.sol";
 import {ICoordinator} from "../../src/v1_0_0/interfaces/ICoordinator.sol";
 
@@ -27,9 +28,11 @@ contract MockCoordinatorV2 is ICoordinator {
 
     function cancelRequest(bytes32) external pure override {}
 
-    function reportVerificationResult(uint64, uint32, address, bool) external pure override {}
+    function reportVerificationResult(ProofVerificationRequest calldata, bool) external pure override {}
 
     function prepareNextInterval(uint64, uint32, address) external pure override {}
 
     function getCommitment(uint64, uint32) external pure override returns (Commitment memory) {}
+
+    function requestCommitments(bytes32) external pure override returns (bytes32) {}
 }

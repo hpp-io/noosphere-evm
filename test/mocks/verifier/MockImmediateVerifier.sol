@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.23;
 
+import {ProofVerificationRequest} from "../../../src/v1_0_0/types/ProofVerificationRequest.sol";
 import {Router} from "../../../src/v1_0_0/Router.sol";
 import {MockVerifier} from "./MockVerifier.sol";
 
@@ -39,30 +40,19 @@ contract MockImmediateVerifier is MockVerifier {
                          SUBMISSION / VERIFICATION API
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Submit a proof for verification (async API). This mock behaves atomically:
-    ///         it immediately finalizes the verification result via the Coordinator.
-    /// @dev Emits `VerificationRequested(requestId, ...)` and then calls
-    ///      `coordinator.finalizeProofVerification(...)` with the preconfigured outcome.
-    /// @param subscriptionId Identifier of the subscription this proof belongs to.
-    /// @param interval Interval index (or round) that this proof corresponds to.
-    /// @param submitter Address of the agent/node that produced the proof.
-    /// @param proof Arbitrary proof bytes consumed by the verifier (ignored by mock).
     function submitProofForVerification(
-        uint64 subscriptionId,
-        uint32 interval,
-        address submitter,
-        address, /* nodeWallet */
-        bytes calldata proof,
+        ProofVerificationRequest calldata request,
+        bytes calldata, /* proof */
         bytes32, /* commitmentHash */
         bytes32, /* inputHash */
         bytes32 /* resultHash */
-    ) external {
+    ) external override {
         // emit the acceptance event so tests/integrations can observe the submission
-        emit VerificationRequested(subscriptionId, interval, submitter);
+        emit VerificationRequested(request.subscriptionId, request.interval, request.submitterAddress);
 
         // Immediately finalize the verification on the coordinator using the configured outcome.
         // The mock intentionally ignores the proof bytes and uses `nextValidity`.
-        COORDINATOR.reportVerificationResult(subscriptionId, interval, submitter, nextValidity);
+        COORDINATOR.reportVerificationResult(request, nextValidity);
     }
 
     /*//////////////////////////////////////////////////////////////

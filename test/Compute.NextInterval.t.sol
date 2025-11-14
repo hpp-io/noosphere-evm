@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -8,6 +8,7 @@ import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {DeployUtils} from "./lib/DeployUtils.sol";
 import {Router} from "../src/v1_0_0/Router.sol";
 import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 
 contract ComputeNextIntervalPrepareTest is ComputeTest {
     function test_Succeeds_When_PreparingNextInterval_OnDelivery() public {
@@ -56,7 +57,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         emit Wallet.RequestLocked(
             requestId2, address(ScheduledClient), address(erc20Token), feeAmount * redundancy, redundancy
         );
-        bob.prepareNextInterval(subId, 2, address(bob));
+        bob.prepareNextInterval(subId, 2, bobWallet);
         // 7. Final assertions on wallet state
         assertEq(
             Wallet(payable(aliceWallet)).lockedOfRequest(requestId2),
@@ -93,7 +94,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // 4. Deliver compute.
         vm.prank(address(bob));
         bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-        bob.prepareNextInterval(commitment1.subscriptionId, 2, address(bob));
+        bob.prepareNextInterval(commitment1.subscriptionId, 2, nodeWallet);
         // 5. Assert that no events related to preparing a next interval were emitted.
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 requestStartSelector = Router.RequestStart.selector;
@@ -201,15 +202,20 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // Create a recurring subscription and a node wallet.
         address consumerWallet = walletFactory.createWallet(address(this));
         address nodeWallet = walletFactory.createWallet(address(bob)); // This wallet will receive the tick fee.
-        address protocolWallet = walletFactory.createWallet(address(this));
+        address protocolWallet = walletFactory.createWallet(address(this)); // This wallet will pay the tick fee.
         uint16 redundancy = 1;
         uint256 feeAmount = 1 ether;
 
         // Fund protocol wallet with ETH
         vm.deal(protocolWallet, 10 ether);
-        DeployUtils.updateBillingConfig(
-            COORDINATOR, 1 weeks, protocolWallet, MOCK_PROTOCOL_FEE, expectedTickFee, address(0)
-        );
+        BillingConfig memory newConfig = BillingConfig({
+            verificationTimeout: 1 weeks,
+            protocolFeeRecipient: protocolWallet,
+            protocolFee: MOCK_PROTOCOL_FEE,
+            tickNodeFee: expectedTickFee,
+            tickNodeFeeToken: address(0) // ETH
+        });
+        COORDINATOR.updateConfig(newConfig);
 
         // The protocol wallet is its own spender for tick fees.
         vm.startPrank(address(this));

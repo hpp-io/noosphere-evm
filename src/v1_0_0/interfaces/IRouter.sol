@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {FulfillResult} from "../types/FulfillResult.sol";
@@ -52,13 +52,13 @@ interface IRouter {
     /// @param commitment The Commitment struct that corresponds to the original request.
     /// @return resultCode Fulfillment result code (see FulfillResult type).
     function fulfill(
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof,
         uint16 numRedundantDeliveries,
         address nodeWallet,
-        Payment[] memory payments,
-        Commitment memory commitment
+        Payment[] calldata payments,
+        Commitment calldata commitment
     ) external returns (FulfillResult resultCode);
 
     /// @notice Instruct Router to execute coordinator-driven payouts on behalf of Coordinator.
@@ -82,8 +82,8 @@ interface IRouter {
     /// @dev Coordinator calls this prior to invoking potentially expensive verification routines so funds
     ///      needed for verifier fees are reserved.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
-    /// @param commitment Commitment that proves the original request context and pricing.
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment) external;
+    /// @param commitmentHash commitmentHash that proves the original request context and pricing.
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, bytes32 commitmentHash) external;
 
     /// @notice Release/unlock previously locked funds after verification completes or is aborted.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.

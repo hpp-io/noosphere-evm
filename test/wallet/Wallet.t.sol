@@ -7,6 +7,7 @@ import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 import {DeployUtils} from "../lib/DeployUtils.sol";
 import {Test} from "forge-std/Test.sol";
+import {MockToken} from "../mocks/MockToken.sol";
 
 /// @title WalletFactory events used in tests
 /// @notice Interface describing the WalletFactory `WalletCreated` event used by the test harness.
@@ -14,11 +15,11 @@ interface IWalletFactoryEvents {
     event WalletCreated(address indexed operator, address indexed owner, address wallet);
 }
 
-/// @title WalletFactoryTest
-/// @notice Unit tests for WalletFactory deployment and basic integration with Router/Wallet.
+/// @title WalletTest
+/// @notice Unit tests for WalletTest deployment and basic integration with Router/Wallet.
 /// @dev Tests focus on provenance (factory-created wallets) and basic Router access checks on the Wallet.
 ///      Uses Forge's `vm` utilities for address prediction and call impersonation.
-contract WalletFactoryTest is Test, IWalletFactoryEvents {
+contract WalletTest is Test, IWalletFactoryEvents {
     /*//////////////////////////////////////////////////////////////
                                  TEST FIXTURE
     //////////////////////////////////////////////////////////////*/
@@ -31,6 +32,14 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
 
     /// @notice Coordinator instance created by LibDeploy (unused directly, included for completeness)
     Coordinator internal coordinator;
+
+    // Test subjects and actors
+    Wallet internal wallet;
+    MockToken internal token;
+    address internal owner;
+    address internal spender;
+
+    bytes32 constant REQUEST_ID = keccak256("REQUEST_ID");
 
     /*//////////////////////////////////////////////////////////////
                                      SETUP
@@ -47,6 +56,14 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
         walletFactory = contracts.walletFactory;
         // Wire the Router to know the walletFactory address (addresses circular-dependency resolution).
         router.setWalletFactory(address(contracts.walletFactory));
+
+        // Create test actors
+        owner = makeAddr("owner");
+        spender = makeAddr("spender");
+
+        // Deploy a mock token and a wallet for the owner
+        token = new MockToken();
+        wallet = Wallet(payable(walletFactory.createWallet(owner)));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -110,5 +127,116 @@ contract WalletFactoryTest is Test, IWalletFactoryEvents {
         );
 
         vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                WITHDRAW AFTER LOCK
+    //////////////////////////////////////////////////////////////*/
+
+    function test_withdraw_after_lockEscrow_erc20() public {
+        uint256 initialBalance = 1000e6;
+        uint256 lockAmount = 400e6;
+        uint256 unlockedAmount = initialBalance - lockAmount;
+
+        token.mint(address(wallet), initialBalance);
+        vm.prank(owner);
+        wallet.approve(spender, address(token), initialBalance);
+
+        // Lock a portion of the funds
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(token), lockAmount);
+
+        assertEq(wallet.totalLockedFor(address(token)), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(token), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = token.balanceOf(owner);
+        vm.prank(owner);
+        wallet.withdraw(address(token), unlockedAmount);
+        uint256 ownerBalanceAfter = token.balanceOf(owner);
+
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
+        assertEq(token.balanceOf(address(wallet)), lockAmount);
+    }
+
+    function test_withdraw_after_lockEscrow_eth() public {
+        uint256 initialBalance = 10 ether;
+        uint256 lockAmount = 4 ether;
+        uint256 unlockedAmount = initialBalance - lockAmount;
+
+        deal(address(wallet), initialBalance);
+        vm.prank(owner);
+        wallet.approve(spender, address(0), initialBalance);
+
+        // Lock a portion of the funds
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(0), lockAmount);
+
+        assertEq(wallet.totalLockedFor(address(0)), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(0), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = owner.balance;
+        vm.prank(owner);
+        wallet.withdraw(address(0), unlockedAmount);
+        uint256 ownerBalanceAfter = owner.balance;
+
+        assertTrue(ownerBalanceAfter > ownerBalanceBefore); // Gas makes exact check tricky
+        assertEq(address(wallet).balance, lockAmount);
+    }
+
+    function test_revert_withdraw_when_all_funds_locked_erc20() public {
+        uint256 amount = 1000e6;
+        token.mint(address(wallet), amount);
+
+        vm.prank(owner);
+        wallet.approve(spender, address(token), amount);
+
+        vm.prank(address(router));
+        wallet.lockEscrow(spender, address(token), amount);
+
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        vm.prank(owner);
+        wallet.withdraw(address(token), 1);
+    }
+
+    function test_revert_withdraw_more_than_unlocked_after_lockForRequest() public {
+        uint256 initialBalance = 1000e6;
+        uint256 lockAmount = 600e6;
+        uint256 unlockedAmount = initialBalance - lockAmount;
+
+        token.mint(address(wallet), initialBalance);
+
+        vm.prank(owner);
+        wallet.approve(spender, address(token), initialBalance);
+
+        // Lock funds for a request
+        vm.prank(address(router));
+        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID, 1);
+
+        assertEq(wallet.totalLockedFor(address(token)), lockAmount);
+        assertEq(wallet.lockedOfRequest(REQUEST_ID), lockAmount);
+
+        // Try to withdraw more than the unlocked balance (should fail)
+        vm.prank(owner);
+        vm.expectRevert(Wallet.InsufficientFunds.selector);
+        wallet.withdraw(address(token), unlockedAmount + 1);
+
+        // Withdraw the exact unlocked balance (should succeed)
+        uint256 ownerBalanceBefore = token.balanceOf(owner);
+        vm.prank(owner);
+        wallet.withdraw(address(token), unlockedAmount);
+        uint256 ownerBalanceAfter = token.balanceOf(owner);
+
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
+        assertEq(token.balanceOf(address(wallet)), lockAmount);
     }
 }

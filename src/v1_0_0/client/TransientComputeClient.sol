@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
