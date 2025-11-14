@@ -33,12 +33,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     /// @notice Set of proposed contract updates
     ContractProposalSet private proposedContractSet;
 
-    /// @notice Current allow list ID
-    bytes32 private allowListId;
-
-    /// @notice Inbox contract address
-    address private inbox;
-
     /// @notice WalletFactory instance
     WalletFactory private walletFactory;
 
@@ -54,9 +48,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
     /// @notice Emitted when contracts are updated
     event ContractsUpdated(bytes32 id, address contractAddress);
-
-    /// @notice Emitted when the allow list ID is updated
-    event AllowListIdSet(bytes32 indexed newAllowListId);
 
     /// @notice Emitted when a request is started
     event RequestStart(
@@ -404,21 +395,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      */
     function unpause() external override onlyOwner {
         _unpause();
-    }
-
-    /**
-     * @inheritdoc IRouter
-     */
-    function getAllowListId() external view override returns (bytes32) {
-        return allowListId;
-    }
-
-    /**
-     * @inheritdoc IRouter
-     */
-    function setAllowListId(bytes32 newAllowListId) external override onlyOwner {
-        allowListId = newAllowListId;
-        emit AllowListIdSet(allowListId);
     }
 
     /*//////////////////////////////////////////////////////////////

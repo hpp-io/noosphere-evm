@@ -88,7 +88,7 @@ contract ComputeVerifierTest is ComputeTest {
         immediateVerifier.setNextValidityTrue();
 
         // Execute response fulfillment from Charlie expecting it to fail given no authorization to Bob's wallet
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         vm.expectRevert(Wallet.InsufficientAllowance.selector);
         vm.prank(address(charlie));
         charlie.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
@@ -135,7 +135,7 @@ contract ComputeVerifierTest is ComputeTest {
         immediateVerifier.setNextValidityTrue();
 
         // Execute response fulfillment expecting it to fail given not enough unlocked funds
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         vm.expectRevert(Wallet.InsufficientFunds.selector);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
     }
@@ -182,7 +182,7 @@ contract ComputeVerifierTest is ComputeTest {
         immediateVerifier.setNextValidityTrue();
 
         // Execute response fulfillment from Bob
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances
@@ -221,7 +221,7 @@ contract ComputeVerifierTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             1, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             1, // redundancy
             true, // useDeliveryInbox
             address(erc20Token),
@@ -302,7 +302,7 @@ contract ComputeVerifierTest is ComputeTest {
         immediateVerifier.setNextValidityFalse();
 
         // Execute response fulfillment from Bob
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
 
         // Assert new balances
@@ -457,7 +457,7 @@ contract ComputeVerifierTest is ComputeTest {
         );
 
         // Execute response fulfillment from Bob
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
 
         // Expect ProvisionalSubmitted event from the verifier
         bytes32 expectedKey = optimisticVerifier.submissionKey(subId, 1, address(bob));
@@ -510,7 +510,7 @@ contract ComputeVerifierTest is ComputeTest {
         );
 
         // 3. Node reports the compute result
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, reportProof, commitmentData, bobWallet);
 
         // 4. Challenger prepares a proof for the *other* leaf to prove the inconsistency
@@ -563,7 +563,7 @@ contract ComputeVerifierTest is ComputeTest {
             bytes("") // adapterSig
         );
 
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         bob.reportComputeResult(commitment.interval, MOCK_INPUT, MOCK_OUTPUT, proof, commitmentData, bobWallet);
 
         // 3. Warp time to after the challenge window has passed
@@ -624,7 +624,7 @@ contract ComputeVerifierTest is ComputeTest {
         bytes32 commitmentHash = keccak256(commitmentData);
         bytes32 inputHash = keccak256(MOCK_INPUT);
         bytes32 resultHash = keccak256(MOCK_OUTPUT);
-        uint256 timestamp = block.timestamp + 1 minutes;
+        uint256 timestamp = block.timestamp + 10 minutes;
 
         // 4. Create the EIP-712 digest for the node (Bob) to sign
         bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
@@ -716,7 +716,7 @@ contract ComputeVerifierTest is ComputeTest {
         bytes32 commitmentHash = keccak256(commitmentData);
         bytes32 inputHash = keccak256(MOCK_INPUT);
         bytes32 resultHash = keccak256(MOCK_OUTPUT);
-        uint256 timestamp = block.timestamp + 1 minutes;
+        uint256 timestamp = block.timestamp + 10 minutes;
 
         bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(
             immediateFinalizeVerifier.getStructHash(requestId, commitmentHash, inputHash, resultHash, bob, timestamp)
@@ -800,7 +800,7 @@ contract ComputeVerifierTest is ComputeTest {
         bytes32 commitmentHash = keccak256(commitmentData);
         bytes32 inputHash = keccak256(MOCK_INPUT);
         bytes32 resultHash = keccak256(MOCK_OUTPUT);
-        uint256 timestamp = block.timestamp + 1 minutes;
+        uint256 timestamp = block.timestamp + 10 minutes;
 
         // The digest is created with the wrong address.
         bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(

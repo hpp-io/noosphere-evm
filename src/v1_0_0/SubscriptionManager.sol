@@ -58,27 +58,15 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     // loop through all the current subscriptions via .getSubscription().
     uint64 internal currentSubscriptionId;
 
-    /*//////////////////////////////////////////////////////////////
-                                 ERRORS
-    //////////////////////////////////////////////////////////////*/
-
-    error NotSubscriptionOwner();
-    error SubscriptionNotFound();
-    error SubscriptionNotActive();
-    error SubscriptionCompleted();
-    error CannotRemoveWithPendingRequests();
-    error InvalidSubscription();
-    error NoSuchCommitment();
-    error CommitmentNotTimeoutable();
-    error InvalidWallet();
-
-    error SignerMismatch();
-    error SignatureExpired();
+    /// @notice Minimum repeat interval for scheduled subscriptions
+    uint32 public minRepeatInterval;
 
     // ================================================================
     // |                       Initialization                         |
     // ================================================================
-    constructor() EIP712(EIP712_NAME, EIP712_VERSION) {}
+    constructor() EIP712(EIP712_NAME, EIP712_VERSION) {
+        minRepeatInterval = 600;
+    }
 
     /*//////////////////////////////////////////////////////////////
                          ISubscriptionsManager IMPLEMENTATION
@@ -119,6 +107,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     ) external virtual override returns (uint64) {
         if (_getWalletFactory().isValidWallet(wallet) == false) {
             revert InvalidWallet();
+        }
+        if (intervalSeconds > 0 && intervalSeconds < minRepeatInterval) {
+            revert SubscriptionIntervalTooShort(intervalSeconds, minRepeatInterval);
         }
         uint64 subscriptionId = ++currentSubscriptionId;
         // If intervalSeconds is = 0 (one-time), active immediately
@@ -171,10 +162,12 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (subscriptionId != 0) {
             return subscriptionId;
         }
-
         // If it's a new creation, verify the signature has not expired.
         if (block.timestamp >= expiry) {
             revert SignatureExpired();
+        }
+        if (sub.intervalSeconds > 0 && sub.intervalSeconds < minRepeatInterval) {
+            revert SubscriptionIntervalTooShort(sub.intervalSeconds, minRepeatInterval);
         }
 
         // Hash the subscription struct.
@@ -541,6 +534,12 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     function ownerCancelSubscription(uint64 subscriptionId) external {
         _onlyRouterOwner();
         _cancelSubscriptionHelper(subscriptionId);
+    }
+
+    function setMinRepeatInterval(uint32 _minRepeatInterval) external {
+        _onlyRouterOwner();
+        minRepeatInterval = _minRepeatInterval;
+        emit MinRepeatIntervalSet(_minRepeatInterval);
     }
 
     // ================================================================

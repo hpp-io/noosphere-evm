@@ -24,7 +24,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             3, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
             address(erc20Token),
@@ -34,7 +34,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         );
 
         // 2. Warp time to the *second* interval, making the first one timeoutable
-        vm.warp(block.timestamp + 2 minutes); // currentInterval will be 2
+        vm.warp(block.timestamp + 20 minutes); // currentInterval will be 2
 
         // 3. Assert that funds are initially locked for the first request
         assertEq(Wallet(payable(consumerWallet)).lockedOfRequest(commitment1.requestId), paymentForOneInterval);
@@ -57,7 +57,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOutRequest_ForCurrentInterval() public {
         // 1. Create a recurring subscription
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 2. Expect a revert because the interval is not in the past
@@ -68,7 +68,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOutRequest_ForInactiveSubscription() public {
         // 1. Create a recurring subscription. The first request is created immediately.
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 3. Expect a revert because the subscription is not active
@@ -79,7 +79,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOut_NonExistentRequest() public {
         // 1. Create a subscription but don't create a request for interval 2
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 2. Warp time to make the subscription active
@@ -106,7 +106,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             2, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
             address(erc20Token),
@@ -116,7 +116,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         );
 
         // 2. Warp time to make the request timeoutable and then time it out.
-        vm.warp(block.timestamp + 2 minutes);
+        vm.warp(block.timestamp + 20 minutes);
         ROUTER.timeoutRequest(commitment1.requestId, subId, 1);
 
         // 3. Attempt to deliver compute for the now-timed-out request.

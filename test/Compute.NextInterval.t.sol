@@ -31,7 +31,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
             address(erc20Token),
@@ -125,7 +125,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             address(erc20Token),
@@ -167,7 +167,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             address(erc20Token),
@@ -177,7 +177,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         );
 
         // 5. Deliver compute for the first interval
-        //        vm.warp(block.timestamp + 1 minutes);
+        //        vm.warp(block.timestamp + 10 minutes);
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
@@ -227,7 +227,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             ZERO_ADDRESS,
