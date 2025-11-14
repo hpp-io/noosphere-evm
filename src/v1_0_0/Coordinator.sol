@@ -122,9 +122,14 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         override
         nonReentrant
     {
-        if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == true) {
-            _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
+        if (_getRouter().hasSubscriptionNextInterval(subscriptionId, nextInterval - 1) == false) {
+            revert NoNextInterval();
         }
+        uint32 currentInterval = _getRouter().getComputeSubscriptionInterval(subscriptionId);
+        if (currentInterval != nextInterval - 1 && currentInterval != nextInterval) {
+            revert NotReadyForNextInterval();
+        }
+        _prepareNextInterval(subscriptionId, nextInterval, nodeWallet);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
