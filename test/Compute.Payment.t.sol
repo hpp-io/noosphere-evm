@@ -71,7 +71,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(ScheduledClient), ZERO_ADDRESS, 1 ether);
 
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 1, 1 minutes, 1, true, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, 1, 10 minutes, 1, true, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
         assertEq(subId, 1);
 
@@ -167,7 +167,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         // Create new two-time subscription with 40e6 payout
         vm.warp(0 minutes);
         (, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 2, 1 minutes, 2, false, address(erc20Token), 20e6, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, 2, false, address(erc20Token), 20e6, aliceWallet, NO_VERIFIER
         );
 
         // Execute response fulfillment from Bob
@@ -181,7 +181,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         bytes memory nextCommitmentResultData = abi.encode(nextCommitmentResult);
         bob.prepareNextInterval(commitment.subscriptionId, 2, bobWallet);
 
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         bob.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, nextCommitmentResultData, bobWallet);
 
         // Assert new balances

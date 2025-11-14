@@ -27,6 +27,26 @@ interface ISubscriptionsManager {
     /// @notice Emitted when a commitment times out and is cleaned up
     event CommitmentTimedOut(bytes32 indexed requestId, uint64 indexed subscriptionId, uint32 indexed interval);
 
+    /// @notice Emitted when the minimum repeat interval is updated
+    event MinRepeatIntervalSet(uint32 newMinRepeatInterval);
+
+    /*//////////////////////////////////////////////////////////////
+                             ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error NotSubscriptionOwner();
+    error SubscriptionNotFound();
+    error SubscriptionNotActive();
+    error SubscriptionCompleted();
+    error CannotRemoveWithPendingRequests();
+    error InvalidSubscription();
+    error NoSuchCommitment();
+    error CommitmentNotTimeoutable();
+    error InvalidWallet();
+    error SignerMismatch();
+    error SignatureExpired();
+    error SubscriptionIntervalTooShort(uint32 interval, uint32 minInterval);
+
     /*//////////////////////////////////////////////////////////////
                                 READ-ONLY ACCESSORS
     //////////////////////////////////////////////////////////////*/

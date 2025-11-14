@@ -30,7 +30,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             redundancy,
             false, // useDeliveryInbox
             address(erc20Token),
@@ -69,7 +69,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId,) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             1, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             1, // redundancy
             false, // useDeliveryInbox
             NO_PAYMENT_TOKEN,
@@ -104,7 +104,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             address(erc20Token),
@@ -142,7 +142,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             address(erc20Token),
@@ -151,7 +151,6 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
             NO_VERIFIER
         );
 
-        // 5. Deliver compute for the first interval
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
         // because hasSubscriptionNextInterval will return false due to insufficient allowance.
         vm.expectRevert(ICoordinator.NoNextInterval.selector);
@@ -196,7 +195,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription( //
             MOCK_CONTAINER_ID,
             2,
-            1 minutes,
+            10 minutes,
             redundancy,
             false,
             ZERO_ADDRESS,
@@ -244,7 +243,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             1, // maxExecutions
-            1 minutes, // intervalSeconds
+            10 minutes, // intervalSeconds
             1, // redundancy
             false, // useDeliveryInbox
             NO_PAYMENT_TOKEN,

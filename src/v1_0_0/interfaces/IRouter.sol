@@ -171,14 +171,6 @@ interface IRouter {
     /// @notice Resume router operations.
     function unpause() external;
 
-    /// @notice Get the current allow list identifier used to gate certain operations.
-    /// @return allowListId Current allow list id.
-    function getAllowListId() external view returns (bytes32 allowListId);
-
-    /// @notice Update the allow list identifier used by the Router.
-    /// @param allowListId New allow list id to set.
-    function setAllowListId(bytes32 allowListId) external;
-
     /*//////////////////////////////////////////////////////////////////////////
                                   TIMEOUTS
     //////////////////////////////////////////////////////////////////////////*/

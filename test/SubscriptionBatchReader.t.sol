@@ -55,7 +55,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Create subscription
         vm.warp(0);
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Read via `SubscriptionBatchReader ` and direct via `Router`
@@ -103,7 +103,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
             ScheduledClient.createMockSubscriptionWithoutRequest(
                 MOCK_CONTAINER_ID,
                 i + 1, // Use maxExecutions as verification index
-                1 minutes,
+                10 minutes,
                 1,
                 false,
                 NO_PAYMENT_TOKEN,
@@ -132,7 +132,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Check normal subscriptions {1, 2, 3}
         for (uint32 i = 0; i < 3; i++) {
             assertEq(read[i].client, address(ScheduledClient));
-            assertEq(read[i].intervalSeconds, 1 minutes);
+            assertEq(read[i].intervalSeconds, 10 minutes);
             assertEq(read[i].maxExecutions, i + 1); // Use as verification index
             assertEq(read[i].redundancy, 1);
             assertEq(read[i].containerId, HASHED_MOCK_CONTAINER_ID);
@@ -162,12 +162,12 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Create first subscription (maxExecutions = 2, redundancy = 2)
         vm.warp(0);
         (uint64 subOne,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 2, 1 minutes, 2, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, 2, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Create second subscription (maxExecutions = 1, redundancy = 1)
         (uint64 subTwo,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 1, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 1, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Deliver (id: subOne, interval: 1) from Alice + Bob
@@ -182,7 +182,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment2, aliceWalletAddress);
 
         // Deliver (id: subOne, interval: 2) from Alice
-        vm.warp(1 minutes);
+        vm.warp(10 minutes);
         (, Commitment memory commitmentStruct3) = ScheduledClient.sendRequest(subOne, 2);
         bytes memory commitment3 = abi.encode(commitmentStruct3);
         alice.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitment3, aliceWalletAddress);
@@ -227,7 +227,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         // Create subscription
         vm.warp(0);
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Deliver subscription

@@ -14,9 +14,9 @@ contract ComputeSubscriptionTest is ComputeTest {
     function test_Succeeds_When_CancellingSubscription() public {
         // Create subscription
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
-        vm.warp(block.timestamp + 1 minutes);
+        vm.warp(block.timestamp + 10 minutes);
         // Cancel subscription and expect event emission
         vm.expectEmit(address(ROUTER));
         emit ISubscriptionsManager.SubscriptionCancelled(subId);
@@ -25,7 +25,7 @@ contract ComputeSubscriptionTest is ComputeTest {
 
     function test_Succeeds_When_CancellingFulfilledSubscription() public {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         bytes memory commitmentData = abi.encode(commitment);
@@ -52,9 +52,9 @@ contract ComputeSubscriptionTest is ComputeTest {
     function test_RevertIf_Cancelling_AlreadyCancelledSubscription() public {
         // Create and cancel subscription
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
-        vm.warp(block.timestamp + 1 minutes);
+        vm.warp(block.timestamp + 10 minutes);
 
         // Cancel subscription and expect event emission
         vm.expectEmit(address(ROUTER));
@@ -74,7 +74,8 @@ contract ComputeSubscriptionTest is ComputeTest {
         // In the interest of testing time, upper bounding maxExecutions loops + having at minimum 1 maxExecutions
         vm.assume(maxExecutions > 1 && maxExecutions < 32);
         // Prevent upperbound overflow
-        vm.assume(uint256(blockTime) + (uint256(maxExecutions) * uint256(intervalSeconds)) < 2 ** 32 - 1);
+        vm.assume(uint256(blockTime) + (uint256(maxExecutions) * uint256(intervalSeconds)) < type(uint32).max);
+        vm.assume(intervalSeconds >= 600);
 
         // Set the block time before creating the subscription
         vm.warp(blockTime);
@@ -159,7 +160,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID,
             2, // maxExecutions = 2
-            1 minutes,
+            10 minutes,
             2,
             false,
             NO_PAYMENT_TOKEN,
@@ -176,11 +177,56 @@ contract ComputeSubscriptionTest is ComputeTest {
         alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
 
         // Warp to the second interval
-        vm.warp(2 minutes);
+        vm.warp(20 minutes);
 
         // Now, the current interval is 2. Attempting to deliver for interval 1 should fail.
         // We use the commitment from the first interval to simulate this.
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
         alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, aliceWalletAddress);
+    }
+
+    /// @notice Reverts if the subscription interval is shorter than the minimum allowed.
+    function test_RevertIf_SubscriptionIntervalIsTooShort() public {
+        uint32 shortInterval = 599;
+        uint32 expectedMinInterval = ROUTER.minRepeatInterval();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISubscriptionsManager.SubscriptionIntervalTooShort.selector, shortInterval, expectedMinInterval
+            )
+        );
+
+        ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID,
+            1, // maxExecutions
+            shortInterval,
+            1, // redundancy
+            false, // useDeliveryInbox
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
+        );
+    }
+
+    /// @notice The owner should be able to set the minimum repeat interval.
+    function test_Succeeds_When_SettingMinRepeatInterval() public {
+        uint32 newMinInterval = 1200; // 20 minutes
+
+        vm.expectEmit(true, false, false, true, address(ROUTER));
+        emit ISubscriptionsManager.MinRepeatIntervalSet(newMinInterval);
+
+        ROUTER.setMinRepeatInterval(newMinInterval);
+
+        assertEq(ROUTER.minRepeatInterval(), newMinInterval, "Minimum repeat interval should be updated");
+    }
+
+    /// @notice Non-owners should not be able to set the minimum repeat interval.
+    function test_RevertIf_NonOwnerSetsMinRepeatInterval() public {
+        uint32 newMinInterval = 1200;
+
+        vm.prank(address(alice));
+        vm.expectRevert(bytes("Only callable by client"));
+        ROUTER.setMinRepeatInterval(newMinInterval);
     }
 }
