@@ -50,6 +50,8 @@ interface ICoordinator {
     error IntervalCompleted();
     error NodeRespondedAlready();
     error InvalidWallet();
+    error NotReadyForNextInterval();
+    error NoNextInterval();
     error ProofVerificationRequestNotFound();
 
     /*//////////////////////////////////////////////////////////////////////////
