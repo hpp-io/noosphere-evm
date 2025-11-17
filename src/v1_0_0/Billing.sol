@@ -137,7 +137,8 @@ abstract contract Billing is IBilling, Routable {
         bytes calldata output,
         bytes calldata proof,
         uint16 numRedundantDeliveries,
-        bool isLastDelivery
+        bool isLastDelivery,
+        bytes32 delegatedSubHash
     ) internal virtual {
         bytes32 storedHash = s_requestCommitments[commitment.requestId];
         if (storedHash == bytes32(0)) {
@@ -150,7 +151,15 @@ abstract contract Billing is IBilling, Routable {
         FulfillResult result;
         if (commitment.verifier != address(0)) {
             result = _processVerifiedDelivery(
-                commitment, commitmentHash, proofSubmitter, nodeWallet, input, output, proof, numRedundantDeliveries
+                commitment,
+                commitmentHash,
+                proofSubmitter,
+                nodeWallet,
+                input,
+                output,
+                proof,
+                numRedundantDeliveries,
+                delegatedSubHash
             );
         } else {
             result = _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
@@ -170,8 +179,10 @@ abstract contract Billing is IBilling, Routable {
         bytes calldata input,
         bytes calldata output,
         bytes calldata proof,
-        uint16 numRedundantDeliveries
+        uint16 numRedundantDeliveries,
+        bytes32 delegatedSubHash
     ) private returns (FulfillResult) {
+        bytes32 proofDataHash;
         Payment[] memory payments = _prepareVerificationPayments(commitment);
         ProofVerificationRequest memory request =
             _initiateVerification(commitment, commitmentHash, proofSubmitter, nodeWallet);
@@ -180,8 +191,13 @@ abstract contract Billing is IBilling, Routable {
         if (result == FulfillResult.FULFILLED) {
             bytes32 inputHash = keccak256(input);
             bytes32 resultHash = keccak256(output);
+            if (delegatedSubHash != bytes32(0)) {
+                proofDataHash = delegatedSubHash;
+            } else {
+                proofDataHash = commitmentHash;
+            }
             IVerifier(commitment.verifier)
-                .submitProofForVerification(request, proof, commitmentHash, inputHash, resultHash);
+                .submitProofForVerification(request, proof, proofDataHash, inputHash, resultHash);
         }
         return result;
     }

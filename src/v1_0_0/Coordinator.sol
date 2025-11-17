@@ -92,7 +92,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         bytes calldata commitmentData,
         address nodeWallet
     ) external override nonReentrant {
-        _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
+        _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet, bytes32(0));
     }
 
     /// @inheritdoc ICoordinator
@@ -179,7 +179,8 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         bytes calldata output,
         bytes calldata proof,
         bytes memory commitmentData,
-        address nodeWallet
+        address nodeWallet,
+        bytes32 delegatedSubHash
     ) internal {
         // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
@@ -219,7 +220,8 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             output,
             proof,
             newRedundancyCount,
-            newRedundancyCount == commitment.redundancy
+            newRedundancyCount == commitment.redundancy,
+            delegatedSubHash
         );
         emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount);
     }
