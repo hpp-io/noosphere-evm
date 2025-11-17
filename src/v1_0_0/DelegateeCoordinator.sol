@@ -22,7 +22,9 @@ contract DelegateeCoordinator is Coordinator {
         // By breaking the logic into helper functions, we reduce the stack depth in any single function.
         bytes memory commitmentData =
             _createSubscriptionAndGetCommitmentData(nonce, expiry, sub, signature, deliveryInterval);
-        _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
+        _reportComputeResult(
+            deliveryInterval, input, output, proof, commitmentData, nodeWallet, keccak256(abi.encode(sub))
+        );
     }
 
     function _createSubscriptionAndGetCommitmentData(
