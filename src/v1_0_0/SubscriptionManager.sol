@@ -197,7 +197,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (nonce > maxSubscriberNonce[sub.client]) {
             maxSubscriberNonce[sub.client] = nonce;
         }
-
         return subscriptionId;
     }
 

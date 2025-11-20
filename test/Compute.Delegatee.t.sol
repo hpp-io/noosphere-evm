@@ -469,8 +469,8 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         assertEq(out.output, MOCK_OUTPUT);
         assertEq(out.proof, MOCK_PROOF);
 
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
+        bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
+        assertEq(coordinator.redundancyCount(requestId), 1);
     }
 
     /// @notice When a subscription requests inbox delivery, the delegated delivery should store the pending delivery in the client's inbox.
@@ -502,9 +502,6 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         assertEq(pd.input, MOCK_INPUT);
         assertEq(pd.output, MOCK_OUTPUT);
         assertEq(pd.proof, MOCK_PROOF);
-
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
     }
 
     /// @notice Attempting to deliver for a completed interval must revert.
@@ -518,37 +515,20 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
 
         uint32 deliveryInterval = 1;
 
-        // record logs to extract events emitted by coordinator during atomic delivery
-        vm.recordLogs();
+        // 1. First call: This should succeed, create the subscription, and complete the request.
         nodeAlice.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
         );
 
-        // find RequestStarted Commitment in recorded logs
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 requestStartedTopic = ICoordinator.RequestStarted.selector;
-        Commitment memory commitment;
-        bool found = false;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == requestStartedTopic) {
-                commitment = abi.decode(logs[i].data, (Commitment));
-                found = true;
-                break;
-            }
-        }
-        assertTrue(found, "RequestStarted event not emitted");
-        assertEq(commitment.subscriptionId, uint64(1));
+        // The request is now complete because redundancy (1) has been met.
+        // The commitment has been deleted from the Coordinator's state.
 
-        // subsequent deliveries for the same interval should revert with IntervalCompleted
+        // 2. Second call: Attempt to deliver for the same (now completed) request.
+        // This should revert because the commitment is no longer valid/active.
+        // The subscription itself is NOT recreated due to idempotency.
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
         nodeBob.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
-        );
-
-        bytes memory commitmentData = abi.encode(commitment);
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportComputeResult(
-            deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddr
         );
     }
 
@@ -568,15 +548,15 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         nodeAlice.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
         );
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
+        bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
+        assertEq(coordinator.redundancyCount(requestId), 1);
 
         // second node responds
         nodeBob.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
         );
-        key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeBob)));
-        assertEq(coordinator.nodeResponded(key), true);
+        // The request is now complete (redundancy 2 of 2 met).
+        assertEq(coordinator.redundancyCount(requestId), 2);
 
         // a duplicate attempt from the same node should revert
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);

@@ -29,8 +29,12 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     mapping(bytes32 => uint16) public redundancyCount;
 
     /// @notice Tracks whether a node has already responded for a given subscription/interval.
-    /// key = keccak256(subscriptionId, interval, nodeAddress)
+    /// @dev key: keccak256(abi.encode(subscriptionId, interval, nodeAddress))
     mapping(bytes32 => bool) public nodeResponded;
+
+    /// @notice Tracks the addresses of nodes that have responded to a specific request.
+    /// @dev key: requestId (keccak256(abi.encode(subscriptionId, interval)))
+    mapping(bytes32 => address[]) private s_respondedNodes;
 
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR
@@ -77,7 +81,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             wallet,
             verifier
         );
-
+        redundancyCount[requestId] = 0;
         emit RequestStarted(requestId, subscriptionId, containerId, commitment);
         return commitment;
     }
@@ -184,10 +188,14 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     ) internal {
         // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
+
         // check redundancy limit for this request: if already reached, revert
         uint16 currentRedundancy = redundancyCount[commitment.requestId];
         if (currentRedundancy >= commitment.redundancy) {
             revert IntervalCompleted();
+        }
+        if (s_requestCommitments[commitment.requestId] != keccak256(commitmentData)) {
+            revert InvalidCommitment();
         }
         // verify the delivery interval matches subscription's current interval
         uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
@@ -202,12 +210,13 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             revert InvalidWallet();
         }
         // prevent the same node (msg.sender) from responding twice for the same subscription/interval
-        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
-        if (nodeResponded[key]) {
+        bytes32 nodeResponseKey = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
+        if (nodeResponded[nodeResponseKey]) {
             revert NodeRespondedAlready();
         }
-        nodeResponded[key] = true;
+        nodeResponded[nodeResponseKey] = true;
         uint16 newRedundancyCount;
+        s_respondedNodes[commitment.requestId].push(msg.sender);
         unchecked {
             newRedundancyCount = currentRedundancy + 1;
         }
@@ -229,6 +238,20 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev ConfirmedOwner abstract hook (required override).
     function _onlyOwner() internal view override {
         _validateOwnership();
+    }
+
+    function _cleanupRequestState(bytes32 requestId, uint64 subscriptionId, uint32 interval, address proofSubmitter)
+        internal
+        override
+    {
+        super._cleanupRequestState(requestId, subscriptionId, interval, proofSubmitter);
+        address[] storage responders = s_respondedNodes[requestId];
+        for (uint256 i = 0; i < responders.length; i++) {
+            bytes32 nodeResponseKey = keccak256(abi.encode(subscriptionId, interval, responders[i]));
+            delete nodeResponded[nodeResponseKey];
+        }
+        // Clean up the responder address array itself.
+        delete s_respondedNodes[requestId];
     }
 
     /*//////////////////////////////////////////////////////////////

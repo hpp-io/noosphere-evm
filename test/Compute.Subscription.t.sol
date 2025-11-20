@@ -147,7 +147,7 @@ contract ComputeSubscriptionTest is ComputeTest {
 
         // The call chain is reportComputeResult -> getSubscriptionInterval -> _isExistingSubscription.
         // This will revert with "InvalidSubscription".
-        vm.expectRevert(bytes("SubscriptionNotFound()"));
+        vm.expectRevert(bytes("InvalidCommitment()"));
 
         // Call reportComputeResult with the crafted commitment.
         alice.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(alice));

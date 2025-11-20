@@ -121,9 +121,9 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
 
         // 3. Attempt to deliver compute for the now-timed-out request.
         // It should revert because the coordinator detects a mismatch between the
-        // delivery interval (1) and the current system interval (2).
+        // commitment is no longer valid after being timed out.
         bytes memory commitmentData1 = abi.encode(commitment1);
-        vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
+        vm.expectRevert(ICoordinator.InvalidCommitment.selector);
         vm.prank(address(bob));
         bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
     }

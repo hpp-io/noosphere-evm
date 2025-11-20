@@ -166,7 +166,7 @@ abstract contract Billing is IBilling, Routable {
         }
 
         if (result == FulfillResult.FULFILLED && isLastDelivery == true) {
-            delete s_requestCommitments[commitment.requestId];
+            _cleanupRequestState(commitment.requestId, commitment.subscriptionId, commitment.interval, proofSubmitter);
         }
     }
 
@@ -340,6 +340,24 @@ abstract contract Billing is IBilling, Routable {
     }
 
     function _cancelRequest(bytes32 requestId) internal virtual {
+        delete s_requestCommitments[requestId];
+    }
+
+    /// @notice Cleans up the state associated with a request after it has been fulfilled.
+    /// @dev This function is designed to be overridden by child contracts to include
+    ///      additional state cleanup, such as resetting redundancy counts or response tracking.
+    ///      The `proofSubmitter` parameter is provided to allow child contracts to clean up
+    ///      node-specific state.
+    /// @param requestId The unique identifier of the request.
+    /// @param subscriptionId The ID of the subscription associated with the request.
+    /// @param interval The interval of the request.
+    /// @param proofSubmitter The address of the node that submitted the proof.
+    function _cleanupRequestState(bytes32 requestId, uint64 subscriptionId, uint32 interval, address proofSubmitter)
+        internal
+        virtual
+    {
+        // Base implementation cleans up the commitment.
+        // Child contracts can override this to add more cleanup logic.
         delete s_requestCommitments[requestId];
     }
 

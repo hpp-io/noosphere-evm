@@ -35,6 +35,10 @@ contract DelegateeCoordinator is Coordinator {
         uint32 deliveryInterval
     ) internal returns (bytes memory) {
         uint64 subscriptionId = _getRouter().createSubscriptionDelegatee(nonce, expiry, sub, signature);
+        bytes32 requestId = keccak256(abi.encodePacked(subscriptionId, deliveryInterval));
+        if (subscriptionId != 0 && redundancyCount[requestId] >= sub.redundancy) {
+            revert IntervalCompleted();
+        }
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, deliveryInterval);
         return abi.encode(commitment);
     }
