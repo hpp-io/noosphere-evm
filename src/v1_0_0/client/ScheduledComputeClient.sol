@@ -9,6 +9,10 @@ import {ComputeClient} from "./ComputeClient.sol";
  * @dev Abstract contract for interacting with the Noosphere Router to manage compute subscriptions.
  */
 abstract contract ScheduledComputeClient is ComputeClient {
+    bool private _computeRequested;
+
+    error ComputeAlreadyRequested();
+
     constructor(address router) ComputeClient(router) {}
 
     function _createComputeSubscription(
@@ -39,6 +43,10 @@ abstract contract ScheduledComputeClient is ComputeClient {
     }
 
     function _requestCompute(uint64 subscriptionId, uint32 interval) internal returns (uint64, Commitment memory) {
+        if (_computeRequested) {
+            revert ComputeAlreadyRequested();
+        }
+        _computeRequested = true;
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }

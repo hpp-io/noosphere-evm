@@ -318,7 +318,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint32 intervalSeconds = sub.intervalSeconds;
 
         if (uint32(block.timestamp) < activeAt) return 0;
-        if (intervalSeconds == 0) return 1;
+        if (intervalSeconds == 0) return type(uint32).max;
 
         unchecked {
             return ((uint32(block.timestamp) - activeAt) / intervalSeconds) + 1;

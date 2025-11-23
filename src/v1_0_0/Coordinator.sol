@@ -197,9 +197,13 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         if (s_requestCommitments[commitment.requestId] != keccak256(commitmentData)) {
             revert InvalidCommitment();
         }
-        // verify the delivery interval matches subscription's current interval
+        // Verify the delivery interval. For recurring subscriptions, it must match the current calculated interval.
+        // For one-shot subscriptions (`interval` is `type(uint32).max`), it must match the interval stored in the commitment.
         uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
-        if (interval != deliveryInterval) {
+        if (
+            (interval != type(uint32).max && interval != deliveryInterval)
+                || (interval == type(uint32).max && commitment.interval != deliveryInterval)
+        ) {
             revert IntervalMismatch(deliveryInterval);
         }
         // validate the nodeWallet is a recognized wallet produced by the WalletFactory
@@ -210,8 +214,8 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             revert InvalidWallet();
         }
         // prevent the same node (msg.sender) from responding twice for the same subscription/interval
-        bytes32 nodeResponseKey = keccak256(abi.encode(commitment.subscriptionId, interval, msg.sender));
-        if (nodeResponded[nodeResponseKey]) {
+        bytes32 nodeResponseKey = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, msg.sender));
+        if (nodeResponded[nodeResponseKey] == true) {
             revert NodeRespondedAlready();
         }
         nodeResponded[nodeResponseKey] = true;

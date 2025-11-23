@@ -161,12 +161,12 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     function test_Succeeds_When_QueryingRedundancyCounts() public {
         // Create first subscription (maxExecutions = 2, redundancy = 2)
         vm.warp(0);
-        (uint64 subOne,) = ScheduledClient.createMockSubscription(
+        uint64 subOne = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID, 2, 10 minutes, 2, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Create second subscription (maxExecutions = 1, redundancy = 1)
-        (uint64 subTwo,) = ScheduledClient.createMockSubscription(
+        uint64 subTwo = ScheduledClient.createMockSubscriptionWithoutRequest(
             MOCK_CONTAINER_ID, 1, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
