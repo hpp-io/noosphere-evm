@@ -102,8 +102,10 @@ async function main() {
     console.log(`   Node Signer (EOA): ${nodeSigner.address}`);
 
     const coordinatorContract = new ethers.Contract(COORDINATOR_ADDRESS, CoordinatorArtifact.abi, nodeSigner);
-    const clientContract = new ethers.Contract(CLIENT_ADDRESS, ClientArtifact.abi, provider); // Read-only is fine
     const routerContract = new ethers.Contract(ROUTER_ADDRESS, RouterArtifact.abi, provider);
+
+    console.log(`   Router Address: ${ROUTER_ADDRESS}`);
+
 
     // --- Create a dedicated Wallet for the Node to receive payments ---
     console.log("\n🤖 Ensuring node has a payment wallet...");
@@ -148,7 +150,9 @@ async function main() {
         try {
             // 1. Get the inputs for the computation from the client contract
             console.log("   1. Fetching compute inputs...");
-            const inputs = await clientContract.getComputeInputs(subscriptionId, 1, now(), nodePaymentWalletAddress);
+            const subscription = await routerContract.getComputeSubscription(commitment.subscriptionId);
+            const clientContract = new ethers.Contract(subscription.client, ClientArtifact.abi, provider); // Read-only is fine
+            const inputs = await clientContract.getComputeInputs(subscriptionId, commitment.interval, now(), nodePaymentWalletAddress);
             console.log(`      Inputs received: ${inputs}`);
 
             // [EXAMPLE] Get the delegated signer from the client contract
@@ -157,13 +161,18 @@ async function main() {
             console.log(`      Delegated Signer for client ${await clientContract.getAddress()}: ${delegatedSigner}`);
             // This delegatedSigner address is the one that would be used to sign off-chain messages for `createSubscriptionDelegatee`.
 
-            // 2. "Perform" the computation (we'll just return a dummy value)
-            const output = "0x5678"; // Our "computed" result
-            console.log(`   2. Computation finished. Output: ${output}`);
+            // 2. "Perform" the computation and convert output to hex
+            const timestamp = new Date().toISOString();
+            // Generate a long string for testing purposes (approx. 1000 chars)
+            const longText = "This is a long string for testing data transmission. It repeats multiple times to increase its length and simulate a more realistic payload that a compute job might return. This helps in verifying that the system can handle larger data sizes without issues. 1. ".repeat(5);
+            const rawOutput = `I am GPT. Processed at: ${timestamp}. Inputs: ${ethers.toUtf8String(inputs)}. Payload: ${longText}`;
+            const outputBytes = ethers.hexlify(ethers.toUtf8Bytes(rawOutput));
+
+            console.log(`   2. Computation finished. Output: "${rawOutput}" (bytes: ${outputBytes})`);
 
             // 3. Verify commitment data from multiple sources and prepare for reporting
             console.log("   3. Verifying commitment data and preparing report...");
-            const subscription = await routerContract.getComputeSubscription(subscriptionId);
+            // const subscription = await routerContract.getComputeSubscription(subscriptionId);
 
             // Source 1: From the event itself
             const eventCommitment = new Commitment(commitment);
@@ -189,10 +198,24 @@ async function main() {
 
             // 4. Report the result back to the Coordinator
             console.log("   4. Reporting compute result to Coordinator...");
+            console.log(`      Commitment Details:`);
+            console.log(`         Request ID: ${eventCommitment.data.requestId}`);
+            console.log(`         Subscription ID: ${eventCommitment.data.subscriptionId}`);
+            console.log(`         Container ID: ${eventCommitment.data.containerId}`);
+            console.log(`         Interval: ${eventCommitment.data.interval}`);
+            console.log(`         Use Delivery Inbox: ${eventCommitment.data.useDeliveryInbox}`);
+            console.log(`         Redundancy: ${eventCommitment.data.redundancy}`);
+            console.log(`         Wallet Address: ${eventCommitment.data.walletAddress}`);
+            console.log(`         Fee Amount: ${eventCommitment.data.feeAmount}`);
+            console.log(`         Fee Token: ${eventCommitment.data.feeToken}`);
+            console.log(`         Verifier: ${eventCommitment.data.verifier}`);
+            console.log(`         Coordinator: ${eventCommitment.data.coordinator}`);
+
+
             const reportTx = await coordinatorContract.reportComputeResult(
                 commitment.interval,
                 inputs,
-                output,
+                outputBytes,
                 "0x", // proof (placeholder)
                 eventCommitment.encode(), // Use the reconstructed data for the report
                 nodePaymentWalletAddress // The node's dedicated Wallet contract that will receive payment
@@ -218,7 +241,7 @@ async function main() {
             }
 
             if (requestProcessedEvent) {
-                console.log("   ✅ Settlement event (RequestProcessed) detected!");
+                console.log("   ✅ Settlement event (RequesProcessed) detected!");
                 const eventBlockNumber = requestProcessedEvent.blockNumber;
                 console.log(`      Block: ${eventBlockNumber}, Tx: ${reportReceipt.hash}`);
 

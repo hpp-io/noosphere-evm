@@ -13,6 +13,9 @@ import {ComputeClient} from "./ComputeClient.sol";
 abstract contract TransientComputeClient is ComputeClient {
     mapping(uint64 => mapping(uint32 => bytes)) internal subscriptionInputs;
 
+    /// @dev A counter to ensure a unique interval for each transient request within a subscription.
+    mapping(uint64 => uint32) private _requestNonces;
+
     constructor(address router) ComputeClient(router) {}
 
     function _createComputeSubscription(
@@ -32,8 +35,10 @@ abstract contract TransientComputeClient is ComputeClient {
     }
 
     function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
-        // For a transient request, the interval is always 1.
-        uint32 interval = 1;
+        // Increment the nonce for the subscription to get a unique interval for this request.
+        // For transient subscriptions, the 'interval' field is used as a nonce to ensure request uniqueness,
+        // rather than representing a time-based interval.
+        uint32 interval = ++_requestNonces[subscriptionId];
         subscriptionInputs[subscriptionId][interval] = inputs;
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);

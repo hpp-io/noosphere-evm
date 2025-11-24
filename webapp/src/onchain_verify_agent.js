@@ -68,6 +68,9 @@ async function main() {
     const routerContract = new ethers.Contract(ROUTER_ADDRESS, RouterArtifact.abi, provider);
     const verifierContract = new ethers.Contract(IMMEDIATE_FINALIZE_VERIFIER_ADDRESS, ImmediateFinalizeVerifierArtifact.abi, provider);
 
+    console.log(`   ImmediateFinalizeVerifier Address: ${IMMEDIATE_FINALIZE_VERIFIER_ADDRESS}`);
+
+
     // --- Create a dedicated Wallet for the Node to receive payments ---
     console.log("\n🤖 Ensuring node has a payment wallet...");
     const walletFactoryAddress = await routerContract.getWalletFactory();
@@ -251,8 +254,7 @@ async function main() {
                     commitment: {type: 'inline', value: encodedCommitmentData},
                     // Ensure inputs and outputs are consistently hexlified to prevent hash mismatches.
                     input: {type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(inputs))},
-                    output: {type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(output))},
-                    timestamp: now()
+                    output: {type: 'inline', value: ethers.hexlify(ethers.toUtf8Bytes(output))}
                 }
             };
 

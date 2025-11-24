@@ -46,6 +46,7 @@ interface ICoordinator {
                                  ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
+    error InvalidCommitment();
     error IntervalMismatch(uint32 deliveryInterval);
     error IntervalCompleted();
     error NodeRespondedAlready();
