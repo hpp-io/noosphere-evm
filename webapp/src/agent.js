@@ -105,6 +105,10 @@ async function main() {
     const routerContract = new ethers.Contract(ROUTER_ADDRESS, RouterArtifact.abi, provider);
 
     console.log(`   Router Address: ${ROUTER_ADDRESS}`);
+    const coordinatorId = ethers.encodeBytes32String("Coordinator_v1.0.0");
+    const coordinatorAddress = await routerContract.getContractById(coordinatorId);
+    console.log(`   Coordinator Address for routeId "Coordinator_v1.0.0" : ${coordinatorAddress}`);
+
 
 
     // --- Create a dedicated Wallet for the Node to receive payments ---

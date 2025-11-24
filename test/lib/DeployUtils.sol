@@ -9,6 +9,7 @@ import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatc
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
 import {MockToken} from "../mocks/MockToken.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title LibDeploy
 /// @notice Small deployment helpers used by tests to deploy and wire protocol contracts.
@@ -95,5 +96,10 @@ library DeployUtils {
         // Wire up remaining owner-only configurations
         contracts.router.setWalletFactory(address(contracts.walletFactory));
         contracts.immediateFinalizeVerifier.setTokenSupported(address(0), true);
+        contracts.coordinator.setSubscriptionBatchReader(address(contracts.reader));
+        require(
+            contracts.coordinator.getSubscriptionBatchReader() == address(contracts.reader),
+            "DeployUtils: Failed to set reader"
+        );
     }
 }
