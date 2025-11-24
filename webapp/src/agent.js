@@ -16,6 +16,9 @@ const RouterArtifact = require(path.join(projectRoot, 'out/Router.sol/Router.jso
 const WalletFactoryArtifact = require(path.join(projectRoot, 'out/WalletFactory.sol/WalletFactory.json'));
 const WalletArtifact = require(path.join(projectRoot, 'out/Wallet.sol/Wallet.json'));
 
+// Define a timeout for how long the agent will listen for events.
+const LISTEN_TIMEOUT_MS = 15 * 1000; // 30 seconds
+
 // Dynamically load a contract address from the latest deployment.
 function getLatestDeploymentAddress(contractName) {
     try {
@@ -77,6 +80,26 @@ function buildCommitment(sub, subscriptionId, interval, coordinator) {
     return new Commitment(commitmentParams);
 }
 
+// --- Graceful Shutdown ---
+
+// Store references for cleanup
+let provider;
+let coordinatorContract;
+let shutdownTimer;
+
+function shutdown(reason) {
+    console.log(`\n🤖 Node shutting down... (Reason: ${reason})`);
+    clearTimeout(shutdownTimer); // Prevent multiple shutdowns
+    if (coordinatorContract) {
+        console.log("   Removing all event listeners...");
+        coordinatorContract.removeAllListeners();
+    }
+    if (provider) {
+        console.log("   Destroying provider connection...");
+        provider.destroy();
+    }
+}
+
 async function main() {
     console.log("🤖 Node starting up...");
 
@@ -91,7 +114,7 @@ async function main() {
         process.exit(1);
     }
 
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    provider = new ethers.JsonRpcProvider(rpcUrl);
 
     if (!rpcUrl) {
         console.error("Error: RPC_URL is not set in the .env file.");
@@ -101,7 +124,7 @@ async function main() {
     const nodeSigner = await provider.getSigner(1);
     console.log(`   Node Signer (EOA): ${nodeSigner.address}`);
 
-    const coordinatorContract = new ethers.Contract(COORDINATOR_ADDRESS, CoordinatorArtifact.abi, nodeSigner);
+    coordinatorContract = new ethers.Contract(COORDINATOR_ADDRESS, CoordinatorArtifact.abi, nodeSigner);
     const routerContract = new ethers.Contract(ROUTER_ADDRESS, RouterArtifact.abi, provider);
 
     console.log(`   Router Address: ${ROUTER_ADDRESS}`);
@@ -132,6 +155,10 @@ async function main() {
     }
     const nodePaymentWalletAddress = ourWalletEvent.args.walletAddress;
     console.log(`   ✅ Node Payment Wallet created! Address: ${nodePaymentWalletAddress}`);
+
+    // Set a timer to automatically shut down the agent after a certain period.
+    shutdownTimer = setTimeout(() => shutdown('timeout'), LISTEN_TIMEOUT_MS);
+    console.log(`   Agent will automatically shut down in ${LISTEN_TIMEOUT_MS / 1000} seconds.`);
 
     console.log(`   Listening for 'RequestStarted' events on Coordinator at ${COORDINATOR_ADDRESS}...`);
 
@@ -285,3 +312,7 @@ main().catch((error) => {
     console.error("Node failed to start:", error);
     process.exit(1);
 });
+
+// Handle external shutdown signals (e.g., Ctrl+C or from concurrently)
+process.on('SIGTERM', () => shutdown('signal'));
+process.on('SIGINT', () => shutdown('signal'));
