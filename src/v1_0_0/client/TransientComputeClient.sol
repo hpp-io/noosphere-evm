@@ -11,7 +11,8 @@ import {ComputeClient} from "./ComputeClient.sol";
  * where the inputs for a computation are stored temporarily on-chain.
  */
 abstract contract TransientComputeClient is ComputeClient {
-    mapping(uint64 => mapping(uint32 => bytes)) _subscriptionInputs;
+    /// @dev Stores the inputs for each transient compute request, mapped by subscription ID and a unique interval.
+    mapping(uint64 => mapping(uint32 => bytes)) private _subscriptionInputs;
 
     /// @dev A counter to ensure a unique interval for each transient request within a subscription.
     mapping(uint64 => uint32) private _requestNonces;

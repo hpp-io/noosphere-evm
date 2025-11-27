@@ -180,3 +180,28 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         // --- End Wallet Setup ---
     }
 }
+
+contract ClientInputSecurityTest is ComputeTest {
+    function testCannotTamperTransientClientInputs() public {
+        // This selector points to a non-existent function.
+        bytes4 selector = bytes4(keccak256("setSubscriptionInputs(uint64,uint32,bytes)"));
+
+        // The call should fail because the function does not exist and there's no fallback
+        // in the client contract itself that would make it succeed.
+        // This confirms that an external user cannot call any function to change
+        // the private `_subscriptionInputs` mapping.
+        (bool success,) = address(transientClient).call(abi.encodeWithSelector(selector, 1, 1, "new-input"));
+        assertFalse(success, "External input modification should have failed");
+    }
+
+    function testCannotTamperScheduledClientInputs() public {
+        // This selector points to a non-existent function.
+        bytes4 selector = bytes4(keccak256("setSubscriptionInputs(bytes)"));
+
+        // The call should fail because the function does not exist.
+        // This confirms that an external user cannot call any function to change
+        // the private `_subscriptionInputs` state variable.
+        (bool success,) = address(ScheduledClient).call(abi.encodeWithSelector(selector, bytes("tampered-input")));
+        assertFalse(success, "External input modification should have failed");
+    }
+}
