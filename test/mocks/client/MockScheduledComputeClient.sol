@@ -10,13 +10,6 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 /// @notice Mocks ScheduledComputeClient.sol
 contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient, StdAssertions {
     /*//////////////////////////////////////////////////////////////
-                               CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Hard-coded container inputs
-    bytes public constant CONTAINER_INPUTS = bytes("CONTAINER_INPUTS");
-
-    /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
@@ -79,8 +72,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             verifier,
             creationTimestamp
         );
-
-        return _requestCompute(actualSubscriptionID, 1);
+        return _requestCompute(actualSubscriptionID, bytes("input"));
     }
 
     /// @notice Create new mock subscription without sending an initial request
@@ -164,15 +156,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         assertEq(actual.client, address(0)); // Assert client is nullified
 
         //        assertEq(actual.activeAt, expected);
-    }
-
-    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        pure
-        override
-        returns (bytes memory)
-    {
-        return CONTAINER_INPUTS;
     }
 
     /// @notice Overrides internal function, pushing received response to delivered outputs map
