@@ -57,15 +57,6 @@ contract MyTransientClient is TransientComputeClient, Delegator {
         return _requestCompute(subscriptionId, inputs);
     }
 
-    /// @notice A public function to request a compute job for an existing subscription.
-    /// @dev Wraps the internal `_requestCompute` function.
-    function MockDelegatorScheduledComputeClient(uint64 subscriptionId, bytes memory inputs)
-        external
-        returns (uint64, Commitment memory)
-    {
-        return _requestCompute(subscriptionId, inputs);
-    }
-
     /// @notice A public function to cancel a compute subscription.
     /// @dev Wraps the internal `_cancelComputeSubscription` function.
     function cancelSubscription(uint64 subscriptionId) external {
@@ -99,7 +90,7 @@ contract MyTransientClient is TransientComputeClient, Delegator {
 
     /// @notice Update new signer
     /// @param newSigner to update
-    function updateMockSigner(address newSigner) external {
+    function updateSigner(address newSigner) external {
         _updateSigner(newSigner);
     }
 
