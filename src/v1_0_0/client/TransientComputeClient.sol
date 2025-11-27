@@ -11,7 +11,7 @@ import {ComputeClient} from "./ComputeClient.sol";
  * where the inputs for a computation are stored temporarily on-chain.
  */
 abstract contract TransientComputeClient is ComputeClient {
-    mapping(uint64 => mapping(uint32 => bytes)) private subscriptionInputs;
+    mapping(uint64 => mapping(uint32 => bytes)) _subscriptionInputs;
 
     /// @dev A counter to ensure a unique interval for each transient request within a subscription.
     mapping(uint64 => uint32) private _requestNonces;
@@ -39,7 +39,7 @@ abstract contract TransientComputeClient is ComputeClient {
         // For transient subscriptions, the 'interval' field is used as a nonce to ensure request uniqueness,
         // rather than representing a time-based interval.
         uint32 interval = ++_requestNonces[subscriptionId];
-        subscriptionInputs[subscriptionId][interval] = inputs;
+        _subscriptionInputs[subscriptionId][interval] = inputs;
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }
@@ -51,6 +51,6 @@ abstract contract TransientComputeClient is ComputeClient {
         returns (bytes memory)
     {
         // Returns the inputs stored for a specific subscription and interval.
-        return subscriptionInputs[subscriptionId][interval];
+        return _subscriptionInputs[subscriptionId][interval];
     }
 }

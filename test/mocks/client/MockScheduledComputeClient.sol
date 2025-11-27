@@ -79,8 +79,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             verifier,
             creationTimestamp
         );
-
-        return _requestCompute(actualSubscriptionID, 1);
+        return _requestCompute(actualSubscriptionID, bytes("input"));
     }
 
     /// @notice Create new mock subscription without sending an initial request

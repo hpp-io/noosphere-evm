@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.4;
+pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
@@ -9,6 +9,7 @@ import {ComputeClient} from "./ComputeClient.sol";
  * @dev Abstract contract for interacting with the Noosphere Router to manage compute subscriptions.
  */
 abstract contract ScheduledComputeClient is ComputeClient {
+    bytes private _subscriptionInputs;
     bool private _computeRequested;
 
     error ComputeAlreadyRequested();
@@ -42,12 +43,13 @@ abstract contract ScheduledComputeClient is ComputeClient {
             );
     }
 
-    function _requestCompute(uint64 subscriptionId, uint32 interval) internal returns (uint64, Commitment memory) {
+    function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
         if (_computeRequested) {
             revert ComputeAlreadyRequested();
         }
+        _subscriptionInputs = inputs;
+        (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, 1);
         _computeRequested = true;
-        (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }
 }
