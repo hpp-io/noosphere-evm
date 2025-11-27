@@ -24,3 +24,8 @@ docs/
 
 # Lock file
 package-lock.json
+
+
+# benchmark
+webapp/src/benchmark/logs/
+.env-*
