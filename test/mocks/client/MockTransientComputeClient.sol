@@ -170,7 +170,6 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         assertEq(sub.feeAmount, feeAmount);
         assertEq(sub.wallet, wallet);
         assertEq(sub.verifier, verifier);
-        assertEq(subscriptionInputs[subId][interval], inputs);
     }
 
     /// @notice Overrides internal function, pushing received response to delivered outputs map
