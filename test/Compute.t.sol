@@ -12,6 +12,7 @@ import {Router} from "../src/v1_0_0/Router.sol";
 import {Test} from "forge-std/Test.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 
 /// @title ISubscriptionManagerErrors
 /// @notice Errors emitted by SubscriptionManager
@@ -123,10 +124,6 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() public virtual {
-        // Create mock protocol wallet
-        uint256 initialNonce = vm.getNonce(address(this));
-        address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
-
         // Initialize contracts
         DeployUtils.DeployedContracts memory contracts =
             DeployUtils.deployContracts(address(this), address(this), MOCK_PROTOCOL_FEE, address(erc20Token));
@@ -136,12 +133,13 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         walletFactory = contracts.walletFactory;
         erc20Token = contracts.mockToken;
 
-        protocolWalletAddress = walletFactory.createWallet(ownerProtocolWalletAddress);
+        // Configure contracts - pass address(this) as the protocol wallet owner
+        // DeployUtils will create a wallet for this address
+        DeployUtils.configureContracts(contracts, address(this), address(this), MOCK_PROTOCOL_FEE, address(erc20Token));
 
-        // Configure contracts
-        DeployUtils.configureContracts(
-            contracts, address(this), protocolWalletAddress, MOCK_PROTOCOL_FEE, address(erc20Token)
-        );
+        // Get the actual protocol wallet address from the billing config
+        BillingConfig memory config = COORDINATOR.getConfig();
+        protocolWalletAddress = config.protocolFeeRecipient;
 
         PROTOCOL = new MockProtocol(COORDINATOR);
 

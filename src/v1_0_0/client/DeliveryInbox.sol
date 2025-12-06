@@ -76,7 +76,30 @@ abstract contract DeliveryInbox {
         });
 
         emit DeliverySubmitted(requestId, node);
+
+        // Call virtual hook for custom processing
+        _receiveDelivery(requestId, node, subscriptionId, interval, input, output, proof);
     }
+
+    /// @notice Virtual hook called after a delivery is enqueued in the inbox.
+    /// @dev Override this function to add custom processing when deliveries arrive via DeliveryInbox.
+    ///      This is called after the delivery is stored, allowing derived contracts to track or process deliveries.
+    /// @param requestId Identifier for the request.
+    /// @param node Address of the node that submitted the delivery.
+    /// @param subscriptionId Subscription id.
+    /// @param interval Interval id.
+    /// @param input Input bytes.
+    /// @param output Output bytes.
+    /// @param proof Proof/metadata bytes.
+    function _receiveDelivery(
+        bytes32 requestId,
+        address node,
+        uint64 subscriptionId,
+        uint32 interval,
+        bytes calldata input,
+        bytes calldata output,
+        bytes calldata proof
+    ) internal virtual {}
 
     /// @notice Internal: clear stored pending delivery for (requestId, node).
     /// @dev If `removeFromIndex` = true, node will also be removed from index (O(n)).
@@ -163,14 +186,4 @@ abstract contract DeliveryInbox {
         _isNodeRegistered[requestId][node] = false;
         emit NodeRemoved(requestId, node);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                              NOTES & SAFETY
-    //////////////////////////////////////////////////////////////*/
-
-    // - Semantics: one (latest) PendingDelivery per (requestId, node). Duplicate submissions by same node -> overwrite.
-    // - Use getDelivery/hasDelivery/getNodesForRequest for inspection.
-    // - Removing a node from the index is O(n); avoid doing it frequently on-chain if node lists grow large.
-    // - Consider storing hashes of large payloads (output/proof) on-chain to save gas and putting full blobs off-chain (IPFS/Arweave).
-    // - _enqueuePendingDelivery is internal so authorization (who may call it) should be enforced by caller (e.g., only Coordinator/Router).
 }

@@ -48,20 +48,21 @@ contract SubscriptionBatchReader {
                                  READ HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Return a contiguous slice of ComputeSubscription structs (inclusive start, exclusive end).
-    /// @dev Reverts when endId <= startId.
+    /// @notice Return a contiguous slice of ComputeSubscription structs (inclusive start, inclusive end).
+    /// @dev Reverts when endId < startId.
     /// @param startId Inclusive start subscription id.
-    /// @param endId Exclusive end subscription id.
-    /// @return subscriptions Array of ComputeSubscription for ids in [startId, endId).
+    /// @param endId Inclusive end subscription id.
+    /// @return subscriptions Array of ComputeSubscription for ids in [startId, endId].
     function getSubscriptions(uint64 startId, uint64 endId)
         external
         view
         returns (ComputeSubscription[] memory subscriptions)
     {
-        uint256 len = uint256(endId - startId);
+        require(endId >= startId, "SubscriptionBatchReader: endId must be greater than or equal to startId");
+        uint256 len = uint256(endId - startId + 1);
         subscriptions = new ComputeSubscription[](len);
 
-        for (uint64 id = startId; id < endId; ++id) {
+        for (uint64 id = startId; id <= endId; ++id) {
             uint256 idx = uint256(id - startId);
             subscriptions[idx] = ROUTER.getComputeSubscription(id);
         }

@@ -24,6 +24,7 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 
 /// @title Delegatee compute integration tests (refactored)
 /// @notice Tests the delegated subscription flow and delegated delivery paths.
@@ -114,9 +115,14 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         userWalletAddr = walletFactory.createWallet(address(this));
         aliceWalletAddr = walletFactory.createWallet(address(this));
         bobWalletAddr = walletFactory.createWallet(address(this));
-        protocolWalletAddr = walletFactory.createWallet(ownerProtocolWalletAddress);
 
-        DeployUtils.configureContracts(contracts, address(this), protocolWalletAddr, MOCK_PROTOCOL_FEE, address(token));
+        // Configure contracts - pass address(this) as the protocol wallet owner
+        // DeployUtils will create a wallet for this address
+        DeployUtils.configureContracts(contracts, address(this), address(this), MOCK_PROTOCOL_FEE, address(token));
+
+        // Get the actual protocol wallet address from the billing config
+        BillingConfig memory config = coordinator.getConfig();
+        protocolWalletAddr = config.protocolFeeRecipient;
 
         // instantiate mocks used by tests
         protocolMock = new MockProtocol(Coordinator(address(contracts.coordinator)));

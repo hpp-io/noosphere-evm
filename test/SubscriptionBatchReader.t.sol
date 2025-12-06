@@ -59,7 +59,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         );
 
         // Read via `SubscriptionBatchReader ` and direct via `Router`
-        ComputeSubscription[] memory read = batchReader.getSubscriptions(subId, subId + 1);
+        ComputeSubscription[] memory read = batchReader.getSubscriptions(subId, subId);
         ComputeSubscription memory actual = ROUTER.getComputeSubscription(subId);
 
         // Assert batch length
@@ -124,7 +124,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         ROUTER.cancelComputeSubscription(4);
 
         // Read subscriptions
-        ComputeSubscription[] memory read = batchReader.getSubscriptions(1, 6);
+        ComputeSubscription[] memory read = batchReader.getSubscriptions(1, 5);
 
         // Assert batch length
         assertEq(read.length, 5);

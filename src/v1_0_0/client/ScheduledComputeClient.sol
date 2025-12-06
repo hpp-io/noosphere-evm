@@ -9,10 +9,10 @@ import {ComputeClient} from "./ComputeClient.sol";
  * @dev Abstract contract for interacting with the Noosphere Router to manage compute subscriptions.
  */
 abstract contract ScheduledComputeClient is ComputeClient {
-    /// @dev Stores the inputs for the compute subscription.
-    bytes private _subscriptionInputs;
-    /// @dev Flag to prevent multiple compute requests for a single subscription.
-    bool private _computeRequested;
+    /// @dev Stores the inputs for each compute subscription, keyed by subscriptionId.
+    mapping(uint64 => bytes) private _subscriptionInputs;
+    /// @dev Flags to prevent multiple compute requests for a single subscription, keyed by subscriptionId.
+    mapping(uint64 => bool) private _computeRequested;
 
     error ComputeAlreadyRequested();
 
@@ -46,12 +46,12 @@ abstract contract ScheduledComputeClient is ComputeClient {
     }
 
     function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {
-        if (_computeRequested) {
+        if (_computeRequested[subscriptionId]) {
             revert ComputeAlreadyRequested();
         }
-        _subscriptionInputs = inputs;
+        _subscriptionInputs[subscriptionId] = inputs;
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, 1);
-        _computeRequested = true;
+        _computeRequested[subscriptionId] = true;
         return (subscriptionId, commitment);
     }
 
@@ -61,6 +61,6 @@ abstract contract ScheduledComputeClient is ComputeClient {
         override
         returns (bytes memory)
     {
-        return _subscriptionInputs;
+        return _subscriptionInputs[subscriptionId];
     }
 }

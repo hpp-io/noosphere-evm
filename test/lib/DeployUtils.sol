@@ -8,6 +8,7 @@ import {Router} from "../../src/v1_0_0/Router.sol";
 import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
+import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
 import {MockToken} from "../mocks/MockToken.sol";
 import {console} from "forge-std/console.sol";
 
@@ -72,12 +73,19 @@ library DeployUtils {
         address tokenAddr
     ) internal {
         // --- CONFIGURATION (as owner) ---
+        // Wire up the Router's WalletFactory first (required for createWallet)
+        contracts.router.setWalletFactory(address(contracts.walletFactory));
+
+        // Create a protocol wallet from WalletFactory for the fee recipient
+        // This ensures the protocolFeeRecipient is a valid wallet for tick fee payments
+        address protocolWallet = contracts.walletFactory.createWallet(initialFeeRecipient);
+
         // Initialize the Coordinator's billing configuration.
         contracts.coordinator
             .initialize(
                 BillingConfig({
                     verificationTimeout: 1 weeks,
-                    protocolFeeRecipient: initialFeeRecipient,
+                    protocolFeeRecipient: protocolWallet,
                     protocolFee: initialFee,
                     tickNodeFee: 0,
                     tickNodeFeeToken: tokenAddr
@@ -94,7 +102,6 @@ library DeployUtils {
         contracts.router.updateContracts();
 
         // Wire up remaining owner-only configurations
-        contracts.router.setWalletFactory(address(contracts.walletFactory));
         contracts.immediateFinalizeVerifier.setTokenSupported(address(0), true);
         contracts.coordinator.setSubscriptionBatchReader(address(contracts.reader));
         require(
