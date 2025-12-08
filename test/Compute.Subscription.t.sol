@@ -5,6 +5,7 @@ import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
+import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 
 contract ComputeSubscriptionTest is ComputeTest {
     event SubscriptionCreated(uint64 indexed subscriptionId);
@@ -228,5 +229,157 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.prank(address(alice));
         vm.expectRevert(bytes("Only callable by client"));
         ROUTER.setMinRepeatInterval(newMinInterval);
+    }
+
+    /// @notice Owner can cancel subscription with no pending commitments
+    function test_Succeeds_When_OwnerCancelsSubscriptionWithoutCommitments() public {
+        // Create subscription
+        vm.warp(0);
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+        // Move to interval 2 without creating any commitments
+        vm.warp(20 minutes);
+
+        // Owner should be able to cancel
+        vm.expectEmit(address(ROUTER));
+        emit ISubscriptionsManager.SubscriptionCancelled(subId);
+        vm.prank(address(this)); // Owner is address(this)
+        ROUTER.ownerCancelSubscription(subId);
+    }
+
+    /// @notice Owner can cancel subscription and clean up past interval commitments
+    function test_Succeeds_When_OwnerCancelsSubscriptionWithPastCommitments() public {
+        // Create subscription with payment
+        vm.warp(0);
+        uint256 feeAmount = 10e6;
+
+        // Fund and approve wallet
+        vm.deal(userWalletAddress, 1 ether);
+        vm.prank(address(this));
+        Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
+
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+        );
+
+        // Create commitment for interval 1
+        (, Commitment memory commitment1) = ScheduledClient.sendRequest(subId, 1);
+        bytes32 requestId1 = commitment1.requestId;
+
+        // Move to interval 2 and create commitment
+        vm.warp(10 minutes);
+        (, Commitment memory commitment2) = ScheduledClient.sendRequest(subId, 2);
+        bytes32 requestId2 = commitment2.requestId;
+
+        // Move to interval 3 without creating commitment
+        vm.warp(20 minutes);
+
+        // Verify that interval 1 and 2 have locked funds
+        uint256 lockedInterval1Before = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId1);
+        uint256 lockedInterval2Before = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId2);
+        assertEq(lockedInterval1Before, feeAmount, "Interval 1 should have locked funds");
+        assertEq(lockedInterval2Before, feeAmount, "Interval 2 should have locked funds");
+
+        // Owner cancels subscription - should clean up interval 1 and 2
+        vm.expectEmit(address(ROUTER));
+        emit ISubscriptionsManager.SubscriptionCancelled(subId);
+        vm.prank(address(this));
+        ROUTER.ownerCancelSubscription(subId);
+
+        // Verify that all past commitments are cleaned up
+        uint256 lockedInterval1After = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId1);
+        uint256 lockedInterval2After = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId2);
+        assertEq(lockedInterval1After, 0, "Interval 1 funds should be released");
+        assertEq(lockedInterval2After, 0, "Interval 2 funds should be released");
+    }
+
+    /// @notice Owner can cancel subscription even with current interval commitment
+    function test_Succeeds_When_OwnerCancelsSubscriptionWithCurrentCommitment() public {
+        // Create subscription with payment
+        vm.warp(0);
+        uint256 feeAmount = 10e6;
+
+        // Fund and approve wallet
+        vm.deal(userWalletAddress, 1 ether);
+        vm.prank(address(this));
+        Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
+
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+        );
+        bytes32 requestId1 = commitment1.requestId;
+
+        // Verify current interval has locked funds
+        uint256 lockedBefore = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId1);
+        assertEq(lockedBefore, feeAmount, "Current interval should have locked funds");
+
+        // Owner cancels - should clean up current interval commitment
+        vm.expectEmit(address(ROUTER));
+        emit ISubscriptionsManager.SubscriptionCancelled(subId);
+        vm.prank(address(this));
+        ROUTER.ownerCancelSubscription(subId);
+
+        // Verify commitment is cleaned up
+        uint256 lockedAfter = Wallet(payable(userWalletAddress)).lockedOfRequest(requestId1);
+        assertEq(lockedAfter, 0, "Current interval funds should be released");
+    }
+
+    /// @notice Owner cancel cleans up multiple past intervals efficiently
+    function test_Succeeds_When_OwnerCancelsSubscriptionWithManyPastCommitments() public {
+        // Create subscription with 5 intervals
+        vm.warp(0);
+        uint256 feeAmount = 10e6;
+
+        // Fund and approve wallet for 5 intervals
+        vm.deal(userWalletAddress, 1 ether);
+        vm.prank(address(this));
+        Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 5);
+
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 5, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+        );
+
+        // Create commitments for intervals 1-4
+        bytes32[] memory requestIds = new bytes32[](4);
+        for (uint32 i = 1; i <= 4; i++) {
+            vm.warp((i - 1) * 10 minutes);
+            (, Commitment memory commitment) = ScheduledClient.sendRequest(subId, i);
+            requestIds[i - 1] = commitment.requestId;
+        }
+
+        // Move to interval 5
+        vm.warp(40 minutes);
+
+        // Verify all 4 intervals have locked funds
+        for (uint32 i = 0; i < 4; i++) {
+            uint256 locked = Wallet(payable(userWalletAddress)).lockedOfRequest(requestIds[i]);
+            assertEq(locked, feeAmount, string(abi.encodePacked("Interval ", i + 1, " should have locked funds")));
+        }
+
+        // Owner cancels - should clean up all 4 past intervals
+        vm.prank(address(this));
+        ROUTER.ownerCancelSubscription(subId);
+
+        // Verify all commitments are cleaned up
+        for (uint32 i = 0; i < 4; i++) {
+            uint256 locked = Wallet(payable(userWalletAddress)).lockedOfRequest(requestIds[i]);
+            assertEq(locked, 0, string(abi.encodePacked("Interval ", i + 1, " funds should be released")));
+        }
+    }
+
+    /// @notice Non-owner cannot call ownerCancelSubscription
+    function test_RevertIf_NonOwnerCallsOwnerCancelSubscription() public {
+        // Create subscription
+        vm.warp(0);
+        uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
+            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+        );
+
+        // Non-owner tries to cancel
+        vm.prank(address(alice));
+        vm.expectRevert(bytes("Only callable by client"));
+        ROUTER.ownerCancelSubscription(subId);
     }
 }

@@ -536,6 +536,15 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
     function ownerCancelSubscription(uint64 subscriptionId) external {
         _onlyRouterOwner();
+
+        // Clean up all past interval commitments before deletion
+        uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
+        if (currentInterval > 1) {
+            // Timeout all intervals up to currentInterval - 1
+            // Use max uint32 for maxIter to process all intervals
+            this.timeoutSubscriptionIntervalsUpTo(subscriptionId, currentInterval - 1, type(uint32).max);
+        }
+
         _cancelSubscriptionHelper(subscriptionId);
     }
 
