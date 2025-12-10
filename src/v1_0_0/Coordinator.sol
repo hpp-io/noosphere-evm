@@ -198,7 +198,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             revert InvalidCommitment();
         }
         // Verify the delivery interval. For recurring subscriptions, it must match the current calculated interval.
-        // For one-shot subscriptions (`interval` is `type(uint32).max`), it must match the interval stored in the commitment.
+        // For transient subscriptions (`interval` is `type(uint32).max`), it must match the interval stored in the commitment.
         uint32 interval = _getRouter().getComputeSubscriptionInterval(commitment.subscriptionId);
         if (
             (interval != type(uint32).max && interval != deliveryInterval)

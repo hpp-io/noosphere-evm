@@ -445,6 +445,10 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return walletFactory;
     }
 
+    function _getCoordinatorByRouteId(bytes32 routeId) internal view override returns (address) {
+        return getContractById(routeId);
+    }
+
     /*//////////////////////////////////////////////////////////////
                        INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/

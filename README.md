@@ -12,7 +12,7 @@ into your smart contracts.
 
 ## Features
 
-- **Request off-chain compute** from EVM contracts (one-shot or recurring).
+- **Request off-chain compute** from EVM contracts (transient or recurring).
 - **Receive results on-chain** with proof and delivery metadata.
 - **Subscription lifecycle** management (create, cancel).
 - **Billing & escrow** primitives for payments and fee settlement.
@@ -38,12 +38,12 @@ into your smart contracts.
 
 ## Highlights
 
-- Support for **one-shot (transient)** and **recurring (scheduled)** off-chain compute requests.
+- Support for **transient** and **recurring (scheduled)** off-chain compute requests.
 - Commitment-based request lifecycle: create request → off-chain fulfill → on-chain delivery.
 - Billing and escrow primitives for payment/settlement management.
 - Developer-facing base contracts:
     - `ScheduledComputeClient` — for recurring subscriptions
-    - `TransientComputeClient` — for one-shot callback jobs
+    - `TransientComputeClient` — for transient callback jobs
     - `ComputeClient` — shared base utilities
 
 ---
@@ -145,12 +145,12 @@ contract MyScheduler is ScheduledComputeClient {
 }
 ```
 
-### Transient (one-shot) example
+### Transient example
 
 ```solidity
 import {TransientComputeClient} from "src/v1_0_0/TransientComputeClient.sol";
 
-contract MyOneShotClient is TransientComputeClient {
+contract MyTransientClient is TransientComputeClient {
     constructor(address router) TransientComputeClient(router) {}
 }
 ```

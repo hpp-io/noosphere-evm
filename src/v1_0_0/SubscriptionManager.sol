@@ -14,6 +14,7 @@ import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.s
 import {Delegator} from "./utility/Delegator.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ComputeClient} from "./client/ComputeClient.sol";
+import {ICoordinator} from "./interfaces/ICoordinator.sol";
 
 abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -207,9 +208,18 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         if (subscriptions[subscriptionId].client != msg.sender) {
             revert NotSubscriptionOwner();
         }
-        if (_pendingRequestExists(subscriptionId)) {
-            revert CannotRemoveWithPendingRequests();
+
+        // Clean up all past interval commitments before deletion
+        uint32 currentInterval = _getSubscriptionInterval(subscriptionId);
+        // For recurring subscriptions (intervalSeconds > 0), clean up past intervals
+        // For transient subscriptions (intervalSeconds == 0), currentInterval is type(uint32).max,
+        // so we only clean up the current interval in _cancelSubscriptionHelper
+        if (currentInterval > 1 && currentInterval != type(uint32).max) {
+            // Timeout all intervals up to currentInterval - 1
+            // Use max uint32 for maxIter to process all intervals
+            this.timeoutSubscriptionIntervalsUpTo(subscriptionId, currentInterval - 1, type(uint32).max);
         }
+
         _cancelSubscriptionHelper(subscriptionId);
     }
 
@@ -256,6 +266,13 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                 if (timeoutable) {
                     consumer.releaseForRequest(rid);
                     delete requestCommitments[rid];
+
+                    // Clean up Coordinator state
+                    address coordinatorAddr = _getCoordinatorByRouteId(sub.routeId);
+                    if (coordinatorAddr != address(0)) {
+                        try ICoordinator(coordinatorAddr).cancelRequest(rid) {} catch {}
+                    }
+
                     emit CommitmentTimedOut(rid, subscriptionId, i);
                 }
                 unchecked {
@@ -513,7 +530,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         bool timeoutable;
         if (sub.intervalSeconds == 0) {
-            // one-shot: activeAt passed => timeout allowed
+            // transient: activeAt passed => timeout allowed
             timeoutable = uint32(block.timestamp) >= sub.activeAt;
         } else {
             // recurring: only if this interval is already in the past
@@ -560,6 +577,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
     /// @dev Abstract function to be implemented by child contracts to provide the WalletFactory instance.
     function _getWalletFactory() internal view virtual returns (WalletFactory);
+
+    /// @dev Abstract function to be implemented by child contracts to get coordinator address by route ID.
+    function _getCoordinatorByRouteId(bytes32 routeId) internal view virtual returns (address);
 
     /// @dev Overriden in FunctionsRouter.sol
     function _whenNotPaused() internal virtual;
