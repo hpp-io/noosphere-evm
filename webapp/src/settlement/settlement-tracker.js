@@ -19,6 +19,7 @@ const projectRoot = path.resolve(__dirname, '../../..');
 // Import contract artifacts
 const RouterArtifact = require(path.join(projectRoot, 'out/Router.sol/Router.json'));
 const CoordinatorArtifact = require(path.join(projectRoot, 'out/Coordinator.sol/Coordinator.json'));
+const WalletArtifact = require(path.join(projectRoot, 'out/Wallet.sol/Wallet.json'));
 
 // Request status enum
 const RequestStatus = {
@@ -144,6 +145,8 @@ class SettlementTracker {
         this.coordinator = new ethers.Contract(coordinatorAddress, CoordinatorArtifact.abi, provider);
         this.settlements = new Map(); // requestId => SettlementRecord
         this.subscriptions = new Map(); // subscriptionId => SubscriptionSummary
+        this.protocolFeeRecipient = null; // Will be loaded from config
+        this.walletContracts = new Map(); // walletAddress => Wallet contract instance
     }
 
     /**
@@ -259,12 +262,13 @@ class SettlementTracker {
             settlement.agentWallets.push(nodeWallet);
         }
 
-        // Store agent transaction hash
-        settlement.agentTxHashes[nodeWallet] = event.transactionHash;
+        // Store agent transaction hash and gas fee with lowercase key for consistency
+        const walletKey = nodeWallet.toLowerCase();
+        settlement.agentTxHashes[walletKey] = event.transactionHash;
 
         // Get gas fee for agent delivery
         const gasFee = await this.getGasFee(event.transactionHash);
-        settlement.agentGasFees[nodeWallet] = gasFee;
+        settlement.agentGasFees[walletKey] = gasFee;
 
         settlement.status = RequestStatus.DELIVERING;
 
@@ -308,27 +312,105 @@ class SettlementTracker {
     async processPaymentMade(event) {
         const args = event.args;
         const subscriptionId = args.subscriptionId.toString();
+        const recipient = args.recipient.toLowerCase();
+        const amount = args.amount;
+        const spenderWallet = args.spenderWallet.toLowerCase();
 
-        // Find settlement record by subscriptionId (need to iterate)
+        // Find the most recent settlement for this subscription
+        // (PaymentMade events don't include interval, so we match by subscription and spender wallet)
+        let matchedSettlement = null;
+        let latestBlockNumber = 0;
+
         for (const [requestId, settlement] of this.settlements.entries()) {
-            if (settlement.subscriptionId === subscriptionId) {
-                const recipient = args.recipient;
-                const amount = args.amount;
-
-                // Track payments by recipient
-                if (settlement.agentWallets.includes(recipient)) {
-                    settlement.agentPayments[recipient] = (settlement.agentPayments[recipient] || 0n) + amount;
-                } else if (recipient !== settlement.clientWallet) {
-                    // Assume protocol or verifier fee
-                    settlement.protocolFee += amount;
-                }
-
-                settlement.totalPaid += amount;
-
-                console.log(`[PaymentMade] subscriptionId: ${subscriptionId}, recipient: ${recipient}, amount: ${ethers.formatEther(amount)}`);
-                break;
+            if (settlement.subscriptionId === subscriptionId &&
+                settlement.clientWallet &&
+                settlement.clientWallet.toLowerCase() === spenderWallet &&
+                settlement.blockNumber >= latestBlockNumber) {
+                matchedSettlement = settlement;
+                latestBlockNumber = settlement.blockNumber;
             }
         }
+
+        if (matchedSettlement) {
+            // Classify payment by recipient
+            if (matchedSettlement.agentWallets.map(w => w.toLowerCase()).includes(recipient)) {
+                // Payment to agent
+                matchedSettlement.agentPayments[recipient] = (matchedSettlement.agentPayments[recipient] || 0n) + amount;
+            } else if (this.protocolFeeRecipient && recipient === this.protocolFeeRecipient) {
+                // Payment to protocol
+                matchedSettlement.protocolFee += amount;
+            } else if (matchedSettlement.verifier && recipient.toLowerCase() === matchedSettlement.verifier.toLowerCase()) {
+                // Payment to verifier
+                matchedSettlement.verifierFee += amount;
+            } else {
+                // Unknown recipient - log warning
+                console.warn(`⚠️  [PaymentMade] Unknown recipient ${recipient} for subscriptionId ${subscriptionId}`);
+            }
+
+            matchedSettlement.totalPaid += amount;
+
+            console.log(`[PaymentMade] subscriptionId: ${subscriptionId}, recipient: ${recipient}, amount: ${ethers.formatEther(amount)}`);
+        } else {
+            console.warn(`⚠️  [PaymentMade] No matching settlement found for subscriptionId ${subscriptionId}, spenderWallet ${spenderWallet}`);
+        }
+    }
+
+    /**
+     * Process Wallet RequestDisbursed event (fulfill payments)
+     */
+    async processRequestDisbursed(event) {
+        const args = event.args;
+        const requestId = args.requestId;
+        const recipient = args.to.toLowerCase();
+        const amount = args.amount;
+        const token = args.token;
+        const walletAddress = event.address; // The contract address is the wallet address
+        const txHash = event.transactionHash;
+
+        const settlement = this.settlements.get(requestId);
+        if (!settlement) {
+            console.warn(`⚠️  [RequestDisbursed] No settlement found for requestId ${requestId.slice(0, 10)}...`);
+            return;
+        }
+
+        // Check for duplicates (same tx+recipient combination)
+        if (!settlement.processedDisbursements) {
+            settlement.processedDisbursements = new Set();
+        }
+        const disbursementKey = `${txHash}-${recipient}`;
+        if (settlement.processedDisbursements.has(disbursementKey)) {
+            return; // Skip duplicate
+        }
+        settlement.processedDisbursements.add(disbursementKey);
+
+        // Update settlement with wallet address if not already set
+        if (!settlement.clientWallet || settlement.clientWallet === '0x0000000000000000000000000000000000000000') {
+            settlement.clientWallet = walletAddress;
+            // Also update subscription wallet if needed
+            const subscription = this.subscriptions.get(settlement.subscriptionId);
+            if (subscription && (!subscription.wallet || subscription.wallet === '0x0000000000000000000000000000000000000000')) {
+                subscription.wallet = walletAddress;
+            }
+        }
+
+        // Classify payment by recipient
+        if (settlement.agentWallets.map(w => w.toLowerCase()).includes(recipient)) {
+            // Payment to agent
+            settlement.agentPayments[recipient] = (settlement.agentPayments[recipient] || 0n) + amount;
+        } else if (this.protocolFeeRecipient && recipient === this.protocolFeeRecipient) {
+            // Payment to protocol
+            settlement.protocolFee += amount;
+        } else if (settlement.verifier && recipient.toLowerCase() === settlement.verifier.toLowerCase()) {
+            // Payment to verifier
+            settlement.verifierFee += amount;
+        } else {
+            // Unknown recipient - log warning
+            console.warn(`⚠️  [RequestDisbursed] Unknown recipient ${recipient} for requestId ${requestId.slice(0, 10)}...`);
+        }
+
+        settlement.totalPaid += amount;
+
+        console.log(`[RequestDisbursed] requestId: ${requestId.slice(0, 10)}..., recipient: ${recipient}, amount: ${ethers.formatEther(amount)} (${amount.toString()} wei)`);
     }
 
     /**
@@ -339,7 +421,8 @@ class SettlementTracker {
         const requestId = args.requestId;
         const settlement = this.getSettlement(requestId);
 
-        settlement.clientWallet = args.nodeWallet; // This is actually from commitment
+        // Don't set clientWallet here - it should be set from RequestDisbursed event
+        // args.nodeWallet is the agent wallet, not the client wallet
         settlement.status = RequestStatus.COMPLETED;
 
         // Update agent payment info if not already set
@@ -486,6 +569,40 @@ class SettlementTracker {
             }
         }
 
+        // Fetch Wallet RequestDisbursed events
+        // We need to query RequestDisbursed events globally because some wallets
+        // may not be in our subscription list (if subscription was cancelled)
+        console.log('\nFetching Wallet RequestDisbursed events...');
+
+        // Create a filter for RequestDisbursed events without specifying wallet address
+        // This will search across all contracts
+        const requestDisbursedTopic = ethers.id("RequestDisbursed(bytes32,address,address,uint256,uint16)");
+        const logs = await this.provider.getLogs({
+            fromBlock: startBlock,
+            toBlock: endBlock,
+            topics: [requestDisbursedTopic]
+        });
+
+        console.log(`  Found ${logs.length} RequestDisbursed events across all wallets`);
+
+        // Parse and process each log
+        const iface = new ethers.Interface(WalletArtifact.abi);
+        for (const log of logs) {
+            try {
+                const parsedLog = iface.parseLog(log);
+                // Create an event-like object
+                const event = {
+                    address: log.address,
+                    args: parsedLog.args,
+                    blockNumber: log.blockNumber,
+                    transactionHash: log.transactionHash
+                };
+                await this.processRequestDisbursed(event);
+            } catch (e) {
+                console.warn(`⚠️  Failed to parse RequestDisbursed log: ${e.message}`);
+            }
+        }
+
         console.log(`\n=== Event Scan Complete ===`);
         console.log(`Total settlement records: ${this.settlements.size}`);
 
@@ -517,17 +634,17 @@ class SettlementTracker {
             'Timestamp',
             'BlockNumber',
             'ClientWallet',
-            'ClientFeeAmount',
+            'ClientFeeAmount (Gwei)',
             'ClientGasFee (Gwei)',
             'ClientTxHash',
             'AgentWallets',
-            'AgentPayments',
-            'AgentGasFees (Gwei)',
-            'ProtocolFee',
-            'VerifierFee',
-            'TotalPaid',
-            'VerificationLocked',
-            'VerificationUnlocked',
+            'AgentPayment (Gwei)',
+            'AgentGasFee (Gwei)',
+            'ProtocolFee (Gwei)',
+            'VerifierFee (Gwei)',
+            'TotalPaid (Gwei)',
+            'VerificationLocked (Gwei)',
+            'VerificationUnlocked (Gwei)',
             'DeliveryCount',
             'Redundancy',
             'FeeToken',
@@ -541,12 +658,17 @@ class SettlementTracker {
         for (const [requestId, settlement] of this.settlements.entries()) {
             // Aggregate agent data
             const agentWalletsStr = settlement.agentWallets.join('; ');
-            const agentPaymentsStr = settlement.agentWallets
-                .map(wallet => `${wallet}: ${ethers.formatEther(settlement.agentPayments[wallet] || 0n)}`)
-                .join('; ');
-            const agentGasFeesStr = settlement.agentWallets
-                .map(wallet => `${wallet}: ${ethers.formatUnits(settlement.agentGasFees[wallet] || 0n, 'gwei')}`)
-                .join('; ');
+
+            // Calculate total agent payments and gas fees (sum across all agents)
+            let totalAgentPayment = 0n;
+            let totalAgentGasFee = 0n;
+            for (const wallet of settlement.agentWallets) {
+                const walletKey = wallet.toLowerCase();
+                totalAgentPayment += settlement.agentPayments[walletKey] || 0n;
+                totalAgentGasFee += settlement.agentGasFees[walletKey] || 0n;
+            }
+            const agentPaymentsStr = ethers.formatUnits(totalAgentPayment, 'gwei');
+            const agentGasFeesStr = ethers.formatUnits(totalAgentGasFee, 'gwei');
 
             const row = [
                 requestId,
@@ -557,17 +679,17 @@ class SettlementTracker {
                 settlement.timestamp ? new Date(settlement.timestamp * 1000).toISOString() : '',
                 settlement.blockNumber || '',
                 settlement.clientWallet || '',
-                settlement.clientFeeAmount ? ethers.formatEther(settlement.clientFeeAmount) : '0',
+                settlement.clientFeeAmount ? ethers.formatUnits(settlement.clientFeeAmount, 'gwei') : '0',
                 ethers.formatUnits(settlement.clientGasFee, 'gwei'),
                 settlement.clientTxHash || '',
                 agentWalletsStr,
                 agentPaymentsStr,
                 agentGasFeesStr,
-                ethers.formatEther(settlement.protocolFee),
-                ethers.formatEther(settlement.verifierFee),
-                ethers.formatEther(settlement.totalPaid),
-                ethers.formatEther(settlement.verificationLocked),
-                ethers.formatEther(settlement.verificationUnlocked),
+                ethers.formatUnits(settlement.protocolFee, 'gwei'),
+                ethers.formatUnits(settlement.verifierFee, 'gwei'),
+                ethers.formatUnits(settlement.totalPaid, 'gwei'),
+                ethers.formatUnits(settlement.verificationLocked, 'gwei'),
+                ethers.formatUnits(settlement.verificationUnlocked, 'gwei'),
                 settlement.deliveryCount,
                 settlement.redundancy || '',
                 settlement.feeToken || '',
@@ -699,8 +821,9 @@ class SettlementTracker {
             totalClientGas += settlement.clientGasFee;
 
             for (const agentWallet of settlement.agentWallets) {
-                totalAgentPayments += settlement.agentPayments[agentWallet] || 0n;
-                totalAgentGas += settlement.agentGasFees[agentWallet] || 0n;
+                const walletKey = agentWallet.toLowerCase();
+                totalAgentPayments += settlement.agentPayments[walletKey] || 0n;
+                totalAgentGas += settlement.agentGasFees[walletKey] || 0n;
             }
         }
 
@@ -710,10 +833,10 @@ class SettlementTracker {
             console.log(`  ${status}: ${count}`);
         }
 
-        console.log(`\nFinancial Summary (in ETH):`);
-        console.log(`  Total Client Fees: ${ethers.formatEther(totalClientFees)}`);
-        console.log(`  Total Agent Payments: ${ethers.formatEther(totalAgentPayments)}`);
-        console.log(`  Total Protocol Fees: ${ethers.formatEther(totalProtocolFees)}`);
+        console.log(`\nFinancial Summary:`);
+        console.log(`  Total Client Fees: ${ethers.formatEther(totalClientFees)} ETH (${totalClientFees.toString()} wei)`);
+        console.log(`  Total Agent Payments: ${ethers.formatEther(totalAgentPayments)} ETH (${totalAgentPayments.toString()} wei)`);
+        console.log(`  Total Protocol Fees: ${ethers.formatEther(totalProtocolFees)} ETH (${totalProtocolFees.toString()} wei)`);
         console.log(`\nGas Summary (in Gwei):`);
         console.log(`  Total Client Gas: ${ethers.formatUnits(totalClientGas, 'gwei')}`);
         console.log(`  Total Agent Gas: ${ethers.formatUnits(totalAgentGas, 'gwei')}`);
@@ -802,6 +925,15 @@ async function main() {
 
     // Initialize tracker
     const tracker = new SettlementTracker(provider, routerAddress, coordinatorAddress);
+
+    // Load protocol fee recipient from coordinator
+    try {
+        const config = await tracker.coordinator.getConfig();
+        tracker.protocolFeeRecipient = config.protocolFeeRecipient.toLowerCase();
+        console.log(`✅ Loaded protocolFeeRecipient: ${tracker.protocolFeeRecipient}\n`);
+    } catch (e) {
+        console.warn(`⚠️  Warning: Could not load protocolFeeRecipient: ${e.message}\n`);
+    }
 
     // Scan events
     await tracker.scanEvents(startBlock, endBlock);
