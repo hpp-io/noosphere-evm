@@ -315,15 +315,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return _hasSubscriptionNextInterval(subscriptionId, currentInterval);
     }
 
-    function createSubscriptionDelegatee(
-        uint32 nonce,
-        uint32 expiry,
-        ComputeSubscription calldata sub,
-        bytes calldata signature
-    ) public override(IRouter, SubscriptionsManager) returns (uint64) {
-        return super.createSubscriptionDelegatee(nonce, expiry, sub, signature);
-    }
-
     /**
      * @inheritdoc IRouter
      */

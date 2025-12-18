@@ -106,6 +106,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         address verifier,
         bytes32 routeId
     ) external virtual override returns (uint64) {
+        _whenNotPaused();
         if (_getWalletFactory().isValidWallet(wallet) == false) {
             revert InvalidWallet();
         }
@@ -139,6 +140,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
      * @return The ID of the newly created subscription.
      */
     function createSubscriptionFor(ComputeSubscription calldata sub) public virtual returns (uint64) {
+        _whenNotPaused();
         uint64 subscriptionId = ++currentSubscriptionId;
         subscriptions[subscriptionId] = sub;
         emit SubscriptionCreated(subscriptionId);
@@ -154,7 +156,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint32 expiry,
         ComputeSubscription calldata sub,
         bytes calldata signature
-    ) public virtual returns (uint64) {
+    ) public override returns (uint64) {
+        _whenNotPaused();
         // Check if this delegated subscription has already been created.
         bytes32 key = keccak256(abi.encodePacked(sub.client, nonce));
         uint64 subscriptionId = delegateCreatedIds[key];
@@ -202,6 +205,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function cancelComputeSubscription(uint64 subscriptionId) external override {
+        _whenNotPaused();
         if (subscriptions[subscriptionId].client == address(0)) {
             revert SubscriptionNotFound();
         }
@@ -232,6 +236,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @notice Batch timeout up to `uptoInterval` for a subscription; bounded by `maxIter`.
     /// @dev Uses Wallet.releaseForRequest for each timed-out request. Optimized to reduce SLOAD/SSTORE in loops.
     function timeoutSubscriptionIntervalsUpTo(uint64 subscriptionId, uint32 uptoInterval, uint32 maxIter) external {
+        _whenNotPaused();
         // Load subscription once (storage) and some hot fields into locals
         ComputeSubscription storage sub = subscriptions[subscriptionId];
         uint32 currentInterval = _getSubscriptionInterval(subscriptionId);

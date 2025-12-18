@@ -107,21 +107,6 @@ interface IRouter {
     /*//////////////////////////////////////////////////////////////////////////
                            SUBSCRIPTION MANAGEMENT
     //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Create a subscription on behalf of a client via EIP-712 delegated signature.
-    /// @dev Validates the provided signature and, if accepted, creates or returns an existing subscription id.
-    /// @param nonce Subscriber-supplied nonce (used to prevent replay).
-    /// @param expiry Signature expiry timestamp.
-    /// @param sub ComputeSubscription payload describing subscription parameters.
-    /// @param signature EIP-712 encoded signature authorizing the creation.
-    /// @return subscriptionId The id of the created (or existing) subscription.
-    function createSubscriptionDelegatee(
-        uint32 nonce,
-        uint32 expiry,
-        ComputeSubscription calldata sub,
-        bytes calldata signature
-    ) external returns (uint64 subscriptionId);
-
     /// @notice Returns the last subscription id issued by the Router.
     /// @return lastId The most recently created subscription identifier.
     function getLastSubscriptionId() external view returns (uint64 lastId);
