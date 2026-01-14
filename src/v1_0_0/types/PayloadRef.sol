@@ -14,6 +14,17 @@ enum PayloadScheme {
 }
 
 /**
+ * @title InputType
+ * @notice Input data type returned by getComputeInputsWithType()
+ * @dev Used by Agent to determine how to process the input data
+ */
+enum InputType {
+    RAW_DATA,    // 0: Raw inline data (<1KB)
+    URI_STRING,  // 1: URI string ("ipfs://...", "ar://...", etc.)
+    PAYLOAD_REF  // 2: PayloadRef (65 bytes encoded)
+}
+
+/**
  * @title PayloadRef
  * @notice 65-byte compact structure for referencing off-chain payload data
  * @dev Replaces variable-size bytes with fixed-size reference to reduce gas costs

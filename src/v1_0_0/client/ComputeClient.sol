@@ -5,7 +5,7 @@ import {Routable} from "../utility/Routable.sol";
 import {DeliveryInbox} from "./DeliveryInbox.sol";
 import {Commitment} from "../types/Commitment.sol";
 import {RequestIdUtils} from "../utility/RequestIdUtils.sol";
-import {PayloadRef} from "../types/PayloadRef.sol";
+import {PayloadRef, InputType} from "../types/PayloadRef.sol";
 
 /**
  * @title ComputeClient
@@ -87,11 +87,24 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         }
     }
 
+    /**
+     * @notice Get compute inputs with type information (Hybrid mode)
+     * @dev Agent uses inputType to determine how to process the input:
+     *      - RAW_DATA (0): Raw inline data, use directly
+     *      - URI_STRING (1): URI string, resolve via off-chain storage
+     *      - PAYLOAD_REF (2): Encoded PayloadRef (65 bytes), decode and resolve
+     * @param subscriptionId The subscription ID
+     * @param interval The interval number
+     * @param timestamp The current timestamp
+     * @param caller The address of the caller (typically the node)
+     * @return data The input data (raw bytes, URI string, or encoded PayloadRef)
+     * @return inputType The type of input data
+     */
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
         external
         view
         virtual
-        returns (bytes memory)
+        returns (bytes memory data, InputType inputType)
     {}
 
     function _receiveCompute(
