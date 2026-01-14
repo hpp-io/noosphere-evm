@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import "../types/ProofVerificationRequest.sol";
 import {Commitment} from "../types/Commitment.sol";
+import {PayloadRef} from "../types/PayloadRef.sol";
 
 /// @title ICoordinator
 /// @notice Coordinator interface for managing the lifecycle of compute requests:
@@ -27,10 +28,21 @@ interface ICoordinator {
     event RequestCancelled(bytes32 indexed requestId);
 
     /// @notice Emitted when a node delivers a compute result.
+    /// @dev Uses 65-byte PayloadRef for gas-optimized off-chain data references.
     /// @param requestId Opaque request key for this delivery (ties to Commitment.requestId).
     /// @param nodeWallet Node wallet address that submitted the delivery.
     /// @param numRedundantDeliveries Number of redundant deliveries now recorded for the request.
-    event ComputeDelivered(bytes32 indexed requestId, address indexed nodeWallet, uint16 numRedundantDeliveries);
+    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
+    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
+    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
+    event ComputeDelivered(
+        bytes32 indexed requestId,
+        address indexed nodeWallet,
+        uint16 numRedundantDeliveries,
+        PayloadRef inputRef,
+        PayloadRef outputRef,
+        PayloadRef proofRef
+    );
 
     /// @notice Emitted when a proof verification outcome is processed.
     /// @param subscriptionId Subscription identifier.
@@ -96,18 +108,19 @@ interface ICoordinator {
 
     /// @notice Called by nodes to deliver compute outputs for a given interval.
     /// @dev State-mutating. Coordinator will process the delivery, update commitment state and emit ComputeDelivered.
+    ///      Uses 65-byte PayloadRef for gas-optimized off-chain data references.
     /// @param deliveryInterval Interval index this delivery corresponds to.
-    /// @param input Input bytes that were used for the compute (for auditing/verification).
-    /// @param output Output bytes produced by the node.
-    /// @param proof Proof bytes (protocol-specific) supporting the output.
+    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
+    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
+    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
     /// @param commitmentData ABI-encoded Commitment data that ties this delivery to a request.
     /// @param nodeWallet Wallet address of the delivering node (used for payment/escrow).
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        bytes memory commitmentData,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
+        bytes calldata commitmentData,
         address nodeWallet
     ) external;
 

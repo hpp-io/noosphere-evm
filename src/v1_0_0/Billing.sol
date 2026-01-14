@@ -10,6 +10,7 @@ import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {FulfillResult} from "./types/FulfillResult.sol";
+import {PayloadRef} from "./types/PayloadRef.sol";
 
 /// @title Billing
 /// @notice An abstract contract that provides the core logic for billing, fee calculation,
@@ -133,9 +134,9 @@ abstract contract Billing is IBilling, Routable {
         Commitment memory commitment,
         address proofSubmitter,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         uint16 numRedundantDeliveries,
         bool isLastDelivery,
         bytes32 delegatedSubHash
@@ -155,14 +156,14 @@ abstract contract Billing is IBilling, Routable {
                 commitmentHash,
                 proofSubmitter,
                 nodeWallet,
-                input,
-                output,
-                proof,
+                inputRef,
+                outputRef,
+                proofRef,
                 numRedundantDeliveries,
                 delegatedSubHash
             );
         } else {
-            result = _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
+            result = _processStandardDelivery(commitment, nodeWallet, inputRef, outputRef, proofRef, numRedundantDeliveries);
         }
 
         if (result == FulfillResult.FULFILLED && isLastDelivery == true) {
@@ -176,9 +177,9 @@ abstract contract Billing is IBilling, Routable {
         bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         uint16 numRedundantDeliveries,
         bytes32 delegatedSubHash
     ) private returns (FulfillResult) {
@@ -187,17 +188,20 @@ abstract contract Billing is IBilling, Routable {
         ProofVerificationRequest memory request =
             _initiateVerification(commitment, commitmentHash, proofSubmitter, nodeWallet);
         FulfillResult result =
-            _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+            _getRouter().fulfill(inputRef, outputRef, proofRef, numRedundantDeliveries, nodeWallet, payments, commitment);
         if (result == FulfillResult.FULFILLED) {
-            bytes32 inputHash = keccak256(input);
-            bytes32 resultHash = keccak256(output);
+            // Use contentHash from PayloadRef for verification
+            bytes32 inputHash = inputRef.contentHash;
+            bytes32 resultHash = outputRef.contentHash;
             if (delegatedSubHash != bytes32(0)) {
                 proofDataHash = delegatedSubHash;
             } else {
                 proofDataHash = commitmentHash;
             }
+            // Encode PayloadRef as bytes for verifier compatibility
+            // Note: Verifiers may need updates to decode PayloadRef format
             IVerifier(commitment.verifier)
-                .submitProofForVerification(request, proof, proofDataHash, inputHash, resultHash);
+                .submitProofForVerification(request, abi.encode(proofRef), proofDataHash, inputHash, resultHash);
         }
         return result;
     }
@@ -206,13 +210,13 @@ abstract contract Billing is IBilling, Routable {
     function _processStandardDelivery(
         Commitment memory commitment,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         uint16 numRedundantDeliveries
     ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
-        return _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        return _getRouter().fulfill(inputRef, outputRef, proofRef, numRedundantDeliveries, nodeWallet, payments, commitment);
     }
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.

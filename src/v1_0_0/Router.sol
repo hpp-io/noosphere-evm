@@ -17,6 +17,7 @@ import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {PayloadRef} from "./types/PayloadRef.sol";
 
 /**
  * @title Router
@@ -195,9 +196,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function fulfill(
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,
@@ -229,9 +230,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             numRedundantDeliveries,
             commitment.useDeliveryInbox,
             nodeWallet,
-            input,
-            output,
-            proof
+            inputRef,
+            outputRef,
+            proofRef
         );
 
         // Deactivate the subscription only if the current delivery is the last one for this interval

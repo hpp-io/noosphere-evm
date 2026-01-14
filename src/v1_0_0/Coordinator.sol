@@ -10,6 +10,7 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
+import {PayloadRef} from "./types/PayloadRef.sol";
 
 /// @title Coordinator
 /// @notice Orchestrates request lifecycle: start -> deliver -> verify -> settlement.
@@ -90,13 +91,13 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev Entrypoint for nodes to submit compute outputs. Non-reentrant to protect settlement paths.
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         bytes calldata commitmentData,
         address nodeWallet
     ) external override nonReentrant {
-        _reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet, bytes32(0));
+        _reportComputeResult(deliveryInterval, inputRef, outputRef, proofRef, commitmentData, nodeWallet, bytes32(0));
     }
 
     /// @inheritdoc ICoordinator
@@ -179,9 +180,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     ///      Validates interval, redundancy, node wallet, deduplicates per-node responses, then processes delivery.
     function _reportComputeResult(
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         bytes memory commitmentData,
         address nodeWallet,
         bytes32 delegatedSubHash
@@ -229,14 +230,14 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             commitment,
             msg.sender,
             nodeWallet,
-            input,
-            output,
-            proof,
+            inputRef,
+            outputRef,
+            proofRef,
             newRedundancyCount,
             newRedundancyCount == commitment.redundancy,
             delegatedSubHash
         );
-        emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount);
+        emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount, inputRef, outputRef, proofRef);
     }
 
     /// @dev ConfirmedOwner abstract hook (required override).

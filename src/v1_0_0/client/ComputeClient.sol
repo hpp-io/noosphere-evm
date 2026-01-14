@@ -5,6 +5,7 @@ import {Routable} from "../utility/Routable.sol";
 import {DeliveryInbox} from "./DeliveryInbox.sol";
 import {Commitment} from "../types/Commitment.sol";
 import {RequestIdUtils} from "../utility/RequestIdUtils.sol";
+import {PayloadRef} from "../types/PayloadRef.sol";
 
 /**
  * @title ComputeClient
@@ -55,9 +56,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         bytes32 containerId
     ) external {
         // Note: The original check was against a `COORDINATOR` variable that is no longer defined.
@@ -69,7 +70,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
 
         if (useDeliveryInbox) {
             bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
-            _enqueuePendingDelivery(requestId, node, subscriptionId, interval, input, output, proof);
+            _enqueuePendingDelivery(requestId, node, subscriptionId, interval, inputRef, outputRef, proofRef);
         } else {
             // Call internal receive function, since caller is validated
             _receiveCompute(
@@ -78,9 +79,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
                 numRedundantDeliveries,
                 useDeliveryInbox,
                 node,
-                input,
-                output,
-                proof,
+                inputRef,
+                outputRef,
+                proofRef,
                 containerId
             );
         }
@@ -99,9 +100,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         bytes32 containerId
     ) internal virtual {}
 

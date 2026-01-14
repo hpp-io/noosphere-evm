@@ -6,6 +6,7 @@ import {TransientComputeClient} from "../../../src/v1_0_0/client/TransientComput
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
+import {PayloadRef} from "../../../src/v1_0_0/types/PayloadRef.sol";
 
 /// @title MockTransientComputeClient.sol
 /// @notice Mocks TransientComputeClient.sol
@@ -179,9 +180,9 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         uint16 redundancy,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         bytes32 containerId
     ) internal override {
         outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
@@ -190,9 +191,9 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
             redundancy: redundancy,
             useDeliveryInbox: useDeliveryInbox,
             node: node,
-            input: input,
-            output: output,
-            proof: proof,
+            inputRef: inputRef,
+            outputRef: outputRef,
+            proofRef: proofRef,
             containerId: containerId
         });
         emit DeliverOutput(subscriptionId, interval, redundancy, containerId, node);

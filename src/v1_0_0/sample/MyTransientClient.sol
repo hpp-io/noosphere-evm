@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import {Commitment} from "../types/Commitment.sol";
 import {TransientComputeClient} from "../client/TransientComputeClient.sol";
 import {Delegator} from "../utility/Delegator.sol";
+import {PayloadRef} from "../types/PayloadRef.sol";
 
 /// @title MyTransientClient
 /// @notice An example implementation of a TransientComputeClient.
@@ -18,7 +19,7 @@ contract MyTransientClient is TransientComputeClient, Delegator {
     uint64 public lastReceivedSubscriptionId;
     uint32 public lastReceivedInterval;
     address public lastReceivedNode;
-    bytes public lastReceivedOutput;
+    PayloadRef public lastReceivedOutput;
     bytes32 public lastReceivedContainerId;
 
     /*//////////////////////////////////////////////////////////////
@@ -76,15 +77,15 @@ contract MyTransientClient is TransientComputeClient, Delegator {
         uint16, /* numRedundantDeliveries */
         bool, /* useDeliveryInbox */
         address node,
-        bytes calldata, /* input */
-        bytes calldata output,
-        bytes calldata, /* proof */
+        PayloadRef calldata, /* inputRef */
+        PayloadRef calldata outputRef,
+        PayloadRef calldata, /* proofRef */
         bytes32 containerId
     ) internal override {
         lastReceivedSubscriptionId = subscriptionId;
         lastReceivedInterval = interval;
         lastReceivedNode = node;
-        lastReceivedOutput = output;
+        lastReceivedOutput = outputRef;
         lastReceivedContainerId = containerId;
     }
 

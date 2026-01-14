@@ -6,6 +6,7 @@ import {FulfillResult} from "../types/FulfillResult.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {Payment} from "../types/Payment.sol";
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
+import {PayloadRef} from "../types/PayloadRef.sol";
 
 /// @title IRouter
 /// @notice Lightweight interface describing the Router entrypoints used by the Coordinator, Wallet and verifier
@@ -43,18 +44,18 @@ interface IRouter {
     /// @notice Accept fulfillment results and attempt on-chain settlement for a request.
     /// @dev Transfers/escrow operations are performed according to the provided `payments` array and the
     ///      Coordinator's business rules. Returns a FulfillResult enum code representing settlement outcome.
-    /// @param input Original request input bytes.
-    /// @param output Compute output bytes produced by the node.
-    /// @param proof Proof bytes supporting the fulfillment (protocol-specific).
+    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
+    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
+    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
     /// @param numRedundantDeliveries Number of redundant deliveries reported for this fulfillment.
     /// @param nodeWallet Wallet address used by the reporting node for payout/escrow actions.
     /// @param payments Array of Payment entries describing recipients and amounts for this fulfillment.
     /// @param commitment The Commitment struct that corresponds to the original request.
     /// @return resultCode Fulfillment result code (see FulfillResult type).
     function fulfill(
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef,
         uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,

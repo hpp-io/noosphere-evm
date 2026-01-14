@@ -13,6 +13,7 @@ import {Test} from "forge-std/Test.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
+import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
 
 /// @title ISubscriptionManagerErrors
 /// @notice Errors emitted by SubscriptionManager
@@ -47,6 +48,33 @@ abstract contract CoordinatorConstants {
 
     /// @notice Mock delivered proof
     bytes internal constant MOCK_PROOF = "proof";
+
+    /// @notice Mock PayloadRef for input (DATA_INLINE scheme with content hash)
+    function _mockInputRef() internal pure returns (PayloadRef memory) {
+        return PayloadRef({
+            schemeType: uint8(PayloadScheme.DATA_INLINE),
+            contentHash: keccak256(MOCK_INPUT),
+            locationData: bytes32(0)
+        });
+    }
+
+    /// @notice Mock PayloadRef for output (DATA_INLINE scheme with content hash)
+    function _mockOutputRef() internal pure returns (PayloadRef memory) {
+        return PayloadRef({
+            schemeType: uint8(PayloadScheme.DATA_INLINE),
+            contentHash: keccak256(MOCK_OUTPUT),
+            locationData: bytes32(0)
+        });
+    }
+
+    /// @notice Mock PayloadRef for proof (DATA_INLINE scheme with content hash)
+    function _mockProofRef() internal pure returns (PayloadRef memory) {
+        return PayloadRef({
+            schemeType: uint8(PayloadScheme.DATA_INLINE),
+            contentHash: keccak256(MOCK_PROOF),
+            locationData: bytes32(0)
+        });
+    }
 
     /// @notice Mock protocol fee (5.11%)
     uint16 internal constant MOCK_PROTOCOL_FEE = 511;

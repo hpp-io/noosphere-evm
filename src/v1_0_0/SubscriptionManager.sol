@@ -15,6 +15,7 @@ import {Delegator} from "./utility/Delegator.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ComputeClient} from "./client/ComputeClient.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
+import {PayloadRef} from "./types/PayloadRef.sol";
 
 abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -411,9 +412,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof
+        PayloadRef calldata inputRef,
+        PayloadRef calldata outputRef,
+        PayloadRef calldata proofRef
     ) internal {
         address client = subscriptions[subscriptionId].client;
         ComputeClient(client)
@@ -423,9 +424,9 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                 numRedundantDeliveries,
                 useDeliveryInbox,
                 node,
-                input,
-                output,
-                proof,
+                inputRef,
+                outputRef,
+                proofRef,
                 bytes32(0)
             );
     }

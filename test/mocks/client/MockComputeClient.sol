@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
+import {PayloadRef} from "../../../src/v1_0_0/types/PayloadRef.sol";
+
 /*//////////////////////////////////////////////////////////////
                             PUBLIC STRUCTS
 //////////////////////////////////////////////////////////////*/
@@ -10,20 +12,19 @@ pragma solidity ^0.8.4;
 /// @param interval subscription interval
 /// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
 /// @param node responding node address
-/// @param input optional off-chain container input recorded by Infernet node (empty, hashed input, processed input, or both), empty for useDeliveryInbox subscriptions
-/// @param output optional off-chain container output (empty, hashed output, processed output, both, or fallback: all encodeable data), empty for useDeliveryInbox subscriptions
-/// @param proof optional off-chain container execution proof (or arbitrary metadata), empty for useDeliveryInbox subscriptions
+/// @param inputRef PayloadRef pointing to input data
+/// @param outputRef PayloadRef pointing to output data
+/// @param proofRef PayloadRef pointing to proof data
 /// @param containerId if useDeliveryInbox subscription, subscription compute container ID, else empty
-/// @param index if useDeliveryInbox subscription, `Inbox` useDeliveryInbox store index, else empty
 struct DeliveredOutput {
     uint64 subscriptionId;
     uint32 interval;
     uint16 redundancy;
     bool useDeliveryInbox;
     address node;
-    bytes input;
-    bytes output;
-    bytes proof;
+    PayloadRef inputRef;
+    PayloadRef outputRef;
+    PayloadRef proofRef;
     bytes32 containerId;
 }
 
