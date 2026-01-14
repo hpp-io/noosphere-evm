@@ -5,7 +5,7 @@ import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
 import {ComputeSubscription} from "../../src/v1_0_0/types/ComputeSubscription.sol";
-import {PayloadRef} from "../../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../../src/v1_0_0/types/PayloadData.sol";
 
 /// @title MockAgent
 /// @notice Minimal test helper that simulates an off-chain node calling into the DelegateeCoordinator.
@@ -42,20 +42,20 @@ contract MockAgent is StdAssertions {
     /// @notice Forward a regular compute delivery call to the Coordinator.
     /// @dev This wrapper keeps the calling EOA as the msg.sender when tests impersonate the node.
     /// @param deliveryInterval Interval number for which the node produced a response.
-    /// @param inputRef PayloadRef pointing to input data.
-    /// @param outputRef PayloadRef pointing to output data.
-    /// @param proofRef PayloadRef pointing to proof data.
+    /// @param input PayloadData pointing to input data.
+    /// @param output PayloadData pointing to output data.
+    /// @param proof PayloadData pointing to proof data.
     /// @param commitmentData ABI-encoded Commitment struct expected by Coordinator.
     /// @param nodeWallet Wallet address used by the node for payments/escrow operations.
     function reportComputeResult(
         uint32 deliveryInterval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes memory commitmentData,
         address nodeWallet
     ) external {
-        delegateeCoordinator.reportComputeResult(deliveryInterval, inputRef, outputRef, proofRef, commitmentData, nodeWallet);
+        delegateeCoordinator.reportComputeResult(deliveryInterval, input, output, proof, commitmentData, nodeWallet);
     }
 
     /// @notice Signal the Coordinator to prepare the next interval for a subscription.
@@ -75,9 +75,9 @@ contract MockAgent is StdAssertions {
     /// @param sub ComputeSubscription payload (delegated subscription parameters).
     /// @param signature EIP-712 signature authorizing the delegate action.
     /// @param deliveryInterval Interval for which this delivery applies.
-    /// @param inputRef PayloadRef pointing to input data.
-    /// @param outputRef PayloadRef pointing to output data.
-    /// @param proofRef PayloadRef pointing to proof data.
+    /// @param input PayloadData pointing to input data.
+    /// @param output PayloadData pointing to output data.
+    /// @param proof PayloadData pointing to proof data.
     /// @param nodeWallet Node wallet address used for settlement bookkeeping.
     function reportDelegatedComputeResult(
         uint32 nonce,
@@ -85,13 +85,13 @@ contract MockAgent is StdAssertions {
         ComputeSubscription calldata sub,
         bytes calldata signature,
         uint32 deliveryInterval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         address nodeWallet
     ) external {
         delegateeCoordinator.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, inputRef, outputRef, proofRef, nodeWallet
+            nonce, expiry, sub, signature, deliveryInterval, input, output, proof, nodeWallet
         );
     }
 

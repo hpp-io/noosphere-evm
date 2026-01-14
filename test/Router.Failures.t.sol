@@ -7,7 +7,7 @@ import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {IRouter} from "../src/v1_0_0/interfaces/IRouter.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 import {FulfillResult} from "../src/v1_0_0/types/FulfillResult.sol";
 import {Payment} from "../src/v1_0_0/types/Payment.sol";
@@ -62,9 +62,9 @@ contract RouterFailuresTest is ComputeTest {
         // Attempt to fulfill with invalid request ID
         vm.prank(address(COORDINATOR));
         FulfillResult result = ROUTER.fulfill(
-            _mockInputRef(),
-            _mockOutputRef(),
-            _mockProofRef(),
+            _mockInput(),
+            _mockOutput(),
+            _mockProof(),
             1, // numRedundantDeliveries
             userWalletAddress,
             payments,
@@ -119,7 +119,7 @@ contract RouterFailuresTest is ComputeTest {
         // Attempt to fulfill with invalid commitment
         vm.prank(address(COORDINATOR));
         FulfillResult result =
-            ROUTER.fulfill(_mockInputRef(), _mockOutputRef(), _mockProofRef(), 1, userWalletAddress, payments, commitment);
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
 
         assertEq(uint256(result), uint256(FulfillResult.INVALID_COMMITMENT));
     }
@@ -663,7 +663,7 @@ contract RouterFailuresTest is ComputeTest {
         // Should revert with OnlyCallableFromCoordinator error
         vm.prank(address(alice));
         vm.expectRevert(abi.encodeWithSignature("OnlyCallableFromCoordinator()"));
-        ROUTER.fulfill(_mockInputRef(), _mockOutputRef(), _mockProofRef(), 1, userWalletAddress, payments, commitment);
+        ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
     }
 
     /// @notice Test 5.3: Reentrancy protection
@@ -681,7 +681,7 @@ contract RouterFailuresTest is ComputeTest {
         // Normal call should succeed
         vm.prank(address(COORDINATOR));
         FulfillResult result =
-            ROUTER.fulfill(_mockInputRef(), _mockOutputRef(), _mockProofRef(), 1, userWalletAddress, payments, commitment);
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
 
         assertEq(uint256(result), uint256(FulfillResult.FULFILLED));
     }

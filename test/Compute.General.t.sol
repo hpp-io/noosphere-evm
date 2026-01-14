@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ComputeClient} from "../src/v1_0_0/client/ComputeClient.sol";
 import {ComputeTest} from "./Compute.t.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {MockCoordinatorV2} from "./mocks/MockCoordinatorV2.sol";
 import {IOwnableRouter} from "../src/v1_0_0/interfaces/IOwnableRouter.sol";
 import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
@@ -46,7 +46,7 @@ contract GeneralComputeTest is ComputeTest {
         // Expect revert sending from address(this)
         vm.expectRevert(ComputeClient.NotRouter.selector);
         transientClient.receiveRequestCompute(
-            1, 1, 1, false, address(this), _mockInputRef(), _mockOutputRef(), _mockProofRef(), bytes32(0)
+            1, 1, 1, false, address(this), _mockInput(), _mockOutput(), _mockProof(), bytes32(0)
         );
     }
 

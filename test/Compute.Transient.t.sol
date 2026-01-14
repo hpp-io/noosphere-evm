@@ -7,7 +7,7 @@ import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
 // @title CoordinatorCallbackTest
@@ -87,7 +87,7 @@ contract ComputeTransientTest is ComputeTest {
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(alice));
         // Use the fuzzed interval to test the logic correctly
-        alice.reportComputeResult(interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, address(alice));
+        alice.reportComputeResult(interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, address(alice));
     }
 
     /// @notice Can deliver callback response successfully
@@ -102,16 +102,16 @@ contract ComputeTransientTest is ComputeTest {
         // Expect the `ComputeDelivered` event from the COORDINATOR contract.
         // We check both indexed topics (requestId, nodeWallet) and the emitter address.
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
 
         // Call the function that emits the event.
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(alice));
         alice.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
-            _mockInputRef(),
-            _mockOutputRef(),
-            _mockProofRef(),
+            _mockInput(),
+            _mockOutput(),
+            _mockProof(),
             commitmentData,
             aliceWalletAddress
         );
@@ -121,9 +121,9 @@ contract ComputeTransientTest is ComputeTest {
         assertEq(out.interval, 1);
         assertEq(out.redundancy, 1);
         assertEq(out.node, aliceWalletAddress);
-        assertEq(out.inputRef.contentHash, _mockInputRef().contentHash);
-        assertEq(out.outputRef.contentHash, _mockOutputRef().contentHash);
-        assertEq(out.proofRef.contentHash, _mockProofRef().contentHash);
+        assertEq(out.input.contentHash, _mockInput().contentHash);
+        assertEq(out.output.contentHash, _mockOutput().contentHash);
+        assertEq(out.proof.contentHash, _mockProof().contentHash);
         // For non-useDeliveryInbox (eager) subscriptions, the containerId is expected to be bytes32(0)
         // in the callback, as the consumer already knows the container from the subscription.
         assertEq(out.containerId, bytes32(0));
@@ -139,12 +139,12 @@ contract ComputeTransientTest is ComputeTest {
 
         // --- 2. Act: Deliver the response and check for the event ---
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.prank(address(alice));
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
 
         // --- 3. Assert: Verify the outcome ---
@@ -157,9 +157,9 @@ contract ComputeTransientTest is ComputeTest {
         assertTrue(exists);
         assertEq(pd.subscriptionId, subId);
         assertEq(pd.interval, 1);
-        assertEq(pd.inputRef.contentHash, _mockInputRef().contentHash);
-        assertEq(pd.outputRef.contentHash, _mockOutputRef().contentHash);
-        assertEq(pd.proofRef.contentHash, _mockProofRef().contentHash);
+        assertEq(pd.input.contentHash, _mockInput().contentHash);
+        assertEq(pd.output.contentHash, _mockOutput().contentHash);
+        assertEq(pd.proof.contentHash, _mockProof().contentHash);
     }
 
     /// @notice Can deliver callback response once, across two unique nodes
@@ -175,15 +175,15 @@ contract ComputeTransientTest is ComputeTest {
 
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof());
         bob.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, bobWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
         );
 
         // Assert delivery
@@ -194,9 +194,9 @@ contract ComputeTransientTest is ComputeTest {
             assertEq(out.interval, 1);
             assertEq(out.redundancy, r);
             assertEq(out.node, nodes[r - 1]);
-            assertEq(out.inputRef.contentHash, _mockInputRef().contentHash);
-            assertEq(out.outputRef.contentHash, _mockOutputRef().contentHash);
-            assertEq(out.proofRef.contentHash, _mockProofRef().contentHash);
+            assertEq(out.input.contentHash, _mockInput().contentHash);
+            assertEq(out.output.contentHash, _mockOutput().contentHash);
+            assertEq(out.proof.contentHash, _mockProof().contentHash);
             assertEq(out.containerId, bytes32(0));
         }
     }
@@ -213,15 +213,15 @@ contract ComputeTransientTest is ComputeTest {
 
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof());
         bob.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, bobWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
         );
 
         // Assert that getNodesForRequest returns the correct nodes
@@ -235,13 +235,13 @@ contract ComputeTransientTest is ComputeTest {
             transientClient.getDelivery(commitment.requestId, aliceWalletAddress);
         assertTrue(existsAlice);
         assertEq(pdAlice.subscriptionId, subId);
-        assertEq(pdAlice.outputRef.contentHash, _mockOutputRef().contentHash);
+        assertEq(pdAlice.output.contentHash, _mockOutput().contentHash);
 
         (bool existsBob, PendingDelivery memory pdBob) =
             transientClient.getDelivery(commitment.requestId, bobWalletAddress);
         assertTrue(existsBob);
         assertEq(pdBob.subscriptionId, subId);
-        assertEq(pdBob.outputRef.contentHash, _mockOutputRef().contentHash);
+        assertEq(pdBob.output.contentHash, _mockOutput().contentHash);
     }
 
     function test_RevertIf_DeliveringCallbackResponse_FromSameNodeTwice() public {
@@ -255,13 +255,13 @@ contract ComputeTransientTest is ComputeTest {
 
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
         vm.expectRevert(ICoordinator.NodeRespondedAlready.selector);
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
     }
 
@@ -278,22 +278,22 @@ contract ComputeTransientTest is ComputeTest {
 
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof());
         bob.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, bobWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
         );
 
         // Attempt to deliver a third response (exceeds redundancy)
         // The Coordinator should revert with a RequestCompleted error.
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalCompleted.selector));
         charlie.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, bobWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
         );
     }
 }

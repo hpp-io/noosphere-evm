@@ -5,7 +5,7 @@ import {Routable} from "../utility/Routable.sol";
 import {DeliveryInbox} from "./DeliveryInbox.sol";
 import {Commitment} from "../types/Commitment.sol";
 import {RequestIdUtils} from "../utility/RequestIdUtils.sol";
-import {PayloadRef, InputType} from "../types/PayloadRef.sol";
+import {PayloadData, InputType} from "../types/PayloadData.sol";
 
 /**
  * @title ComputeClient
@@ -56,9 +56,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes32 containerId
     ) external {
         // Note: The original check was against a `COORDINATOR` variable that is no longer defined.
@@ -70,7 +70,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
 
         if (useDeliveryInbox) {
             bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
-            _enqueuePendingDelivery(requestId, node, subscriptionId, interval, inputRef, outputRef, proofRef);
+            _enqueuePendingDelivery(requestId, node, subscriptionId, interval, input, output, proof);
         } else {
             // Call internal receive function, since caller is validated
             _receiveCompute(
@@ -79,9 +79,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
                 numRedundantDeliveries,
                 useDeliveryInbox,
                 node,
-                inputRef,
-                outputRef,
-                proofRef,
+                input,
+                output,
+                proof,
                 containerId
             );
         }
@@ -92,12 +92,12 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
      * @dev Agent uses inputType to determine how to process the input:
      *      - RAW_DATA (0): Raw inline data, use directly
      *      - URI_STRING (1): URI string, resolve via off-chain storage
-     *      - PAYLOAD_REF (2): Encoded PayloadRef (65 bytes), decode and resolve
+     *      - PAYLOAD_DATA (2): Encoded PayloadData, decode and resolve
      * @param subscriptionId The subscription ID
      * @param interval The interval number
      * @param timestamp The current timestamp
      * @param caller The address of the caller (typically the node)
-     * @return data The input data (raw bytes, URI string, or encoded PayloadRef)
+     * @return data The input data (raw bytes, URI string, or encoded PayloadData)
      * @return inputType The type of input data
      */
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
@@ -113,9 +113,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes32 containerId
     ) internal virtual {}
 

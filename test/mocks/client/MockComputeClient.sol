@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
-import {PayloadRef} from "../../../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";
 
 /*//////////////////////////////////////////////////////////////
                             PUBLIC STRUCTS
@@ -12,9 +12,9 @@ import {PayloadRef} from "../../../src/v1_0_0/types/PayloadRef.sol";
 /// @param interval subscription interval
 /// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
 /// @param node responding node address
-/// @param inputRef PayloadRef pointing to input data
-/// @param outputRef PayloadRef pointing to output data
-/// @param proofRef PayloadRef pointing to proof data
+/// @param input PayloadData pointing to input data
+/// @param output PayloadData pointing to output data
+/// @param proof PayloadData pointing to proof data
 /// @param containerId if useDeliveryInbox subscription, subscription compute container ID, else empty
 struct DeliveredOutput {
     uint64 subscriptionId;
@@ -22,9 +22,9 @@ struct DeliveredOutput {
     uint16 redundancy;
     bool useDeliveryInbox;
     address node;
-    PayloadRef inputRef;
-    PayloadRef outputRef;
-    PayloadRef proofRef;
+    PayloadData input;
+    PayloadData output;
+    PayloadData proof;
     bytes32 containerId;
 }
 

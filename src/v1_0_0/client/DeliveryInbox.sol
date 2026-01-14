@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import {PendingDelivery} from "../types/PendingDelivery.sol";
-import {PayloadRef} from "../types/PayloadRef.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title DeliveryInbox.sol
 /// @notice Request-centric pending delivery store: stores at most one PendingDelivery per (requestId, node).
@@ -47,17 +47,17 @@ abstract contract DeliveryInbox {
     /// @param node Address of the node submitting the delivery.
     /// @param subscriptionId Subscription id (fits in uint32).
     /// @param interval Interval id (uint32).
-    /// @param inputRef PayloadRef pointing to input data.
-    /// @param outputRef PayloadRef pointing to output data.
-    /// @param proofRef PayloadRef pointing to proof data.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     function _enqueuePendingDelivery(
         bytes32 requestId,
         address node,
         uint64 subscriptionId,
         uint32 interval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof
     ) internal {
         // record node for enumeration if first time
         if (!_isNodeRegistered[requestId][node]) {
@@ -71,15 +71,15 @@ abstract contract DeliveryInbox {
             timestamp: uint32(block.timestamp),
             subscriptionId: subscriptionId,
             interval: interval,
-            inputRef: inputRef,
-            outputRef: outputRef,
-            proofRef: proofRef
+            input: input,
+            output: output,
+            proof: proof
         });
 
         emit DeliverySubmitted(requestId, node);
 
         // Call virtual hook for custom processing
-        _receiveDelivery(requestId, node, subscriptionId, interval, inputRef, outputRef, proofRef);
+        _receiveDelivery(requestId, node, subscriptionId, interval, input, output, proof);
     }
 
     /// @notice Virtual hook called after a delivery is enqueued in the inbox.
@@ -89,17 +89,17 @@ abstract contract DeliveryInbox {
     /// @param node Address of the node that submitted the delivery.
     /// @param subscriptionId Subscription id.
     /// @param interval Interval id.
-    /// @param inputRef PayloadRef pointing to input data.
-    /// @param outputRef PayloadRef pointing to output data.
-    /// @param proofRef PayloadRef pointing to proof data.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     function _receiveDelivery(
         bytes32 requestId,
         address node,
         uint64 subscriptionId,
         uint32 interval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof
     ) internal virtual {}
 
     /// @notice Internal: clear stored pending delivery for (requestId, node).
@@ -154,9 +154,9 @@ abstract contract DeliveryInbox {
             timestamp: r.timestamp,
             subscriptionId: r.subscriptionId,
             interval: r.interval,
-            inputRef: r.inputRef,
-            outputRef: r.outputRef,
-            proofRef: r.proofRef
+            input: r.input,
+            output: r.output,
+            proof: r.proof
         });
         return (true, pd);
     }

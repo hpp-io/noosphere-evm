@@ -3,14 +3,14 @@ pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
-import {InputType} from "../types/PayloadRef.sol";
+import {InputType} from "../types/PayloadData.sol";
 
 /**
  * @title TransientComputeClient
  * @dev This abstract contract provides a client for interacting with the Noosphere compute network.
  * It extends `ComputeClient` and adds functionality for managing transient compute subscriptions,
  * where the inputs for a computation are stored temporarily on-chain.
- * Supports Hybrid input mode: raw data, URI string, or PayloadRef.
+ * Supports Hybrid input mode: raw data, URI string, or PayloadData.
  */
 abstract contract TransientComputeClient is ComputeClient {
     /// @dev Stores the inputs for each transient compute request, mapped by subscription ID and a unique interval.
@@ -23,7 +23,7 @@ abstract contract TransientComputeClient is ComputeClient {
 
     error DataTooLarge();
     error AmbiguousDataSize();
-    error InvalidPayloadRefSize();
+    error InvalidPayloadDataSize();
 
     constructor(address router) ComputeClient(router) {}
 
@@ -76,22 +76,19 @@ abstract contract TransientComputeClient is ComputeClient {
     }
 
     /**
-     * @notice Request compute with encoded PayloadRef input
+     * @notice Request compute with encoded PayloadData input
      * @param subscriptionId The subscription ID
-     * @param ref The encoded PayloadRef (must be exactly 65 bytes)
+     * @param data The encoded PayloadData
      * @return interval The interval number for this request
      * @return commitment The commitment for this request
      */
-    function _requestComputeWithRef(uint64 subscriptionId, bytes memory ref)
+    function _requestComputeWithPayloadData(uint64 subscriptionId, bytes memory data)
         internal
         returns (uint32 interval, Commitment memory commitment)
     {
-        if (ref.length != 65) {
-            revert InvalidPayloadRefSize();
-        }
         interval = ++_requestNonces[subscriptionId];
-        _subscriptionInputs[subscriptionId][interval] = ref;
-        _inputTypes[subscriptionId][interval] = InputType.PAYLOAD_REF;
+        _subscriptionInputs[subscriptionId][interval] = data;
+        _inputTypes[subscriptionId][interval] = InputType.PAYLOAD_DATA;
         (, commitment) = _getRouter().sendRequest(subscriptionId, interval);
     }
 

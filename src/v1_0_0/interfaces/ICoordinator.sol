@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "../types/ProofVerificationRequest.sol";
 import {Commitment} from "../types/Commitment.sol";
-import {PayloadRef} from "../types/PayloadRef.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title ICoordinator
 /// @notice Coordinator interface for managing the lifecycle of compute requests:
@@ -28,20 +28,21 @@ interface ICoordinator {
     event RequestCancelled(bytes32 indexed requestId);
 
     /// @notice Emitted when a node delivers a compute result.
-    /// @dev Uses 65-byte PayloadRef for gas-optimized off-chain data references.
+    /// @dev Uses PayloadData struct for off-chain data references with integrity verification.
+    ///      Stack depth: 7 slots (safe under 16 limit).
     /// @param requestId Opaque request key for this delivery (ties to Commitment.requestId).
     /// @param nodeWallet Node wallet address that submitted the delivery.
     /// @param numRedundantDeliveries Number of redundant deliveries now recorded for the request.
-    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
-    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
-    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     event ComputeDelivered(
         bytes32 indexed requestId,
         address indexed nodeWallet,
         uint16 numRedundantDeliveries,
-        PayloadRef inputRef,
-        PayloadRef outputRef,
-        PayloadRef proofRef
+        PayloadData input,
+        PayloadData output,
+        PayloadData proof
     );
 
     /// @notice Emitted when a proof verification outcome is processed.
@@ -108,18 +109,19 @@ interface ICoordinator {
 
     /// @notice Called by nodes to deliver compute outputs for a given interval.
     /// @dev State-mutating. Coordinator will process the delivery, update commitment state and emit ComputeDelivered.
-    ///      Uses 65-byte PayloadRef for gas-optimized off-chain data references.
+    ///      Uses PayloadData struct for direct URI passing with integrity verification.
+    ///      Stack depth: 7 slots (deliveryInterval:1, input:1, output:1, proof:1, commitmentData:2, nodeWallet:1).
     /// @param deliveryInterval Interval index this delivery corresponds to.
-    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
-    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
-    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     /// @param commitmentData ABI-encoded Commitment data that ties this delivery to a request.
     /// @param nodeWallet Wallet address of the delivering node (used for payment/escrow).
     function reportComputeResult(
         uint32 deliveryInterval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes calldata commitmentData,
         address nodeWallet
     ) external;

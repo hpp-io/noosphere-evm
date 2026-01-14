@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 
@@ -32,9 +32,9 @@ contract ComputeSubscriptionTest is ComputeTest {
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInputRef(), _mockOutputRef(), _mockProofRef());
+        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
         alice.reportComputeResult(
-            commitment.interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, aliceWalletAddress
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );
 
         // Cancel subscription
@@ -152,7 +152,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.expectRevert(bytes("InvalidCommitment()"));
 
         // Call reportComputeResult with the crafted commitment.
-        alice.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData, address(alice));
+        alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData, address(alice));
     }
 
     /// @notice Cannot deliver a response for an interval that is not the current one.
@@ -176,7 +176,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // Successfully deliver for interval 1
-        alice.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData1, aliceWalletAddress);
+        alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, aliceWalletAddress);
 
         // Warp to the second interval
         vm.warp(20 minutes);
@@ -184,7 +184,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Now, the current interval is 2. Attempting to deliver for interval 1 should fail.
         // We use the commitment from the first interval to simulate this.
         vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
-        alice.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData1, aliceWalletAddress);
+        alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, aliceWalletAddress);
     }
 
     /// @notice Reverts if the subscription interval is shorter than the minimum allowed.

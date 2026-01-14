@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import {Coordinator} from "./Coordinator.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {Commitment} from "./types/Commitment.sol";
-import {PayloadRef} from "./types/PayloadRef.sol";
+import {PayloadData} from "./types/PayloadData.sol";
 
 contract DelegateeCoordinator is Coordinator {
     constructor(address routerAddress, address initialOwner) Coordinator(routerAddress, initialOwner) {}
@@ -15,16 +15,16 @@ contract DelegateeCoordinator is Coordinator {
         ComputeSubscription calldata sub,
         bytes calldata signature,
         uint32 deliveryInterval,
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         address nodeWallet
     ) external nonReentrant {
         // By breaking the logic into helper functions, we reduce the stack depth in any single function.
         bytes memory commitmentData =
             _createSubscriptionAndGetCommitmentData(nonce, expiry, sub, signature, deliveryInterval);
         _reportComputeResult(
-            deliveryInterval, inputRef, outputRef, proofRef, commitmentData, nodeWallet, keccak256(abi.encode(sub))
+            deliveryInterval, input, output, proof, commitmentData, nodeWallet, keccak256(abi.encode(sub))
         );
     }
 

@@ -8,7 +8,7 @@ import {MockDelegatorScheduledComputeClient} from "./mocks/client/MockDelegatorS
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {console} from "forge-std/console.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 
 /// @title SubscriptionBatchReaderTest
 /// @notice Tests SubscriptionBatchReader implementation
@@ -178,15 +178,15 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         (, Commitment memory commitmentStruct2) = ScheduledClient.sendRequest(subTwo, 1);
         bytes memory commitment2 = abi.encode(commitmentStruct2);
 
-        alice.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitment1, aliceWalletAddress);
-        bob.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitment1, bobWalletAddress);
-        alice.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitment2, aliceWalletAddress);
+        alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitment1, aliceWalletAddress);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitment1, bobWalletAddress);
+        alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitment2, aliceWalletAddress);
 
         // Deliver (id: subOne, interval: 2) from Alice
         vm.warp(10 minutes);
         (, Commitment memory commitmentStruct3) = ScheduledClient.sendRequest(subOne, 2);
         bytes memory commitment3 = abi.encode(commitmentStruct3);
-        alice.reportComputeResult(2, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitment3, aliceWalletAddress);
+        alice.reportComputeResult(2, _mockInput(), _mockOutput(), _mockProof(), commitment3, aliceWalletAddress);
 
         // Assert correct batch reads
         uint64[] memory ids = new uint64[](4);
@@ -235,7 +235,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
         uint32 interval = 1;
         (, Commitment memory commitmentStruct) = ScheduledClient.sendRequest(subId, interval);
         bytes memory commitment = abi.encode(commitmentStruct);
-        alice.reportComputeResult(interval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitment, aliceWalletAddress);
+        alice.reportComputeResult(interval, _mockInput(), _mockOutput(), _mockProof(), commitment, aliceWalletAddress);
 
         // Cancel partially fulfilled subscription
         vm.prank(address(ScheduledClient));

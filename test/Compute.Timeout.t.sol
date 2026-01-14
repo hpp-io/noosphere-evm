@@ -5,7 +5,7 @@ import {ComputeTest, ISubscriptionManagerErrors} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
 contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
@@ -126,6 +126,6 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         bytes memory commitmentData1 = abi.encode(commitment1);
         vm.expectRevert(ICoordinator.InvalidCommitment.selector);
         vm.prank(address(bob));
-        bob.reportComputeResult(1, _mockInputRef(), _mockOutputRef(), _mockProofRef(), commitmentData1, nodeWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, nodeWallet);
     }
 }

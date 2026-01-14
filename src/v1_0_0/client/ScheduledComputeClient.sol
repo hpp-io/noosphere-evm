@@ -3,12 +3,12 @@ pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
-import {InputType} from "../types/PayloadRef.sol";
+import {InputType} from "../types/PayloadData.sol";
 
 /**
  * @title ScheduledComputeClient.sol
  * @dev Abstract contract for interacting with the Noosphere Router to manage compute subscriptions.
- *      Supports Hybrid input mode: raw data, URI string, or PayloadRef.
+ *      Supports Hybrid input mode: raw data, URI string, or PayloadData.
  */
 abstract contract ScheduledComputeClient is ComputeClient {
     /// @dev Stores the inputs for each compute subscription, keyed by subscriptionId.
@@ -21,7 +21,7 @@ abstract contract ScheduledComputeClient is ComputeClient {
     error ComputeAlreadyRequested();
     error DataTooLarge();
     error AmbiguousDataSize();
-    error InvalidPayloadRefSize();
+    error InvalidPayloadDataSize();
 
     constructor(address router) ComputeClient(router) {}
 
@@ -79,17 +79,14 @@ abstract contract ScheduledComputeClient is ComputeClient {
     }
 
     /**
-     * @notice Set input as encoded PayloadRef (65 bytes)
-     * @dev Use for gas-optimized production deployments. Fixed 65 bytes.
+     * @notice Set input as encoded PayloadData
+     * @dev Use for gas-optimized production deployments.
      * @param subscriptionId The subscription ID
-     * @param ref The encoded PayloadRef (must be exactly 65 bytes)
+     * @param data The encoded PayloadData
      */
-    function _setInputRef(uint64 subscriptionId, bytes memory ref) internal {
-        if (ref.length != 65) {
-            revert InvalidPayloadRefSize();
-        }
-        _subscriptionInputs[subscriptionId] = ref;
-        _inputTypes[subscriptionId] = InputType.PAYLOAD_REF;
+    function _setInputPayloadData(uint64 subscriptionId, bytes memory data) internal {
+        _subscriptionInputs[subscriptionId] = data;
+        _inputTypes[subscriptionId] = InputType.PAYLOAD_DATA;
     }
 
     /**
@@ -98,12 +95,9 @@ abstract contract ScheduledComputeClient is ComputeClient {
      * @param subscriptionId The subscription ID
      * @param inputData The raw input data
      */
-    function _setInputData(uint64 subscriptionId, bytes memory inputData) internal {
+    function _setInputRawData(uint64 subscriptionId, bytes memory inputData) internal {
         if (inputData.length >= 1024) {
             revert DataTooLarge();
-        }
-        if (inputData.length == 65) {
-            revert AmbiguousDataSize();
         }
         _subscriptionInputs[subscriptionId] = inputData;
         _inputTypes[subscriptionId] = InputType.RAW_DATA;

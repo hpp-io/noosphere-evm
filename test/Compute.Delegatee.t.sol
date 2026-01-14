@@ -5,7 +5,7 @@ import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
-import {PayloadRef, PayloadScheme} from "../src/v1_0_0/types/PayloadRef.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
@@ -465,16 +465,16 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         uint32 deliveryInterval = 1;
         // Alice delivers using the delegatee flow; this will create subscription and deliver output
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
         DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval, 1);
         assertEq(out.subscriptionId, 1);
         assertEq(out.interval, deliveryInterval);
         assertEq(out.redundancy, 1);
-        assertEq(out.inputRef.contentHash, _mockInputRef().contentHash);
-        assertEq(out.outputRef.contentHash, _mockOutputRef().contentHash);
-        assertEq(out.proofRef.contentHash, _mockProofRef().contentHash);
+        assertEq(out.input.contentHash, _mockInput().contentHash);
+        assertEq(out.output.contentHash, _mockOutput().contentHash);
+        assertEq(out.proof.contentHash, _mockProof().contentHash);
 
         bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
         assertEq(coordinator.redundancyCount(requestId), 1);
@@ -497,7 +497,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         vm.warp(block.timestamp + 1 minutes);
 
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
         // pending delivery should be stored in the subscription client's inbox
@@ -506,9 +506,9 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         assertTrue(exists, "Expected pending delivery to exist");
         assertEq(pd.subscriptionId, 1);
         assertEq(pd.interval, deliveryInterval);
-        assertEq(pd.inputRef.contentHash, _mockInputRef().contentHash);
-        assertEq(pd.outputRef.contentHash, _mockOutputRef().contentHash);
-        assertEq(pd.proofRef.contentHash, _mockProofRef().contentHash);
+        assertEq(pd.input.contentHash, _mockInput().contentHash);
+        assertEq(pd.output.contentHash, _mockOutput().contentHash);
+        assertEq(pd.proof.contentHash, _mockProof().contentHash);
     }
 
     /// @notice Attempting to deliver for a completed interval must revert.
@@ -524,7 +524,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
 
         // 1. First call: This should succeed, create the subscription, and complete the request.
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
         // The request is now complete because redundancy (1) has been met.
@@ -535,7 +535,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         // The subscription itself is NOT recreated due to idempotency.
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
         nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), bobWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
         );
     }
 
@@ -553,14 +553,14 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         uint32 deliveryInterval = 1;
         // first node responds
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
         bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
         assertEq(coordinator.redundancyCount(requestId), 1);
 
         // second node responds
         nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), bobWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
         );
         // The request is now complete (redundancy 2 of 2 met).
         assertEq(coordinator.redundancyCount(requestId), 2);
@@ -568,14 +568,14 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         // a duplicate attempt from the same node should revert
         vm.expectRevert(ICoordinator.IntervalCompleted.selector);
         nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), _mockProofRef(), bobWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
         );
     }
 
     /// @notice A delegated delivery with a valid proof against ImmediateFinalizeVerifier should succeed.
-    /// @dev Skipped: Verifier tests require separate design for PayloadRef integration.
+    /// @dev Skipped: Verifier tests require separate design for PayloadData integration.
     function test_Succeeds_When_DeliveringDelegatedWithValidImmediateProof() public {
-        vm.skip(true); // TODO: Re-enable after verifier redesign for PayloadRef
+        vm.skip(true); // TODO: Re-enable after verifier redesign for PayloadData
         // 1. Setup: Define node EOA and its wallet
         uint256 nodeKey = 0x411CE; // Alice's EOA key
         address nodeEoa = vm.addr(nodeKey);
@@ -620,18 +620,17 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         bytes memory validProof =
             buildAndSignImmediateProof(expectedRequestId, commitmentData, MOCK_INPUT, MOCK_OUTPUT, nodeEoa, nodeKey);
 
-        // Create PayloadRef for the dynamically generated proof
-        PayloadRef memory proofRef = PayloadRef({
-            schemeType: uint8(PayloadScheme.DATA_INLINE),
+        // Create PayloadData for the dynamically generated proof
+        PayloadData memory proof_ = PayloadData({
             contentHash: keccak256(validProof),
-            locationData: bytes32(0)
+            uri: bytes("")
         });
 
         // 5. Execute the delegated report from the node's EOA
         // This atomically creates the subscription and delivers the result.
         vm.startPrank(nodeEoa);
         coordinator.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInputRef(), _mockOutputRef(), proofRef, nodeWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), proof_, nodeWalletAddr
         );
         vm.stopPrank();
 
@@ -655,6 +654,6 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         uint64 createdSubId = router.delegateCreatedIds(expectedRequestId);
         DeliveredOutput memory out = transientClient.getDeliveredOutput(createdSubId, deliveryInterval, 1);
         assertEq(out.subscriptionId, createdSubId);
-        assertEq(out.outputRef.contentHash, _mockOutputRef().contentHash);
+        assertEq(out.output.contentHash, _mockOutput().contentHash);
     }
 }

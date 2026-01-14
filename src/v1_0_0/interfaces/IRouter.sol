@@ -6,7 +6,7 @@ import {FulfillResult} from "../types/FulfillResult.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {Payment} from "../types/Payment.sol";
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
-import {PayloadRef} from "../types/PayloadRef.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title IRouter
 /// @notice Lightweight interface describing the Router entrypoints used by the Coordinator, Wallet and verifier
@@ -44,18 +44,18 @@ interface IRouter {
     /// @notice Accept fulfillment results and attempt on-chain settlement for a request.
     /// @dev Transfers/escrow operations are performed according to the provided `payments` array and the
     ///      Coordinator's business rules. Returns a FulfillResult enum code representing settlement outcome.
-    /// @param inputRef PayloadRef pointing to input data (off-chain or inline).
-    /// @param outputRef PayloadRef pointing to output data (off-chain or inline).
-    /// @param proofRef PayloadRef pointing to proof data (off-chain or inline).
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     /// @param numRedundantDeliveries Number of redundant deliveries reported for this fulfillment.
     /// @param nodeWallet Wallet address used by the reporting node for payout/escrow actions.
     /// @param payments Array of Payment entries describing recipients and amounts for this fulfillment.
     /// @param commitment The Commitment struct that corresponds to the original request.
     /// @return resultCode Fulfillment result code (see FulfillResult type).
     function fulfill(
-        PayloadRef calldata inputRef,
-        PayloadRef calldata outputRef,
-        PayloadRef calldata proofRef,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,
