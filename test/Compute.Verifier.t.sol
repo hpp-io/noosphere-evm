@@ -92,7 +92,9 @@ contract ComputeVerifierTest is ComputeTest {
         vm.warp(10 minutes);
         vm.expectRevert(Wallet.InsufficientAllowance.selector);
         vm.prank(address(charlie));
-        charlie.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        charlie.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
     }
 
     function test_RevertIf_DeliveringCompute_When_NodeWalletHasInsufficientFundsForEscrow() public {
@@ -138,7 +140,9 @@ contract ComputeVerifierTest is ComputeTest {
         // Execute response fulfillment expecting it to fail given not enough unlocked funds
         vm.warp(10 minutes);
         vm.expectRevert(Wallet.InsufficientFunds.selector);
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
     }
 
     function test_Succeeds_When_FulfillingSubscription_WithValidProof() public {
@@ -184,7 +188,9 @@ contract ComputeVerifierTest is ComputeTest {
 
         // Execute response fulfillment from Bob
         vm.warp(10 minutes);
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
 
         // Assert new balances
         assertEq(erc20Token.balanceOf(aliceWallet), 10e6); // -40
@@ -241,7 +247,9 @@ contract ComputeVerifierTest is ComputeTest {
         immediateVerifier.setNextValidityTrue();
 
         // Execute response fulfillment from Bob
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
 
         // Assert new balances (same as eager subscription)
         assertEq(erc20Token.balanceOf(aliceWallet), 10e6); // -40
@@ -304,7 +312,9 @@ contract ComputeVerifierTest is ComputeTest {
 
         // Execute response fulfillment from Bob
         vm.warp(10 minutes);
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
 
         // Assert new balances
         // Alice --> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.111 ether) + slashed (1 ether) = 1.7868 ether
@@ -360,7 +370,9 @@ contract ComputeVerifierTest is ComputeTest {
 
         bytes memory commitmentData = abi.encode(commitment);
         // Execute response fulfillment from Bob
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet
+        );
 
         // Assert immediate balances
         // Alice -> 1 ether - protocol fee (0.1022 ether) - verifier fee (0.1 ether)
@@ -470,10 +482,7 @@ contract ComputeVerifierTest is ComputeTest {
         );
 
         // Create PayloadData for the dynamic proof
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, bobWallet);
     }
 
@@ -521,11 +530,10 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 3. Node reports the compute result
         vm.warp(10 minutes);
-        PayloadData memory reportProof_ = PayloadData({
-            contentHash: keccak256(reportProof),
-            uri: bytes("")
-        });
-        bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), reportProof_, commitmentData, bobWallet);
+        PayloadData memory reportProof_ = PayloadData({contentHash: keccak256(reportProof), uri: bytes("")});
+        bob.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), reportProof_, commitmentData, bobWallet
+        );
 
         // 4. Challenger prepares a proof for the *other* leaf to prove the inconsistency
         bytes32[] memory challengeProof = leaves.getMerkleProof(leaves[1]);
@@ -580,10 +588,7 @@ contract ComputeVerifierTest is ComputeTest {
         );
 
         vm.warp(10 minutes);
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         bob.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, bobWallet);
 
         // 3. Warp time to after the challenge window has passed
@@ -668,10 +673,7 @@ contract ComputeVerifierTest is ComputeTest {
         //        emit IVerifier.VerificationRequested(subId, 1, nodeWallet);
         // Check for the final ComputeDelivered event from the coordinator
         // Create PayloadData for the dynamic proof
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.expectEmit(true, false, false, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(commitment.requestId, nodeWallet, 1, _mockInput(), _mockOutput(), proof_);
 
@@ -679,7 +681,9 @@ contract ComputeVerifierTest is ComputeTest {
         // The EOA `bob` initiates the transaction by calling the Coordinator directly.
         // This ensures msg.sender is the EOA, which is required for the escrow lock approval check.
         vm.startPrank(bob);
-        COORDINATOR.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet);
+        COORDINATOR.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet
+        );
         vm.stopPrank();
 
         // 10. Assert final balances
@@ -759,16 +763,15 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 4. Expect the transaction to revert with InvalidEOASignature
         vm.warp(timestamp);
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
             commitment.subscriptionId, commitment.interval, bob, "signer_mismatch"
         );
-        COORDINATOR.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet);
+        COORDINATOR.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet
+        );
         vm.stopPrank();
 
         // 5. Assert final balances after slashing
@@ -855,16 +858,15 @@ contract ComputeVerifierTest is ComputeTest {
         // 4. Expect a `VerificationFailed` event because the recovered signer (Bob) will not match `proofData.nodeAddress` (randomAddress).
         // The transaction itself should not revert, but the verifier will report the failure to the coordinator.
         vm.warp(timestamp);
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
             commitment.subscriptionId, commitment.interval, bob, "signer_mismatch"
         );
-        COORDINATOR.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet);
+        COORDINATOR.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet
+        );
         vm.stopPrank();
 
         // 5. Assert final balances after slashing
@@ -950,16 +952,15 @@ contract ComputeVerifierTest is ComputeTest {
         );
 
         // 4. Expect revert because the hash from the proof will not match the hash from the coordinator's parameters.
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(proof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.startPrank(bob);
         vm.expectEmit(true, true, true, true, address(immediateFinalizeVerifier));
         emit ImmediateFinalizeVerifier.VerificationFailed(
             commitment.subscriptionId, commitment.interval, bob, "commitmentHash_mismatch"
         );
-        COORDINATOR.reportComputeResult(commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet);
+        COORDINATOR.reportComputeResult(
+            commitment.interval, _mockInput(), _mockOutput(), proof_, commitmentData, nodeWallet
+        );
         vm.stopPrank();
     }
 }

@@ -7,9 +7,9 @@ pragma solidity ^0.8.23;
  * @dev Used by Agent to determine how to process the input data
  */
 enum InputType {
-    RAW_DATA,      // 0: Raw inline data (<1KB)
-    URI_STRING,    // 1: URI string ("ipfs://...", "ar://...", etc.)
-    PAYLOAD_DATA   // 2: PayloadData struct
+    RAW_DATA, // 0: Raw inline data (<1KB)
+    URI_STRING, // 1: URI string ("ipfs://...", "ar://...", etc.)
+    PAYLOAD_DATA // 2: PayloadData struct
 }
 
 /**
@@ -35,6 +35,6 @@ enum InputType {
  * - Stack safe: Struct keeps stack depth under control (7 slots total)
  */
 struct PayloadData {
-    bytes32 contentHash;  // keccak256(content) for integrity verification
-    bytes uri;            // Full URI ("ipfs://...", "https://...", "ar://...")
+    bytes32 contentHash; // keccak256(content) for integrity verification
+    bytes uri; // Full URI ("ipfs://...", "https://...", "ar://...")
 }

@@ -9,7 +9,6 @@ import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
  * @notice Measures actual gas costs for PayloadData vs raw bytes
  */
 contract GasMeasurement is Test {
-
     /*//////////////////////////////////////////////////////////////////////////
                                     GAS MEASUREMENT
     //////////////////////////////////////////////////////////////////////////*/
@@ -22,7 +21,7 @@ contract GasMeasurement is Test {
 
         // 1KB
         bytes memory data1KB = new bytes(1024);
-        for (uint i = 0; i < 1024; i++) {
+        for (uint256 i = 0; i < 1024; i++) {
             data1KB[i] = 0x42; // Non-zero byte
         }
         uint256 gas1KB = gasleft();
@@ -32,7 +31,7 @@ contract GasMeasurement is Test {
 
         // 10KB
         bytes memory data10KB = new bytes(10240);
-        for (uint i = 0; i < 10240; i++) {
+        for (uint256 i = 0; i < 10240; i++) {
             data10KB[i] = 0x42;
         }
         uint256 gas10KB = gasleft();
@@ -42,7 +41,7 @@ contract GasMeasurement is Test {
 
         // 50KB (near block limit for single call)
         bytes memory data50KB = new bytes(51200);
-        for (uint i = 0; i < 51200; i++) {
+        for (uint256 i = 0; i < 51200; i++) {
             data50KB[i] = 0x42;
         }
         uint256 gas50KB = gasleft();
@@ -58,10 +57,7 @@ contract GasMeasurement is Test {
         console.log("\n=== PayloadData Gas Measurement ===");
 
         // Inline (empty URI)
-        PayloadData memory inlinePayload = PayloadData({
-            contentHash: keccak256("test data"),
-            uri: ""
-        });
+        PayloadData memory inlinePayload = PayloadData({contentHash: keccak256("test data"), uri: ""});
         uint256 gasInline = gasleft();
         this.consumePayloadData(inlinePayload);
         gasInline = gasInline - gasleft();
@@ -69,8 +65,7 @@ contract GasMeasurement is Test {
 
         // IPFS URI (~53 bytes)
         PayloadData memory ipfsPayload = PayloadData({
-            contentHash: keccak256("test data"),
-            uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+            contentHash: keccak256("test data"), uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
         });
         uint256 gasIpfs = gasleft();
         this.consumePayloadData(ipfsPayload);
@@ -79,8 +74,7 @@ contract GasMeasurement is Test {
 
         // HTTPS URI (~80 bytes)
         PayloadData memory httpsPayload = PayloadData({
-            contentHash: keccak256("test data"),
-            uri: "https://api.noosphere.io/payloads/12345?token=abc123def456"
+            contentHash: keccak256("test data"), uri: "https://api.noosphere.io/payloads/12345?token=abc123def456"
         });
         uint256 gasHttps = gasleft();
         this.consumePayloadData(httpsPayload);
@@ -98,7 +92,7 @@ contract GasMeasurement is Test {
 
         // Raw bytes approach: send 10KB directly
         bytes memory rawData = new bytes(10240);
-        for (uint i = 0; i < 10240; i++) {
+        for (uint256 i = 0; i < 10240; i++) {
             rawData[i] = 0x42;
         }
         uint256 gasRaw = gasleft();
@@ -108,8 +102,7 @@ contract GasMeasurement is Test {
 
         // PayloadData approach: send hash + IPFS URI
         PayloadData memory payload = PayloadData({
-            contentHash: keccak256(rawData),
-            uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+            contentHash: keccak256(rawData), uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
         });
         uint256 gasPayload = gasleft();
         this.consumePayloadData(payload);
@@ -129,17 +122,12 @@ contract GasMeasurement is Test {
         console.log("\n=== Three PayloadData (reportComputeResult style) ===");
 
         PayloadData memory input = PayloadData({
-            contentHash: keccak256("input data"),
-            uri: "ipfs://QmInput123456789012345678901234567890123456"
+            contentHash: keccak256("input data"), uri: "ipfs://QmInput123456789012345678901234567890123456"
         });
         PayloadData memory output = PayloadData({
-            contentHash: keccak256("output data"),
-            uri: "ipfs://QmOutput12345678901234567890123456789012345"
+            contentHash: keccak256("output data"), uri: "ipfs://QmOutput12345678901234567890123456789012345"
         });
-        PayloadData memory proof = PayloadData({
-            contentHash: bytes32(0),
-            uri: ""
-        });
+        PayloadData memory proof = PayloadData({contentHash: bytes32(0), uri: ""});
 
         uint256 gasThree = gasleft();
         this.consumeThreePayloads(input, output, proof);
@@ -150,11 +138,11 @@ contract GasMeasurement is Test {
         bytes memory raw1 = new bytes(10240);
         bytes memory raw2 = new bytes(10240);
         bytes memory raw3 = new bytes(1024);
-        for (uint i = 0; i < 10240; i++) {
+        for (uint256 i = 0; i < 10240; i++) {
             raw1[i] = 0x42;
             raw2[i] = 0x42;
         }
-        for (uint i = 0; i < 1024; i++) {
+        for (uint256 i = 0; i < 1024; i++) {
             raw3[i] = 0x42;
         }
 
@@ -180,19 +168,19 @@ contract GasMeasurement is Test {
         return payload.contentHash;
     }
 
-    function consumeThreePayloads(
-        PayloadData calldata input,
-        PayloadData calldata output,
-        PayloadData calldata proof
-    ) external pure returns (bytes32) {
+    function consumeThreePayloads(PayloadData calldata input, PayloadData calldata output, PayloadData calldata proof)
+        external
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode(input.contentHash, output.contentHash, proof.contentHash));
     }
 
-    function consumeThreeRaw(
-        bytes calldata data1,
-        bytes calldata data2,
-        bytes calldata data3
-    ) external pure returns (bytes32) {
+    function consumeThreeRaw(bytes calldata data1, bytes calldata data2, bytes calldata data3)
+        external
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode(keccak256(data1), keccak256(data2), keccak256(data3)));
     }
 }

@@ -32,7 +32,9 @@ contract ComputeSubscriptionTest is ComputeTest {
 
         bytes memory commitmentData = abi.encode(commitment);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof());
+        emit ICoordinator.ComputeDelivered(
+            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+        );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
         );

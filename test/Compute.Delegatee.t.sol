@@ -621,10 +621,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
             buildAndSignImmediateProof(expectedRequestId, commitmentData, MOCK_INPUT, MOCK_OUTPUT, nodeEoa, nodeKey);
 
         // Create PayloadData for the dynamically generated proof
-        PayloadData memory proof_ = PayloadData({
-            contentHash: keccak256(validProof),
-            uri: bytes("")
-        });
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(validProof), uri: bytes("")});
 
         // 5. Execute the delegated report from the node's EOA
         // This atomically creates the subscription and delivers the result.

@@ -19,40 +19,30 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_PayloadData_CreateInline() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("data:inline")
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("data:inline")});
 
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
         assertEq(string(data.uri), "data:inline");
     }
 
     function test_PayloadData_CreateIpfs() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ipfs://QmTestHash")});
 
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
         assertEq(string(data.uri), "ipfs://QmTestHash");
     }
 
     function test_PayloadData_CreateArweave() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ar://bNbA3TEQVL60xlgCcqdz4ZPH")
-        });
+        PayloadData memory data =
+            PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ar://bNbA3TEQVL60xlgCcqdz4ZPH")});
 
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
         assertEq(string(data.uri), "ar://bNbA3TEQVL60xlgCcqdz4ZPH");
     }
 
     function test_PayloadData_CreateHttps() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("https://example.com/data")
-        });
+        PayloadData memory data =
+            PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("https://example.com/data")});
 
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
         assertEq(string(data.uri), "https://example.com/data");
@@ -63,10 +53,7 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_PayloadData_EncodedSize() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ipfs://QmTestHash")});
 
         // Encode the struct
         bytes memory encoded = abi.encode(data);
@@ -84,10 +71,7 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_PayloadData_EncodeDecodeCycle() public pure {
-        PayloadData memory original = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory original = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ipfs://QmTestHash")});
 
         // Encode
         bytes memory encoded = abi.encode(original);
@@ -112,16 +96,15 @@ contract PayloadDataTest is Test {
         }
 
         // PayloadData with short URI
-        PayloadData memory data = PayloadData({
-            contentHash: keccak256(largePayload),
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory data = PayloadData({contentHash: keccak256(largePayload), uri: bytes("ipfs://QmTestHash")});
 
         bytes memory encodedData = abi.encode(data);
 
         // Size comparison
         assertEq(largePayload.length, 50000);
-        assertTrue(encodedData.length < largePayload.length / 100, "PayloadData should be much smaller than raw payload");
+        assertTrue(
+            encodedData.length < largePayload.length / 100, "PayloadData should be much smaller than raw payload"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -129,19 +112,13 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_PayloadData_AnyContentHash(bytes32 contentHash) public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: contentHash,
-            uri: bytes("data:inline")
-        });
+        PayloadData memory data = PayloadData({contentHash: contentHash, uri: bytes("data:inline")});
 
         assertEq(data.contentHash, contentHash);
     }
 
     function testFuzz_PayloadData_AnyUri(bytes memory uri) public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: uri
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: uri});
 
         assertEq(keccak256(data.uri), keccak256(uri));
     }
@@ -151,20 +128,12 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_UriSchemeComparison() public pure {
-        PayloadData memory ipfsData = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory ipfsData = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ipfs://QmTestHash")});
 
-        PayloadData memory arData = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("ar://txid")
-        });
+        PayloadData memory arData = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("ar://txid")});
 
-        PayloadData memory httpsData = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("https://example.com")
-        });
+        PayloadData memory httpsData =
+            PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("https://example.com")});
 
         // Verify different URIs are distinguishable
         assertTrue(keccak256(ipfsData.uri) != keccak256(arData.uri));
@@ -173,10 +142,7 @@ contract PayloadDataTest is Test {
     }
 
     function test_EmptyUri() public pure {
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: bytes("")
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: bytes("")});
 
         assertEq(data.uri.length, 0);
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
@@ -209,10 +175,7 @@ contract PayloadDataTest is Test {
             "&timestamp=1234567890&signature=abcdef123456789012345678901234567890"
         );
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: longUrl
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: longUrl});
 
         assertTrue(data.uri.length > 200, "URI should be > 200 chars");
         assertEq(data.contentHash, SAMPLE_CONTENT_HASH);
@@ -227,10 +190,7 @@ contract PayloadDataTest is Test {
             veryLongUrl[i] = prefix[i % prefix.length];
         }
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: veryLongUrl
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: veryLongUrl});
 
         assertEq(data.uri.length, 500);
     }
@@ -244,10 +204,7 @@ contract PayloadDataTest is Test {
         // {"action":"ping"} -> eyJhY3Rpb24iOiJwaW5nIn0=
         bytes memory dataUri = bytes("data:application/json;base64,eyJhY3Rpb24iOiJwaW5nIn0=");
 
-        PayloadData memory data = PayloadData({
-            contentHash: keccak256('{"action":"ping"}'),
-            uri: dataUri
-        });
+        PayloadData memory data = PayloadData({contentHash: keccak256('{"action":"ping"}'), uri: dataUri});
 
         assertEq(string(data.uri), "data:application/json;base64,eyJhY3Rpb24iOiJwaW5nIn0=");
     }
@@ -256,10 +213,7 @@ contract PayloadDataTest is Test {
         // Data URI with plain text
         bytes memory dataUri = bytes("data:text/plain;charset=utf-8,Hello%20World");
 
-        PayloadData memory data = PayloadData({
-            contentHash: keccak256("Hello World"),
-            uri: dataUri
-        });
+        PayloadData memory data = PayloadData({contentHash: keccak256("Hello World"), uri: dataUri});
 
         assertTrue(data.uri.length > 0);
     }
@@ -272,10 +226,7 @@ contract PayloadDataTest is Test {
         // IPFS URI (~53 bytes typical)
         bytes memory ipfsUri = bytes("ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: ipfsUri
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: ipfsUri});
 
         bytes memory encoded = abi.encode(data);
 
@@ -296,10 +247,7 @@ contract PayloadDataTest is Test {
             "?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
         );
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: longUrl
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: longUrl});
 
         bytes memory encoded = abi.encode(data);
         uint256 estimatedGas = encoded.length * 16;
@@ -312,9 +260,7 @@ contract PayloadDataTest is Test {
         // Compare gas costs for different URI lengths
         bytes memory shortUri = bytes("ipfs://QmTest");
         bytes memory mediumUri = bytes("https://api.example.com/data/12345");
-        bytes memory longUri = bytes(
-            "https://api.noosphere.io/v1/payloads/request-12345678?token=abcdef123456789"
-        );
+        bytes memory longUri = bytes("https://api.noosphere.io/v1/payloads/request-12345678?token=abcdef123456789");
 
         PayloadData memory shortData = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: shortUri});
         PayloadData memory mediumData = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: mediumUri});
@@ -336,10 +282,7 @@ contract PayloadDataTest is Test {
     function test_PayloadData_UriWithQueryParams() public pure {
         bytes memory uri = bytes("https://api.example.com/data?key=value&foo=bar&baz=123");
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: uri
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: uri});
 
         assertEq(string(data.uri), "https://api.example.com/data?key=value&foo=bar&baz=123");
     }
@@ -348,10 +291,7 @@ contract PayloadDataTest is Test {
         // URL with encoded special characters
         bytes memory uri = bytes("https://api.example.com/data?name=hello%20world&path=%2Froot%2Ffile");
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: uri
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: uri});
 
         assertTrue(data.uri.length > 0);
     }
@@ -359,10 +299,7 @@ contract PayloadDataTest is Test {
     function test_PayloadData_UriWithFragment() public pure {
         bytes memory uri = bytes("https://docs.example.com/api#section-payloads");
 
-        PayloadData memory data = PayloadData({
-            contentHash: SAMPLE_CONTENT_HASH,
-            uri: uri
-        });
+        PayloadData memory data = PayloadData({contentHash: SAMPLE_CONTENT_HASH, uri: uri});
 
         assertEq(string(data.uri), "https://docs.example.com/api#section-payloads");
     }
@@ -375,10 +312,7 @@ contract PayloadDataTest is Test {
         bytes memory content = bytes('{"result": "success", "value": 42}');
         bytes32 expectedHash = keccak256(content);
 
-        PayloadData memory data = PayloadData({
-            contentHash: expectedHash,
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory data = PayloadData({contentHash: expectedHash, uri: bytes("ipfs://QmTestHash")});
 
         // Simulate verification: hash of content should match contentHash
         assertEq(keccak256(content), data.contentHash);
@@ -388,10 +322,8 @@ contract PayloadDataTest is Test {
         bytes memory originalContent = bytes('{"result": "success"}');
         bytes memory tamperedContent = bytes('{"result": "failure"}');
 
-        PayloadData memory data = PayloadData({
-            contentHash: keccak256(originalContent),
-            uri: bytes("ipfs://QmTestHash")
-        });
+        PayloadData memory data =
+            PayloadData({contentHash: keccak256(originalContent), uri: bytes("ipfs://QmTestHash")});
 
         // Tampered content should NOT match
         assertTrue(keccak256(tamperedContent) != data.contentHash);
@@ -402,20 +334,11 @@ contract PayloadDataTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_PayloadData_MultiplePayloadsEncoding() public pure {
-        PayloadData memory input = PayloadData({
-            contentHash: keccak256("input data"),
-            uri: bytes("ipfs://QmInput")
-        });
+        PayloadData memory input = PayloadData({contentHash: keccak256("input data"), uri: bytes("ipfs://QmInput")});
 
-        PayloadData memory output = PayloadData({
-            contentHash: keccak256("output data"),
-            uri: bytes("ipfs://QmOutput")
-        });
+        PayloadData memory output = PayloadData({contentHash: keccak256("output data"), uri: bytes("ipfs://QmOutput")});
 
-        PayloadData memory proof = PayloadData({
-            contentHash: keccak256("proof data"),
-            uri: bytes("ipfs://QmProof")
-        });
+        PayloadData memory proof = PayloadData({contentHash: keccak256("proof data"), uri: bytes("ipfs://QmProof")});
 
         // Encode all three (simulating reportComputeResult call)
         bytes memory encoded = abi.encode(input, output, proof);
@@ -431,20 +354,12 @@ contract PayloadDataTest is Test {
 
     function test_PayloadData_ThreePayloadsGasCost() public pure {
         // Typical scenario: 3 PayloadData for input, output, proof
-        PayloadData memory input = PayloadData({
-            contentHash: keccak256("input"),
-            uri: bytes("ipfs://QmInputHash12345")
-        });
+        PayloadData memory input = PayloadData({contentHash: keccak256("input"), uri: bytes("ipfs://QmInputHash12345")});
 
-        PayloadData memory output = PayloadData({
-            contentHash: keccak256("output"),
-            uri: bytes("ipfs://QmOutputHash12345")
-        });
+        PayloadData memory output =
+            PayloadData({contentHash: keccak256("output"), uri: bytes("ipfs://QmOutputHash12345")});
 
-        PayloadData memory proof = PayloadData({
-            contentHash: keccak256("proof"),
-            uri: bytes("ipfs://QmProofHash12345")
-        });
+        PayloadData memory proof = PayloadData({contentHash: keccak256("proof"), uri: bytes("ipfs://QmProofHash12345")});
 
         bytes memory allEncoded = abi.encode(input, output, proof);
 

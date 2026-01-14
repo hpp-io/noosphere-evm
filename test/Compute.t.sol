@@ -51,26 +51,17 @@ abstract contract CoordinatorConstants {
 
     /// @notice Mock PayloadData for input (data scheme with content hash)
     function _mockInput() internal pure returns (PayloadData memory) {
-        return PayloadData({
-            contentHash: keccak256(MOCK_INPUT),
-            uri: bytes("")
-        });
+        return PayloadData({contentHash: keccak256(MOCK_INPUT), uri: bytes("")});
     }
 
     /// @notice Mock PayloadData for output (data scheme with content hash)
     function _mockOutput() internal pure returns (PayloadData memory) {
-        return PayloadData({
-            contentHash: keccak256(MOCK_OUTPUT),
-            uri: bytes("")
-        });
+        return PayloadData({contentHash: keccak256(MOCK_OUTPUT), uri: bytes("")});
     }
 
     /// @notice Mock PayloadData for proof (data scheme with content hash)
     function _mockProof() internal pure returns (PayloadData memory) {
-        return PayloadData({
-            contentHash: keccak256(MOCK_PROOF),
-            uri: bytes("")
-        });
+        return PayloadData({contentHash: keccak256(MOCK_PROOF), uri: bytes("")});
     }
 
     /// @notice Mock protocol fee (5.11%)
