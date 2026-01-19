@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
@@ -45,7 +46,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // --- Assertions for the next interval preparation ---
         // 6. Deliver compute for interval 1, which triggers preparation for interval 2
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, bobWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, bobWallet);
 
         // Expect a new request to be started for interval 2
         bytes32 requestId2 = RequestIdUtils.requestIdPacked(subId, uint32(2));
@@ -208,7 +209,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // 2. Act: Deliver compute for the first interval, which triggers preparation for the second.
         bytes memory commitmentData1 = abi.encode(commitment);
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, nodeWallet);
         bob.prepareNextInterval(commitment.subscriptionId, 2, nodeWallet);
         // 3. Assert: Check if the node wallet received the tick fee.
         uint256 computeFee = 0.8978 ether;

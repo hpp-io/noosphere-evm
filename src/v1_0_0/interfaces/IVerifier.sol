@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title IVerifier
 /// @notice Minimal asynchronous verifier interface used by the protocol.
@@ -36,9 +37,10 @@ interface IVerifier {
     ///      `requestId` when a submission is accepted. Verification results are delivered out-of-band
     ///      (events, callbacks, or off-chain notifications). Do not expect synchronous verification here.
     /// @param request A struct containing subscriptionId, interval, submitter, and nodeWallet.
+    /// @param proof PayloadData containing proof data (contentHash for verification, uri for actual proof bytes).
     function submitProofForVerification(
         ProofVerificationRequest calldata request,
-        bytes calldata proof,
+        PayloadData calldata proof,
         bytes32 commitmentHash,
         bytes32 inputHash,
         bytes32 resultHash

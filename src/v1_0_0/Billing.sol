@@ -10,6 +10,7 @@ import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {FulfillResult} from "./types/FulfillResult.sol";
+import {PayloadData} from "./types/PayloadData.sol";
 
 /// @title Billing
 /// @notice An abstract contract that provides the core logic for billing, fee calculation,
@@ -133,9 +134,9 @@ abstract contract Billing is IBilling, Routable {
         Commitment memory commitment,
         address proofSubmitter,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         uint16 numRedundantDeliveries,
         bool isLastDelivery,
         bytes32 delegatedSubHash
@@ -176,9 +177,9 @@ abstract contract Billing is IBilling, Routable {
         bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         uint16 numRedundantDeliveries,
         bytes32 delegatedSubHash
     ) private returns (FulfillResult) {
@@ -189,8 +190,9 @@ abstract contract Billing is IBilling, Routable {
         FulfillResult result =
             _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
         if (result == FulfillResult.FULFILLED) {
-            bytes32 inputHash = keccak256(input);
-            bytes32 resultHash = keccak256(output);
+            // Use contentHash from PayloadData for verification
+            bytes32 inputHash = input.contentHash;
+            bytes32 resultHash = output.contentHash;
             if (delegatedSubHash != bytes32(0)) {
                 proofDataHash = delegatedSubHash;
             } else {
@@ -206,9 +208,9 @@ abstract contract Billing is IBilling, Routable {
     function _processStandardDelivery(
         Commitment memory commitment,
         address nodeWallet,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         uint16 numRedundantDeliveries
     ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);

@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import {PendingDelivery} from "../types/PendingDelivery.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title DeliveryInbox.sol
 /// @notice Request-centric pending delivery store: stores at most one PendingDelivery per (requestId, node).
@@ -46,17 +47,17 @@ abstract contract DeliveryInbox {
     /// @param node Address of the node submitting the delivery.
     /// @param subscriptionId Subscription id (fits in uint32).
     /// @param interval Interval id (uint32).
-    /// @param input Optional input bytes.
-    /// @param output Optional output bytes.
-    /// @param proof Optional proof/metadata bytes.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     function _enqueuePendingDelivery(
         bytes32 requestId,
         address node,
         uint64 subscriptionId,
         uint32 interval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof
     ) internal {
         // record node for enumeration if first time
         if (!_isNodeRegistered[requestId][node]) {
@@ -88,17 +89,17 @@ abstract contract DeliveryInbox {
     /// @param node Address of the node that submitted the delivery.
     /// @param subscriptionId Subscription id.
     /// @param interval Interval id.
-    /// @param input Input bytes.
-    /// @param output Output bytes.
-    /// @param proof Proof/metadata bytes.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     function _receiveDelivery(
         bytes32 requestId,
         address node,
         uint64 subscriptionId,
         uint32 interval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof
     ) internal virtual {}
 
     /// @notice Internal: clear stored pending delivery for (requestId, node).

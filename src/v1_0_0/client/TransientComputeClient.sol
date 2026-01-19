@@ -3,19 +3,27 @@ pragma solidity 0.8.23;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
+import {InputType} from "../types/PayloadData.sol";
 
 /**
  * @title TransientComputeClient
  * @dev This abstract contract provides a client for interacting with the Noosphere compute network.
  * It extends `ComputeClient` and adds functionality for managing transient compute subscriptions,
  * where the inputs for a computation are stored temporarily on-chain.
+ * Supports Hybrid input mode: raw data, URI string, or PayloadData.
  */
 abstract contract TransientComputeClient is ComputeClient {
     /// @dev Stores the inputs for each transient compute request, mapped by subscription ID and a unique interval.
     mapping(uint64 => mapping(uint32 => bytes)) private _subscriptionInputs;
+    /// @dev Stores the input type for each request
+    mapping(uint64 => mapping(uint32 => InputType)) private _inputTypes;
 
     /// @dev A counter to ensure a unique interval for each transient request within a subscription.
     mapping(uint64 => uint32) private _requestNonces;
+
+    error DataTooLarge();
+    error AmbiguousDataSize();
+    error InvalidPayloadDataSize();
 
     constructor(address router) ComputeClient(router) {}
 
@@ -41,17 +49,68 @@ abstract contract TransientComputeClient is ComputeClient {
         // rather than representing a time-based interval.
         uint32 interval = ++_requestNonces[subscriptionId];
         _subscriptionInputs[subscriptionId][interval] = inputs;
+        _inputTypes[subscriptionId][interval] = InputType.RAW_DATA;
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            INPUT SETTERS (Hybrid)
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Request compute with URI string input
+     * @param subscriptionId The subscription ID
+     * @param uri The URI string pointing to off-chain data
+     * @return interval The interval number for this request
+     * @return commitment The commitment for this request
+     */
+    function _requestComputeWithUri(uint64 subscriptionId, string memory uri)
+        internal
+        returns (uint32 interval, Commitment memory commitment)
+    {
+        interval = ++_requestNonces[subscriptionId];
+        _subscriptionInputs[subscriptionId][interval] = bytes(uri);
+        _inputTypes[subscriptionId][interval] = InputType.URI_STRING;
+        (, commitment) = _getRouter().sendRequest(subscriptionId, interval);
+    }
+
+    /**
+     * @notice Request compute with encoded PayloadData input
+     * @param subscriptionId The subscription ID
+     * @param data The encoded PayloadData
+     * @return interval The interval number for this request
+     * @return commitment The commitment for this request
+     */
+    function _requestComputeWithPayloadData(uint64 subscriptionId, bytes memory data)
+        internal
+        returns (uint32 interval, Commitment memory commitment)
+    {
+        interval = ++_requestNonces[subscriptionId];
+        _subscriptionInputs[subscriptionId][interval] = data;
+        _inputTypes[subscriptionId][interval] = InputType.PAYLOAD_DATA;
+        (, commitment) = _getRouter().sendRequest(subscriptionId, interval);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INPUT GETTER
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Get compute inputs with type information
+     * @param subscriptionId The subscription ID
+     * @param interval The interval number
+     * @param timestamp The current timestamp (unused)
+     * @param caller The caller address (unused)
+     * @return data The input data
+     * @return inputType The type of input data
+     */
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
         external
         view
         override
-        returns (bytes memory)
+        returns (bytes memory data, InputType inputType)
     {
-        // Returns the inputs stored for a specific subscription and interval.
-        return _subscriptionInputs[subscriptionId][interval];
+        return (_subscriptionInputs[subscriptionId][interval], _inputTypes[subscriptionId][interval]);
     }
 }

@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import "../types/ProofVerificationRequest.sol";
 import {Commitment} from "../types/Commitment.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title ICoordinator
 /// @notice Coordinator interface for managing the lifecycle of compute requests:
@@ -27,10 +28,22 @@ interface ICoordinator {
     event RequestCancelled(bytes32 indexed requestId);
 
     /// @notice Emitted when a node delivers a compute result.
+    /// @dev Uses PayloadData struct for off-chain data references with integrity verification.
+    ///      Stack depth: 7 slots (safe under 16 limit).
     /// @param requestId Opaque request key for this delivery (ties to Commitment.requestId).
     /// @param nodeWallet Node wallet address that submitted the delivery.
     /// @param numRedundantDeliveries Number of redundant deliveries now recorded for the request.
-    event ComputeDelivered(bytes32 indexed requestId, address indexed nodeWallet, uint16 numRedundantDeliveries);
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
+    event ComputeDelivered(
+        bytes32 indexed requestId,
+        address indexed nodeWallet,
+        uint16 numRedundantDeliveries,
+        PayloadData input,
+        PayloadData output,
+        PayloadData proof
+    );
 
     /// @notice Emitted when a proof verification outcome is processed.
     /// @param subscriptionId Subscription identifier.
@@ -96,18 +109,20 @@ interface ICoordinator {
 
     /// @notice Called by nodes to deliver compute outputs for a given interval.
     /// @dev State-mutating. Coordinator will process the delivery, update commitment state and emit ComputeDelivered.
+    ///      Uses PayloadData struct for direct URI passing with integrity verification.
+    ///      Stack depth: 7 slots (deliveryInterval:1, input:1, output:1, proof:1, commitmentData:2, nodeWallet:1).
     /// @param deliveryInterval Interval index this delivery corresponds to.
-    /// @param input Input bytes that were used for the compute (for auditing/verification).
-    /// @param output Output bytes produced by the node.
-    /// @param proof Proof bytes (protocol-specific) supporting the output.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     /// @param commitmentData ABI-encoded Commitment data that ties this delivery to a request.
     /// @param nodeWallet Wallet address of the delivering node (used for payment/escrow).
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        bytes memory commitmentData,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
+        bytes calldata commitmentData,
         address nodeWallet
     ) external;
 

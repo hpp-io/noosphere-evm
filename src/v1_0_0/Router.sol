@@ -17,6 +17,7 @@ import {WalletFactory} from "./wallet/WalletFactory.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {PayloadData} from "./types/PayloadData.sol";
 
 /**
  * @title Router
@@ -195,9 +196,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @inheritdoc IRouter
      */
     function fulfill(
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,

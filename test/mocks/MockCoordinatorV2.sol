@@ -5,6 +5,7 @@ import "../../src/v1_0_0/types/BillingConfig.sol";
 import {ProofVerificationRequest} from "../../src/v1_0_0/types/ProofVerificationRequest.sol";
 import {Commitment} from "../../src/v1_0_0/types/Commitment.sol";
 import {ICoordinator} from "../../src/v1_0_0/interfaces/ICoordinator.sol";
+import {PayloadData} from "../../src/v1_0_0/types/PayloadData.sol";
 
 /// @dev A mock Coordinator for testing version routing.
 contract MockCoordinatorV2 is ICoordinator {
@@ -20,11 +21,14 @@ contract MockCoordinatorV2 is ICoordinator {
         returns (Commitment memory)
     {}
 
-    function reportComputeResult(uint32, bytes calldata, bytes calldata, bytes calldata, bytes calldata, address)
-        external
-        pure
-        override
-    {}
+    function reportComputeResult(
+        uint32,
+        PayloadData calldata,
+        PayloadData calldata,
+        PayloadData calldata,
+        bytes calldata,
+        address
+    ) external pure override {}
 
     function cancelRequest(bytes32) external pure override {}
 

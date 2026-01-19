@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {PendingDelivery} from "../src/v1_0_0/types/PendingDelivery.sol";
 import {ComputeSubscriptionTest} from "./Compute.Subscription.t.sol";
@@ -39,9 +40,9 @@ contract ComputePaymentNoProofTest is ComputeTest {
         vm.prank(address(bob));
         bob.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
-            MOCK_INPUT,
-            MOCK_OUTPUT,
-            MOCK_PROOF,
+            _mockInput(),
+            _mockOutput(),
+            _mockProof(),
             commitmentData,
             bobWallet
         );
@@ -82,9 +83,9 @@ contract ComputePaymentNoProofTest is ComputeTest {
         vm.prank(address(bob));
         bob.reportComputeResult(
             1, // interval
-            MOCK_INPUT,
-            MOCK_OUTPUT,
-            MOCK_PROOF,
+            _mockInput(),
+            _mockOutput(),
+            _mockProof(),
             commitmentData,
             bobWallet
         );
@@ -99,8 +100,8 @@ contract ComputePaymentNoProofTest is ComputeTest {
         assertTrue(exists, "Pending delivery should exist");
         assertEq(pd.subscriptionId, subId, "Pending delivery subscriptionId mismatch");
         assertEq(pd.interval, 1, "Pending delivery interval mismatch");
-        assertEq(pd.input, MOCK_INPUT, "Pending delivery input mismatch");
-        assertEq(pd.output, MOCK_OUTPUT, "Pending delivery output mismatch");
+        assertEq(pd.input.contentHash, _mockInput().contentHash, "Pending delivery input mismatch");
+        assertEq(pd.output.contentHash, _mockOutput().contentHash, "Pending delivery output mismatch");
     }
 
     /// @notice Subscription can be fulfilled with ERC20 payment
@@ -130,9 +131,9 @@ contract ComputePaymentNoProofTest is ComputeTest {
         vm.prank(address(bob));
         bob.reportComputeResult(
             commitment.interval, // Use the correct interval from the commitment
-            MOCK_INPUT,
-            MOCK_OUTPUT,
-            MOCK_PROOF,
+            _mockInput(),
+            _mockOutput(),
+            _mockProof(),
             commitmentData,
             bobWallet
         );
@@ -172,7 +173,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
 
         // Execute response fulfillment from Bob
         bytes memory commitmentData = abi.encode(commitment);
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWallet);
 
         // prepare the commitment for the next interval
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(commitment.subscriptionId);
@@ -182,7 +183,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         bob.prepareNextInterval(commitment.subscriptionId, 2, bobWallet);
 
         vm.warp(10 minutes);
-        bob.reportComputeResult(2, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, nextCommitmentResultData, bobWallet);
+        bob.reportComputeResult(2, _mockInput(), _mockOutput(), _mockProof(), nextCommitmentResultData, bobWallet);
 
         // Assert new balances
         assertEq(erc20Token.balanceOf(aliceWallet), 60e6);
@@ -230,7 +231,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         // Execute response fulfillment from Bob using address(BOB) as nodeWallet
         vm.expectRevert(bytes("InvalidWallet()"));
         bytes memory commitmentData = abi.encode(commitment);
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, address(bobWallet));
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData, address(bobWallet));
     }
 
     /// @notice Subscription cannot be fulfilled if `Wallet` does not approve consumer

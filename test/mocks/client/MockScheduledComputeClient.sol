@@ -6,6 +6,7 @@ import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription
 import {ScheduledComputeClient} from "../../../src/v1_0_0/client/ScheduledComputeClient.sol";
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
+import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";
 
 /// @notice Mocks ScheduledComputeClient.sol
 contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient, StdAssertions {
@@ -166,9 +167,9 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         uint16 redundancy,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes32 containerId
     ) internal virtual override {
         // Log delivered output

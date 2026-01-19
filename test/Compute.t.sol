@@ -13,6 +13,7 @@ import {Test} from "forge-std/Test.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 
 /// @title ISubscriptionManagerErrors
 /// @notice Errors emitted by SubscriptionManager
@@ -47,6 +48,21 @@ abstract contract CoordinatorConstants {
 
     /// @notice Mock delivered proof
     bytes internal constant MOCK_PROOF = "proof";
+
+    /// @notice Mock PayloadData for input (data scheme with content hash)
+    function _mockInput() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_INPUT), uri: bytes("")});
+    }
+
+    /// @notice Mock PayloadData for output (data scheme with content hash)
+    function _mockOutput() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_OUTPUT), uri: bytes("")});
+    }
+
+    /// @notice Mock PayloadData for proof (data scheme with content hash)
+    function _mockProof() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_PROOF), uri: bytes("")});
+    }
 
     /// @notice Mock protocol fee (5.11%)
     uint16 internal constant MOCK_PROTOCOL_FEE = 511;

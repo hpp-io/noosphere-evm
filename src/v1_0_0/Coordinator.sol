@@ -10,6 +10,7 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
+import {PayloadData} from "./types/PayloadData.sol";
 
 /// @title Coordinator
 /// @notice Orchestrates request lifecycle: start -> deliver -> verify -> settlement.
@@ -90,9 +91,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @dev Entrypoint for nodes to submit compute outputs. Non-reentrant to protect settlement paths.
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes calldata commitmentData,
         address nodeWallet
     ) external override nonReentrant {
@@ -179,9 +180,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     ///      Validates interval, redundancy, node wallet, deduplicates per-node responses, then processes delivery.
     function _reportComputeResult(
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes memory commitmentData,
         address nodeWallet,
         bytes32 delegatedSubHash
@@ -236,7 +237,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             newRedundancyCount == commitment.redundancy,
             delegatedSubHash
         );
-        emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount);
+        emit ComputeDelivered(commitment.requestId, nodeWallet, newRedundancyCount, input, output, proof);
     }
 
     /// @dev ConfirmedOwner abstract hook (required override).
