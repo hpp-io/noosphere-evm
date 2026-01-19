@@ -198,10 +198,8 @@ abstract contract Billing is IBilling, Routable {
             } else {
                 proofDataHash = commitmentHash;
             }
-            // Encode PayloadData as bytes for verifier compatibility
-            // Note: Verifiers may need updates to decode PayloadData format
             IVerifier(commitment.verifier)
-                .submitProofForVerification(request, abi.encode(proof), proofDataHash, inputHash, resultHash);
+                .submitProofForVerification(request, proof, proofDataHash, inputHash, resultHash);
         }
         return result;
     }

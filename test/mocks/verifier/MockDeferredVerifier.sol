@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import {Router} from "../../../src/v1_0_0/Router.sol";
 import {MockVerifier} from "./MockVerifier.sol";
 import {ProofVerificationRequest} from "src/v1_0_0/types/ProofVerificationRequest.sol";
+import {PayloadData} from "src/v1_0_0/types/PayloadData.sol";
 import {console} from "forge-std/console.sol";
 
 /// @title MockDeferredVerifier
@@ -38,7 +39,7 @@ contract MockDeferredVerifier is MockVerifier {
     ///      The verification decision is expected to be produced later (e.g., via `mockFinalizeVerification`).
     function submitProofForVerification(
         ProofVerificationRequest calldata request,
-        bytes calldata, /* proof */
+        PayloadData calldata, /* proof */
         bytes32, /* commitmentHash */
         bytes32, /* inputHash */
         bytes32 /* resultHash */

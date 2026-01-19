@@ -10,6 +10,7 @@ import {IVerifier} from "../interfaces/IVerifier.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ICoordinator} from "../interfaces/ICoordinator.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /**
  * @title ImmediateFinalizeVerifier
@@ -128,7 +129,7 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
 
     function submitProofForVerification(
         ProofVerificationRequest calldata request,
-        bytes calldata proof,
+        PayloadData calldata proof,
         bytes32 commitmentHash,
         bytes32 inputHash,
         bytes32 resultHash
@@ -137,6 +138,8 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             revert OnlyCoordinator();
         }
 
+        // Extract actual proof bytes from PayloadData.uri
+        // The uri field contains the raw proof data to be decoded
         ProofData memory proofData;
         (
             proofData.requestId,
@@ -146,7 +149,7 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             proofData.nodeAddress,
             proofData.timestamp,
             proofData.signature
-        ) = abi.decode(proof, (bytes32, bytes32, bytes32, bytes32, address, uint256, bytes));
+        ) = abi.decode(proof.uri, (bytes32, bytes32, bytes32, bytes32, address, uint256, bytes));
 
         emit VerificationRequested(request.subscriptionId, request.interval, request.submitterAddress);
 
