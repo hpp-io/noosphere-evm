@@ -163,8 +163,14 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         // Check if this delegated subscription has already been created.
         bytes32 key = keccak256(abi.encodePacked(sub.client, nonce));
         uint64 subscriptionId = delegateCreatedIds[key];
-        // If it exists, return the ID, preventing replay.
+        // If it exists, verify subscription is still active before returning.
         if (subscriptionId != 0) {
+            ComputeSubscription storage existing = subscriptions[subscriptionId];
+            // If subscription was deleted or cancelled (activeAt == max), revert
+            // For transient subscriptions, activeAt is set to max after fulfillment
+            if (existing.client == address(0) || existing.activeAt == type(uint32).max) {
+                revert SubscriptionCompleted();
+            }
             return subscriptionId;
         }
         // If it's a new creation, verify the signature has not expired.
@@ -441,6 +447,13 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                 // release funds for that single requestId
                 consumer.releaseForRequest(rid);
                 delete requestCommitments[rid];
+
+                // Also delete from Coordinator's s_requestCommitments to keep in sync
+                address coordinatorAddr = _getCoordinatorByRouteId(subscription.routeId);
+                if (coordinatorAddr != address(0)) {
+                    try ICoordinator(coordinatorAddr).cancelRequest(rid) {} catch {}
+                }
+
                 emit CommitmentTimedOut(rid, subscriptionId, currentInterval);
             }
         }

@@ -7,6 +7,7 @@ import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
 import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {DeployUtils} from "./lib/DeployUtils.sol";
@@ -504,16 +505,53 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         assertEq(pd.proof.contentHash, _mockProof().contentHash);
     }
 
-    /// @notice Skipped: After redundancy removal, delegated flows need additional checks to prevent
-    ///         duplicate request creation for completed subscriptions. This is tracked as a separate issue.
+    /// @notice Reusing the same nonce after a transient subscription is completed should revert
     function test_RevertsIf_AtomicallyDeliveringOutput_ForCompletedSubscription() public {
-        vm.skip(true); // TODO: Fix delegated flow to check subscription completion before creating new requests
+        uint32 nonce = router.maxSubscriberNonce(address(transientClient));
+        ComputeSubscription memory sub = mockSubscription();
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+        bytes32 typed = buildTypedMessage(nonce, expiry, sub);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(delegateeKey, typed);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint32 deliveryInterval = 1;
+        // First delivery: creates subscription and delivers output
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
+        );
+
+        // Verify delivery succeeded
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval);
+        assertEq(out.subscriptionId, 1);
+
+        // Second attempt with same nonce should revert because subscription is completed
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
+        );
     }
 
-    /// @notice Skipped: After redundancy removal, delegated flows need additional checks to prevent
-    ///         duplicate request creation for completed subscriptions. This is tracked as a separate issue.
+    /// @notice Trying to deliver twice for the same interval should revert with InvalidCommitment
     function test_RevertsIf_DeliveringDelegatedComputeResponse_Twice() public {
-        vm.skip(true); // TODO: Fix delegated flow to check subscription completion before creating new requests
+        uint32 nonce = router.maxSubscriberNonce(address(transientClient));
+        ComputeSubscription memory sub = mockSubscription();
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+        bytes32 typed = buildTypedMessage(nonce, expiry, sub);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(delegateeKey, typed);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint32 deliveryInterval = 1;
+        // First delivery succeeds
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
+        );
+
+        // Bob tries to deliver for the same subscription/interval - should revert
+        // The subscription is already completed (transient with maxExecutions=1), so it should revert
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
+        nodeBob.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
+        );
     }
 
     /// @notice A delegated delivery with a valid proof against ImmediateFinalizeVerifier should succeed.

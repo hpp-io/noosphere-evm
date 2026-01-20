@@ -207,12 +207,7 @@ contract SubscriptionBatchReaderTest is ComputeTest {
     }
 
     /// @notice Commitment status after subscription cancellation
-    /// @dev TODO: This test is skipped because cancellation only cleans up the Router's requestCommitments
-    ///      but not the Coordinator's s_requestCommitments. SubscriptionBatchReader reads from Coordinator,
-    ///      so commitmentExists remains true after cancellation. Fix requires adding Coordinator.cancelRequest()
-    ///      call to SubscriptionManager._cancelSubscriptionHelper().
     function test_Succeeds_When_QueryingStatusAfterSubscriptionCancellation() public {
-        vm.skip(true);
         // Create subscription
         vm.warp(0);
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
