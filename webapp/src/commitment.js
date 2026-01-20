@@ -17,6 +17,7 @@ class Commitment {
      * @param {string} params.feeToken
      * @param {string} params.verifier
      * @param {string} params.coordinator
+     * @param {bigint} params.verifierFee
      */
     constructor({
                     requestId,
@@ -29,7 +30,8 @@ class Commitment {
                     feeAmount,
                     feeToken,
                     verifier,
-                    coordinator
+                    coordinator,
+                    verifierFee
                 }) {
         this.data = {
             requestId,
@@ -42,7 +44,8 @@ class Commitment {
             feeAmount,
             feeToken,
             verifier,
-            coordinator
+            coordinator,
+            verifierFee
         };
     }
 
@@ -65,6 +68,7 @@ class Commitment {
             feeToken: commitmentData.feeToken,
             verifier: commitmentData.verifier,
             coordinator: commitmentData.coordinator,
+            verifierFee: commitmentData.verifierFee,
         });
     }
 
@@ -85,10 +89,11 @@ class Commitment {
             this.data.feeToken,
             this.data.verifier,
             this.data.coordinator,
+            this.data.verifierFee,
         ];
 
         return ethers.AbiCoder.defaultAbiCoder().encode(
-            ['(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address)'],
+            ['(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address,uint256)'],
             [commitmentTuple]
         );
     }

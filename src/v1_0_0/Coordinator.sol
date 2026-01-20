@@ -6,6 +6,7 @@ import {BillingConfig} from "./types/BillingConfig.sol";
 import {Billing} from "./Billing.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
+import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
@@ -149,7 +150,11 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
      */
     function getCommitment(uint64 subscriptionId, uint32 interval) public view override returns (Commitment memory) {
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(subscriptionId);
-        return CommitmentUtils.build(sub, subscriptionId, interval, address(this));
+        uint256 verifierFee = 0;
+        if (sub.verifier != address(0)) {
+            (, verifierFee) = IVerifier(sub.verifier).getTokenFeeInfo(sub.feeToken);
+        }
+        return CommitmentUtils.build(sub, subscriptionId, interval, address(this), verifierFee);
     }
 
     /**

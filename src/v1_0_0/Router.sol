@@ -14,7 +14,6 @@ import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {SubscriptionsManager} from "./SubscriptionManager.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
-import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {PayloadData} from "./types/PayloadData.sol";
@@ -528,8 +527,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         if (requestCommitments[requestId] != bytes32(0)) {
-            // Request already exists, reconstruct the commitment to make the call idempotent.
-            commitment = CommitmentUtils.build(subscription, subscriptionId, interval, coordinatorAddr);
+            // Request already exists, delegate to Coordinator for commitment reconstruction (includes verifierFee).
+            commitment = ICoordinator(coordinatorAddr).getCommitment(subscriptionId, interval);
         } else {
             // New request, mark it and start it in the coordinator.
             _markRequestInFlight(

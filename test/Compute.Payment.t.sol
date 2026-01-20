@@ -178,7 +178,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         // prepare the commitment for the next interval
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(commitment.subscriptionId);
         Commitment memory nextCommitmentResult =
-            CommitmentUtils.build(sub, commitment.subscriptionId, 2, address(COORDINATOR));
+            CommitmentUtils.build(sub, commitment.subscriptionId, 2, address(COORDINATOR), 0);
         bytes memory nextCommitmentResultData = abi.encode(nextCommitmentResult);
         bob.prepareNextInterval(commitment.subscriptionId, 2, bobWallet);
 
@@ -284,7 +284,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         );
 
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(subId);
-        Commitment memory commitmentResult = CommitmentUtils.build(sub, subId, 1, address(COORDINATOR));
+        Commitment memory commitmentResult = CommitmentUtils.build(sub, subId, 1, address(COORDINATOR), 0);
 
         // 3. Compare the first commitment with the idempotent commitment
         assertEq(firstCommitment.requestId, commitmentResult.requestId);

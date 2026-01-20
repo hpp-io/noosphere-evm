@@ -150,7 +150,8 @@ contract ComputeSubscriptionTest is ComputeTest {
             feeAmount: 0,
             feeToken: NO_PAYMENT_TOKEN,
             verifier: NO_VERIFIER,
-            coordinator: address(COORDINATOR)
+            coordinator: address(COORDINATOR),
+            verifierFee: 0
         });
         bytes memory commitmentData = abi.encode(fakeCommitment);
 

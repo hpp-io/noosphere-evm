@@ -14,15 +14,19 @@ library CommitmentUtils {
     /**
      * @notice Builds a Commitment struct from a subscription and interval data.
      * @param sub The compute subscription memory pointer.
+     * @param subscriptionId The subscription ID.
      * @param interval The interval for which the commitment is being created.
      * @param coordinator The address of the coordinator that will handle the request.
+     * @param verifierFee The verifier fee amount (cached from verifier.getTokenFeeInfo).
      * @return A memory-resident Commitment struct.
      */
-    function build(ComputeSubscription memory sub, uint64 subscriptionId, uint32 interval, address coordinator)
-        internal
-        pure
-        returns (Commitment memory)
-    {
+    function build(
+        ComputeSubscription memory sub,
+        uint64 subscriptionId,
+        uint32 interval,
+        address coordinator,
+        uint256 verifierFee
+    ) internal pure returns (Commitment memory) {
         bytes32 requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
 
         return Commitment({
@@ -36,7 +40,8 @@ library CommitmentUtils {
             feeAmount: sub.feeAmount,
             feeToken: sub.feeToken,
             verifier: sub.verifier,
-            coordinator: coordinator
+            coordinator: coordinator,
+            verifierFee: verifierFee
         });
     }
 }

@@ -24,4 +24,6 @@ struct Commitment {
     address verifier;
     /// @dev The address of the coordinator contract.
     address coordinator;
+    /// @dev The verifier fee amount (cached to avoid duplicate external calls).
+    uint256 verifierFee;
 }
