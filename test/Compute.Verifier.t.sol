@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol";
 import {MockDeferredVerifier} from "./mocks/verifier/MockDeferredVerifier.sol";
@@ -474,7 +474,9 @@ contract ComputeVerifierTest is ComputeTest {
         // Create PayloadData for the dynamic proof
         PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.expectEmit(true, false, false, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, nodeWallet, 1, _mockInput(), _mockOutput(), proof_);
+        emit ICoordinator.ComputeDelivered(
+            commitment.requestId, nodeWallet, 1, _mockInput().contentHash, _mockOutput().contentHash, proof_.contentHash
+        );
 
         // 9. Bob reports the compute result
         // The EOA `bob` initiates the transaction by calling the Coordinator directly.

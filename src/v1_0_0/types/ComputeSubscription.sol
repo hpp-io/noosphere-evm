@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 /// @notice Compute subscription configuration for off-chain compute callbacks.
 /// @dev Field ordering chosen to minimize wasted bytes across 32-byte storage slots

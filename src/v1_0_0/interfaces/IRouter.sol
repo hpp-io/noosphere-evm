@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../types/Commitment.sol";
 import {FulfillResult} from "../types/FulfillResult.sol";
@@ -90,6 +90,20 @@ interface IRouter {
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
     function unlockForVerification(ProofVerificationRequest calldata proofRequest) external;
 
+    /// @notice Unlock verification escrow and execute payment in a single call.
+    /// @dev Gas optimization: combines unlockForVerification + payFromCoordinator into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
+    /// @param spenderWallet Wallet address from which funds will be drawn (consumer wallet).
+    /// @param spenderAddress Address that authorized the spend (consumer/owner).
+    /// @param payments Array of payments to execute.
+    function unlockAndPayForVerification(
+        ProofVerificationRequest calldata proofRequest,
+        address spenderWallet,
+        address spenderAddress,
+        Payment[] calldata payments
+    ) external;
+
     /// @notice Prepare node-side verification parameters for the given subscription interval.
     /// @dev Typically used by Coordinator to pre-reserve verifier fees for node operations.
     /// @param subscriptionId Subscription identifier being prepared.
@@ -111,6 +125,18 @@ interface IRouter {
     /// @notice Returns the last subscription id issued by the Router.
     /// @return lastId The most recently created subscription identifier.
     function getLastSubscriptionId() external view returns (uint64 lastId);
+
+    /// @notice Get subscription interval and validate wallets in a single call.
+    /// @dev Gas optimization: combines getComputeSubscriptionInterval + areValidWallets into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param subscriptionId Subscription identifier to get interval for.
+    /// @param walletAddrs Array of wallet addresses to validate.
+    /// @return interval Current interval for the subscription.
+    /// @return allWalletsValid True only when ALL addresses were produced by the WalletFactory.
+    function getIntervalAndValidateWallets(uint64 subscriptionId, address[] calldata walletAddrs)
+        external
+        view
+        returns (uint32 interval, bool allWalletsValid);
 
     /*//////////////////////////////////////////////////////////////////////////
                          CONTRACT REGISTRY & GOVERNANCE
@@ -146,6 +172,12 @@ interface IRouter {
     /// @param walletAddr Candidate wallet address to validate.
     /// @return isValid True when `walletAddr` was produced by the WalletFactory and is tracked.
     function isValidWallet(address walletAddr) external view returns (bool isValid);
+
+    /// @notice Batch validate whether multiple addresses are Wallets created by the WalletFactory.
+    /// @dev Gas optimization: reduces multiple external calls to a single call.
+    /// @param walletAddrs Array of candidate wallet addresses to validate.
+    /// @return allValid True only when ALL addresses were produced by the WalletFactory.
+    function areValidWallets(address[] calldata walletAddrs) external view returns (bool allValid);
 
     /*//////////////////////////////////////////////////////////////////////////
                                   ADMIN

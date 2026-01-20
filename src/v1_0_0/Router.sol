@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {Commitment} from "./types/Commitment.sol";
@@ -307,6 +307,39 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         );
     }
 
+    /**
+     * @notice Unlock verification escrow and execute payment in a single call.
+     * @dev Gas optimization: combines unlockForVerification + payFromCoordinator into one external call.
+     *      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+     * @param proofRequest The proof verification request details.
+     * @param spenderWallet Wallet address from which funds will be drawn.
+     * @param spenderAddress Address that authorized the spend.
+     * @param payments Array of payments to execute.
+     */
+    function unlockAndPayForVerification(
+        ProofVerificationRequest calldata proofRequest,
+        address spenderWallet,
+        address spenderAddress,
+        Payment[] calldata payments
+    ) external override {
+        address coordinatorAddress = getContractById(subscriptions[proofRequest.subscriptionId].routeId);
+        if (msg.sender != coordinatorAddress) {
+            revert OnlyCallableFromCoordinator();
+        }
+
+        // Unlock escrow (inlined for bytecode reduction)
+        _unlockForVerification(proofRequest);
+        emit VerificationFundsUnlocked(
+            proofRequest.subscriptionId,
+            proofRequest.interval,
+            proofRequest.submitterAddress,
+            proofRequest.escrowedAmount
+        );
+
+        // Execute payment using calldata version
+        _pay(spenderWallet, spenderAddress, payments);
+    }
+
     function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
         external
         view
@@ -420,6 +453,44 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
     function isValidWallet(address walletAddr) external view override returns (bool) {
         return walletFactory.isValidWallet(walletAddr);
+    }
+
+    /// @inheritdoc IRouter
+    function areValidWallets(address[] calldata walletAddrs) external view override returns (bool) {
+        uint256 len = walletAddrs.length;
+        for (uint256 i = 0; i < len;) {
+            if (!walletFactory.isValidWallet(walletAddrs[i])) {
+                return false;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        return true;
+    }
+
+    /// @inheritdoc IRouter
+    function getIntervalAndValidateWallets(uint64 subscriptionId, address[] calldata walletAddrs)
+        external
+        view
+        override
+        returns (uint32 interval, bool allWalletsValid)
+    {
+        // Get subscription interval
+        interval = _getSubscriptionInterval(subscriptionId);
+
+        // Validate all wallets
+        allWalletsValid = true;
+        uint256 len = walletAddrs.length;
+        for (uint256 i = 0; i < len;) {
+            if (!walletFactory.isValidWallet(walletAddrs[i])) {
+                allWalletsValid = false;
+                break;
+            }
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

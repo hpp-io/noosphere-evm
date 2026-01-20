@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
 
@@ -29,6 +29,15 @@ interface ISubscriptionsManager {
 
     /// @notice Emitted when the minimum repeat interval is updated
     event MinRepeatIntervalSet(uint32 newMinRepeatInterval);
+
+    /// @notice Emitted when the callback gas limit is updated
+    event CallbackGasLimitSet(uint32 newCallbackGasLimit);
+
+    /// @notice Emitted when a client callback fails (out of gas or revert)
+    /// @param subscriptionId The subscription ID
+    /// @param interval The interval that failed
+    /// @param client The client contract address that failed
+    event CallbackFailed(uint64 indexed subscriptionId, uint32 indexed interval, address indexed client);
 
     /*//////////////////////////////////////////////////////////////
                              ERRORS

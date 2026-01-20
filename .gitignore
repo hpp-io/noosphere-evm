@@ -29,3 +29,4 @@ package-lock.json
 # benchmark
 webapp/src/benchmark/logs/
 .env-*
+CLAUDE.md

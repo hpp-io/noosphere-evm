@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
@@ -103,7 +103,12 @@ contract ComputeTransientTest is ComputeTest {
         // We check both indexed topics (requestId, nodeWallet) and the emitter address.
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
 
         // Call the function that emits the event.
@@ -142,7 +147,12 @@ contract ComputeTransientTest is ComputeTest {
         // --- 2. Act: Deliver the response and check for the event ---
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
 
         bytes memory commitmentData = abi.encode(commitment);
@@ -180,7 +190,12 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
@@ -188,7 +203,12 @@ contract ComputeTransientTest is ComputeTest {
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            bobWalletAddress,
+            2,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         bob.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
@@ -222,7 +242,12 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
@@ -230,7 +255,12 @@ contract ComputeTransientTest is ComputeTest {
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            bobWalletAddress,
+            2,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         bob.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress
@@ -268,7 +298,12 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
@@ -293,7 +328,12 @@ contract ComputeTransientTest is ComputeTest {
         // Deliver callback request from two nodes (within redundancy)
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
@@ -301,7 +341,12 @@ contract ComputeTransientTest is ComputeTest {
 
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, bobWalletAddress, 2, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            bobWalletAddress,
+            2,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         bob.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, bobWalletAddress

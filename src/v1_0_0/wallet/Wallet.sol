@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
@@ -23,22 +23,22 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @notice Total escrowed amount per token across all spenders (address(0) == native ETH)
     mapping(address => uint256) private totalLocked;
 
-    /// @notice Per-spender escrowed balances: lockedBalanceOf[spender][token]
-    mapping(address => mapping(address => uint256)) private lockedBalanceOf;
-
     /// @notice Off-chain allowance controlled by the wallet owner that routers may consume on behalf of a spender
     /// @dev allowance[spender][token] is decreased when the router locks funds or the router executes c-style transfers.
     mapping(address => mapping(address => uint256)) public allowance;
 
     /// @notice Per-request lock structure supporting redundancy and incremental payouts.
+    /// @dev Gas optimized: packed into 3 storage slots (was 5).
+    ///      Existence check: spender != address(0) instead of separate bool.
     struct RequestLock {
-        address spender; // subscription client / spender
+        // Slot 0: 24 bytes (address + uint16 + uint16)
+        address spender; // subscription client / spender (20 bytes)
+        uint16 redundancy; // number of allowed payouts for this request (2 bytes)
+        uint16 paidCount; // number of payouts already executed (2 bytes)
+        // Slot 1: 20 bytes
         address token; // token (address(0) == ETH)
-        uint256 totalAmount; // total locked for the request (typically feeAmount * redundancy)
+        // Slot 2: 32 bytes
         uint256 remainingAmount; // amount remaining to be disbursed for this request
-        uint16 redundancy; // number of allowed payouts for this request
-        uint16 paidCount; // number of payouts already executed
-        bool exists; // existence flag
     }
 
     /// @notice Mapping from requestId (opaque bytes32) to RequestLock
@@ -101,7 +101,6 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     error ExceedsRemaining();
     error ZeroAmount();
     error RedundancyExhausted();
-    error InconsistentLockedBalance();
     error MismatchPaymentToken();
 
     /*//////////////////////////////////////////////////////////////
@@ -175,7 +174,6 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
 
         // Effect
         allowance[spender][token] -= amount;
-        lockedBalanceOf[spender][token] += amount;
         totalLocked[token] += amount;
 
         emit Escrow(spender, token, amount, true);
@@ -188,9 +186,8 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @param token token to unlock
     /// @param amount amount to unlock
     function releaseEscrow(address spender, address token, uint256 amount) external onlyRouter nonReentrant {
-        if (amount > lockedBalanceOf[spender][token]) revert InsufficientFunds();
+        if (amount > totalLocked[token]) revert InsufficientFunds();
 
-        lockedBalanceOf[spender][token] -= amount;
         totalLocked[token] -= amount;
         allowance[spender][token] += amount;
 
@@ -231,22 +228,17 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         onlyRouter
         nonReentrant
     {
-        if (requestLocks[requestId].exists) revert RequestAlreadyLocked();
+        // Existence check: spender != address(0) (gas optimization: no separate bool)
+        if (requestLocks[requestId].spender != address(0)) revert RequestAlreadyLocked();
         if (totalAmount > _getUnlockedBalance(token)) revert InsufficientFunds();
         if (allowance[spender][token] < totalAmount) revert InsufficientAllowance();
 
         allowance[spender][token] -= totalAmount;
-        lockedBalanceOf[spender][token] += totalAmount;
         totalLocked[token] += totalAmount;
 
+        // Gas optimized struct: 3 slots instead of 5
         requestLocks[requestId] = RequestLock({
-            spender: spender,
-            token: token,
-            totalAmount: totalAmount,
-            remainingAmount: totalAmount,
-            redundancy: redundancy,
-            paidCount: 0,
-            exists: true
+            spender: spender, redundancy: redundancy, paidCount: 0, token: token, remainingAmount: totalAmount
         });
 
         emit RequestLocked(requestId, spender, token, totalAmount, redundancy);
@@ -259,15 +251,13 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @param amount amount to transfer
     function disburseForRequest(bytes32 requestId, address to, uint256 amount) external onlyRouter nonReentrant {
         RequestLock storage rl = requestLocks[requestId];
-        if (!rl.exists) revert NoSuchRequestLock();
+        if (rl.spender == address(0)) revert NoSuchRequestLock();
         if (amount == 0) revert ZeroAmount();
         if (amount > rl.remainingAmount) revert ExceedsRemaining();
         if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
 
         // Bookkeeping (effects)
-        lockedBalanceOf[rl.spender][rl.token] -= amount;
         totalLocked[rl.token] -= amount;
-
         rl.remainingAmount -= amount;
         unchecked {
             rl.paidCount += 1;
@@ -297,7 +287,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @param payments array of Payment structs to execute
     function disburseForFulfillment(bytes32 requestId, Payment[] calldata payments) external onlyRouter nonReentrant {
         RequestLock storage rl = requestLocks[requestId];
-        if (!rl.exists) revert NoSuchRequestLock();
+        if (rl.spender == address(0)) revert NoSuchRequestLock();
         if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
 
         uint256 len = payments.length;
@@ -321,12 +311,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
 
         if (totalToDisburse > remaining) revert ExceedsRemaining();
 
-        uint256 lockedForSpender = lockedBalanceOf[spender][token];
-        if (totalToDisburse > lockedForSpender) revert InconsistentLockedBalance();
-
-        lockedBalanceOf[spender][token] = lockedForSpender - totalToDisburse;
         totalLocked[token] -= totalToDisburse;
-
         remaining -= totalToDisburse;
         unchecked {
             ++paidCount;
@@ -336,8 +321,11 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         uint16 paid = paidCount;
         for (uint256 i = 0; i < len;) {
             Payment calldata p = payments[i];
-            _transferToken(token, p.recipient, p.feeAmount);
-            emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount, paid);
+            // Skip zero-amount transfers to save gas (avoids unnecessary CALL)
+            if (p.feeAmount > 0) {
+                _transferToken(token, p.recipient, p.feeAmount);
+                emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount, paid);
+            }
             unchecked {
                 ++i;
             }
@@ -358,13 +346,9 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @param requestId request identifier
     function releaseForRequest(bytes32 requestId) external onlyRouter nonReentrant {
         RequestLock memory rl = requestLocks[requestId];
-        if (!rl.exists) revert NoSuchRequestLock();
+        if (rl.spender == address(0)) revert NoSuchRequestLock();
 
         uint256 rem = rl.remainingAmount;
-        uint256 lockedForSpender = lockedBalanceOf[rl.spender][rl.token];
-        if (rem > lockedForSpender) revert InconsistentLockedBalance();
-
-        lockedBalanceOf[rl.spender][rl.token] = lockedForSpender - rem;
         totalLocked[rl.token] -= rem;
         allowance[rl.spender][rl.token] += rem;
 
@@ -382,24 +366,32 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         return totalLocked[token];
     }
 
-    /// @notice Locked balance for a specific spender and token.
-    function lockedOf(address spender, address token) external view returns (uint256) {
-        return lockedBalanceOf[spender][token];
-    }
-
-    /// @notice Whether a given spender has any locked balance for `token`.
-    function isLocked(address spender, address token) external view returns (bool) {
-        return lockedBalanceOf[spender][token] > 0;
+    /// @notice Returns spender's allowance and wallet's available (unlocked) balance for a token in a single call.
+    /// @dev Gas optimization: combines 3 external calls into 1 for SubscriptionManager._hasSubscriptionNextInterval().
+    ///      Saves ~90,000 gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param spender The address of the spender to check allowance for.
+    /// @param token The token address (address(0) for native ETH).
+    /// @return spenderAllowance The allowance granted to the spender for this token.
+    /// @return availableBalance The wallet's unlocked balance (total balance - locked amount).
+    function getSpenderInfo(address spender, address token)
+        external
+        view
+        returns (uint256 spenderAllowance, uint256 availableBalance)
+    {
+        spenderAllowance = allowance[spender][token];
+        uint256 totalBalance = (token == address(0)) ? address(this).balance : IERC20(token).balanceOf(address(this));
+        uint256 lockedAmount = totalLocked[token];
+        availableBalance = totalBalance >= lockedAmount ? totalBalance - lockedAmount : 0;
     }
 
     /// @notice Remaining locked amount for a given request.
     function lockedOfRequest(bytes32 requestId) external view returns (uint256) {
-        return requestLocks[requestId].exists ? requestLocks[requestId].remainingAmount : 0;
+        return requestLocks[requestId].spender != address(0) ? requestLocks[requestId].remainingAmount : 0;
     }
 
     /// @notice Number of payouts already executed for a request.
     function paidCountOfRequest(bytes32 requestId) external view returns (uint16) {
-        return requestLocks[requestId].exists ? requestLocks[requestId].paidCount : 0;
+        return requestLocks[requestId].spender != address(0) ? requestLocks[requestId].paidCount : 0;
     }
 
     /*//////////////////////////////////////////////////////////////

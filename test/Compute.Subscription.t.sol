@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
@@ -33,7 +33,12 @@ contract ComputeSubscriptionTest is ComputeTest {
         bytes memory commitmentData = abi.encode(commitment);
         vm.expectEmit(true, true, true, true, address(COORDINATOR));
         emit ICoordinator.ComputeDelivered(
-            commitment.requestId, aliceWalletAddress, 1, _mockInput(), _mockOutput(), _mockProof()
+            commitment.requestId,
+            aliceWalletAddress,
+            1,
+            _mockInput().contentHash,
+            _mockOutput().contentHash,
+            _mockProof().contentHash
         );
         alice.reportComputeResult(
             commitment.interval, _mockInput(), _mockOutput(), _mockProof(), commitmentData, aliceWalletAddress
