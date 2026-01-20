@@ -35,7 +35,6 @@ library CommitmentUtils {
             containerId: sub.containerId,
             interval: interval,
             useDeliveryInbox: sub.useDeliveryInbox,
-            redundancy: sub.redundancy,
             walletAddress: sub.wallet,
             feeAmount: sub.feeAmount,
             feeToken: sub.feeToken,

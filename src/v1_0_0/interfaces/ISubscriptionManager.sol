@@ -98,7 +98,6 @@ interface ISubscriptionsManager {
      * @param containerId identifier of the container .
      * @param maxExecutions Maximum allowed number of executions for this subscription
      * @param intervalSeconds Interval length in seconds between scheduled executions
-     * @param redundancy Number of redundant node responses required per interval.
      * @param useDeliveryInbox If true, node responses will be stored for later pickup (lazy delivery).
      * @param feeToken Token used to pay per-execution fees (address(0) for native ETH).
      * @param feeAmount Fee amount per execution expressed in `feeToken` base units.
@@ -111,7 +110,6 @@ interface ISubscriptionsManager {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,

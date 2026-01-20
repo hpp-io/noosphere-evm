@@ -47,7 +47,6 @@ interface IRouter {
     /// @param input PayloadData for input (contentHash + uri).
     /// @param output PayloadData for output (contentHash + uri).
     /// @param proof PayloadData for proof (contentHash + uri).
-    /// @param numRedundantDeliveries Number of redundant deliveries reported for this fulfillment.
     /// @param nodeWallet Wallet address used by the reporting node for payout/escrow actions.
     /// @param payments Array of Payment entries describing recipients and amounts for this fulfillment.
     /// @param commitment The Commitment struct that corresponds to the original request.
@@ -56,7 +55,6 @@ interface IRouter {
         PayloadData calldata input,
         PayloadData calldata output,
         PayloadData calldata proof,
-        uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,
         Commitment calldata commitment

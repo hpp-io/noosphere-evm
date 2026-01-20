@@ -25,8 +25,6 @@ struct ComputeSubscription {
     address feeToken; // slot 5 (part)
     /// @notice Verifier address (optional). If non-zero, used to verify node responses before delivery.
     address payable verifier; // slot 5 (part)
-    /// @notice Number of required unique node responses per execution (redundancy).
-    uint16 redundancy; // slot 6 (part)
     /// @notice If true, responses should be stored in the client's inbox/pending queue instead of immediate callback.
     bool useDeliveryInbox; // slot 6 (part)
 }

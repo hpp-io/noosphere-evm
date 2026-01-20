@@ -14,12 +14,12 @@ library EIP712Utils {
 
     /// @notice keccak256 hash of the Subscription type-string used in EIP-712 struct hashing.
     bytes32 private constant SUBSCRIPTION_SCHEMA_HASH = keccak256(
-        "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+        "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
     );
 
     /// @notice keccak256 hash of the DelegateSubscription wrapper type used in EIP-712.
     bytes32 private constant DELEGATE_SCHEMA_HASH = keccak256(
-        "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+        "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -60,7 +60,6 @@ library EIP712Utils {
                 s.activeAt,
                 s.intervalSeconds,
                 s.maxExecutions,
-                s.redundancy,
                 s.containerId,
                 s.useDeliveryInbox,
                 s.verifier,

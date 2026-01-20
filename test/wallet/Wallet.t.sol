@@ -220,7 +220,7 @@ contract WalletTest is Test, IWalletFactoryEvents {
 
         // Lock funds for a request
         vm.prank(address(router));
-        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID, 1);
+        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID);
 
         assertEq(wallet.totalLockedFor(address(token)), lockAmount);
         assertEq(wallet.lockedOfRequest(REQUEST_ID), lockAmount);

@@ -42,7 +42,6 @@ contract MyTransientClient is TransientComputeClient, Delegator {
     /// @dev This function wraps the internal `_createComputeSubscription` from the parent contract.
     function createSubscription(
         string memory containerId,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -51,9 +50,7 @@ contract MyTransientClient is TransientComputeClient, Delegator {
         bytes32 routeId
     ) external returns (uint64) {
         // Call the internal function provided by TransientComputeClient
-        return _createComputeSubscription(
-            containerId, redundancy, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
-        );
+        return _createComputeSubscription(containerId, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId);
     }
 
     function requestCompute(uint64 subscriptionId, bytes memory inputs)
@@ -78,7 +75,6 @@ contract MyTransientClient is TransientComputeClient, Delegator {
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16, /* numRedundantDeliveries */
         bool, /* useDeliveryInbox */
         address node,
         PayloadData calldata, /* input */

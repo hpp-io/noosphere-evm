@@ -14,7 +14,7 @@ contract MockCoordinatorV2 is ICoordinator {
 
     function initialize(BillingConfig calldata) external pure {}
 
-    function startRequest(bytes32, uint64, bytes32, uint32, uint16, bool, address, uint256, address, address)
+    function startRequest(bytes32, uint64, bytes32, uint32, bool, address, uint256, address, address)
         external
         pure
         override

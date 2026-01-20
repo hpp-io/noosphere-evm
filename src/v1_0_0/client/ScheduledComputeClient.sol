@@ -29,7 +29,6 @@ abstract contract ScheduledComputeClient is ComputeClient {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -37,19 +36,9 @@ abstract contract ScheduledComputeClient is ComputeClient {
         address verifier,
         bytes32 routeId
     ) internal returns (uint64) {
-        return _getRouter()
-            .createComputeSubscription(
-                containerId,
-                maxExecutions,
-                intervalSeconds,
-                redundancy,
-                useDeliveryInbox,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                routeId
-            );
+        return _getRouter().createComputeSubscription(
+            containerId, maxExecutions, intervalSeconds, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
+        );
     }
 
     function _requestCompute(uint64 subscriptionId, bytes memory inputs) internal returns (uint64, Commitment memory) {

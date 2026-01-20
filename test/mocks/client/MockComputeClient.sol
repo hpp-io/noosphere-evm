@@ -10,7 +10,6 @@ import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";
 /// @notice Output delivered from node
 /// @param subscriptionId subscription ID
 /// @param interval subscription interval
-/// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
 /// @param node responding node address
 /// @param input PayloadData pointing to input data
 /// @param output PayloadData pointing to output data
@@ -19,7 +18,6 @@ import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";
 struct DeliveredOutput {
     uint64 subscriptionId;
     uint32 interval;
-    uint16 redundancy;
     bool useDeliveryInbox;
     address node;
     PayloadData input;
@@ -35,11 +33,11 @@ abstract contract MockComputeClient {
                                 MUTABLE
     //////////////////////////////////////////////////////////////*/
 
-    error DeliveredOutputNotFount(uint64 subscriptionId, uint32 interval, uint16 redundancy);
+    error DeliveredOutputNotFount(uint64 subscriptionId, uint32 interval);
 
-    /// @notice Subscription ID => Interval => Redundancy => DeliveredOutput
+    /// @notice Subscription ID => Interval => DeliveredOutput
     /// @dev Visibility restricted to `internal` to allow downstream inheriting contracts to modify mapping
-    mapping(uint64 => mapping(uint64 => mapping(uint16 => DeliveredOutput))) internal outputs;
+    mapping(uint64 => mapping(uint64 => DeliveredOutput)) internal outputs;
 
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
@@ -49,13 +47,12 @@ abstract contract MockComputeClient {
     /// @dev Useful read interface to return `DeliveredOutput` struct rather than destructured parameters
     /// @param subscriptionId subscription ID
     /// @param interval subscription interval
-    /// @param redundancy after this call succeeds, how many nodes will have delivered a response for this interval
     /// @return output delivered from node
-    function getDeliveredOutput(uint64 subscriptionId, uint32 interval, uint16 redundancy)
+    function getDeliveredOutput(uint64 subscriptionId, uint32 interval)
         external
         view
         returns (DeliveredOutput memory)
     {
-        return outputs[subscriptionId][interval][redundancy];
+        return outputs[subscriptionId][interval];
     }
 }

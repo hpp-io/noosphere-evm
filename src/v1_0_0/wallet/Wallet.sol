@@ -27,18 +27,15 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     /// @dev allowance[spender][token] is decreased when the router locks funds or the router executes c-style transfers.
     mapping(address => mapping(address => uint256)) public allowance;
 
-    /// @notice Per-request lock structure supporting redundancy and incremental payouts.
-    /// @dev Gas optimized: packed into 3 storage slots (was 5).
-    ///      Existence check: spender != address(0) instead of separate bool.
+    /// @notice Per-request lock structure for single payout.
+    /// @dev Gas optimized: 2 storage slots. Existence check: spender != address(0).
     struct RequestLock {
-        // Slot 0: 24 bytes (address + uint16 + uint16)
+        // Slot 0: 20 bytes
         address spender; // subscription client / spender (20 bytes)
-        uint16 redundancy; // number of allowed payouts for this request (2 bytes)
-        uint16 paidCount; // number of payouts already executed (2 bytes)
         // Slot 1: 20 bytes
         address token; // token (address(0) == ETH)
         // Slot 2: 32 bytes
-        uint256 remainingAmount; // amount remaining to be disbursed for this request
+        uint256 amount; // amount locked for this request (single payout)
     }
 
     /// @notice Mapping from requestId (opaque bytes32) to RequestLock
@@ -62,8 +59,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         bytes32 indexed requestId,
         address indexed spender,
         address indexed token,
-        uint256 totalAmount,
-        uint16 redundancy
+        uint256 amount
     );
 
     /// @notice Emitted when a request-level lock is released and leftover is refunded to allowance.
@@ -72,9 +68,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     );
 
     /// @notice Emitted for each disbursement made as part of a request.
-    event RequestDisbursed(
-        bytes32 indexed requestId, address indexed to, address indexed token, uint256 amount, uint16 paidCount
-    );
+    event RequestDisbursed(bytes32 indexed requestId, address indexed to, address indexed token, uint256 amount);
 
     /// @notice Emitted when router locks/unlocks escrow on behalf of a spender.
     /// @param spender spender whose balance was modified
@@ -98,9 +92,8 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     error InsufficientAllowance();
     error RequestAlreadyLocked();
     error NoSuchRequestLock();
-    error ExceedsRemaining();
+    error ExceedsAmount();
     error ZeroAmount();
-    error RedundancyExhausted();
     error MismatchPaymentToken();
 
     /*//////////////////////////////////////////////////////////////
@@ -216,86 +209,67 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
                       REQUEST-LEVEL LOCKS & PAYOUTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Create a request-level lock which reserves `totalAmount` for a specific `requestId`.
-    /// @dev Typically totalAmount = feeAmount * redundancy. Router-only.
+    /// @notice Create a request-level lock which reserves `amount` for a specific `requestId`.
+    /// @dev Router-only. Single payout per request.
     /// @param spender spender on whose behalf the lock is created
     /// @param token token to lock
-    /// @param totalAmount total amount reserved
+    /// @param amount amount reserved for this request
     /// @param requestId opaque request identifier
-    /// @param redundancy number of payouts allowed for this request
-    function lockForRequest(address spender, address token, uint256 totalAmount, bytes32 requestId, uint16 redundancy)
+    function lockForRequest(address spender, address token, uint256 amount, bytes32 requestId)
         external
         onlyRouter
         nonReentrant
     {
         // Existence check: spender != address(0) (gas optimization: no separate bool)
         if (requestLocks[requestId].spender != address(0)) revert RequestAlreadyLocked();
-        if (totalAmount > _getUnlockedBalance(token)) revert InsufficientFunds();
-        if (allowance[spender][token] < totalAmount) revert InsufficientAllowance();
+        if (amount > _getUnlockedBalance(token)) revert InsufficientFunds();
+        if (allowance[spender][token] < amount) revert InsufficientAllowance();
 
-        allowance[spender][token] -= totalAmount;
-        totalLocked[token] += totalAmount;
+        allowance[spender][token] -= amount;
+        totalLocked[token] += amount;
 
-        // Gas optimized struct: 3 slots instead of 5
-        requestLocks[requestId] = RequestLock({
-            spender: spender, redundancy: redundancy, paidCount: 0, token: token, remainingAmount: totalAmount
-        });
+        requestLocks[requestId] = RequestLock({spender: spender, token: token, amount: amount});
 
-        emit RequestLocked(requestId, spender, token, totalAmount, redundancy);
+        emit RequestLocked(requestId, spender, token, amount);
     }
 
-    /// @notice Disburse a single payout for `requestId` to `to`. Supports incremental redundancy payouts.
-    /// @dev Router-only. Bookkeeping is performed before external transfer to minimize reentrancy risk.
+    /// @notice Disburse a single payout for `requestId` to `to`.
+    /// @dev Router-only. Single payout then cleanup. Bookkeeping before transfer for reentrancy safety.
     /// @param requestId request identifier
     /// @param to recipient address
     /// @param amount amount to transfer
     function disburseForRequest(bytes32 requestId, address to, uint256 amount) external onlyRouter nonReentrant {
-        RequestLock storage rl = requestLocks[requestId];
+        RequestLock memory rl = requestLocks[requestId];
         if (rl.spender == address(0)) revert NoSuchRequestLock();
         if (amount == 0) revert ZeroAmount();
-        if (amount > rl.remainingAmount) revert ExceedsRemaining();
-        if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
+        if (amount > rl.amount) revert ExceedsAmount();
 
         // Bookkeeping (effects)
         totalLocked[rl.token] -= amount;
-        rl.remainingAmount -= amount;
-        unchecked {
-            rl.paidCount += 1;
+        uint256 amountToRefund = rl.amount - amount;
+        if (amountToRefund > 0) {
+            allowance[rl.spender][rl.token] += amountToRefund;
         }
-        uint16 paid = rl.paidCount;
+        delete requestLocks[requestId];
 
         // Interaction
         _transferToken(rl.token, to, amount);
-        emit RequestDisbursed(requestId, to, rl.token, amount, paid);
-
-        // Finalize: refund leftover and cleanup if fully consumed or redundancy reached
-        if (rl.remainingAmount == 0 || paid == rl.redundancy) {
-            uint256 amountToRefund = rl.remainingAmount;
-            address spender = rl.spender;
-            address token = rl.token;
-            if (amountToRefund > 0) {
-                allowance[spender][token] += amountToRefund;
-            }
-            delete requestLocks[requestId];
-            emit RequestReleased(requestId, spender, token, amountToRefund);
-        }
+        emit RequestDisbursed(requestId, to, rl.token, amount);
+        emit RequestReleased(requestId, rl.spender, rl.token, amountToRefund);
     }
 
-    /// @notice Disburse multiple payments as part of one fulfillment and increment paidCount once.
-    /// @dev All payments must use the same token as specified in the lock.
+    /// @notice Disburse multiple payments as part of one fulfillment.
+    /// @dev All payments must use the same token as specified in the lock. Single fulfillment then cleanup.
     /// @param requestId request identifier
     /// @param payments array of Payment structs to execute
     function disburseForFulfillment(bytes32 requestId, Payment[] calldata payments) external onlyRouter nonReentrant {
-        RequestLock storage rl = requestLocks[requestId];
+        RequestLock memory rl = requestLocks[requestId];
         if (rl.spender == address(0)) revert NoSuchRequestLock();
-        if (rl.paidCount >= rl.redundancy) revert RedundancyExhausted();
 
         uint256 len = payments.length;
         address token = rl.token;
         address spender = rl.spender;
-        uint16 redundancy = rl.redundancy;
-        uint16 paidCount = rl.paidCount;
-        uint256 remaining = rl.remainingAmount;
+        uint256 lockedAmount = rl.amount;
 
         uint256 totalToDisburse = 0;
         for (uint256 i = 0; i < len;) {
@@ -303,58 +277,48 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
             if (p.feeToken != token) revert MismatchPaymentToken();
             unchecked {
                 totalToDisburse += p.feeAmount;
-            }
-            unchecked {
                 ++i;
             }
         }
 
-        if (totalToDisburse > remaining) revert ExceedsRemaining();
+        if (totalToDisburse > lockedAmount) revert ExceedsAmount();
 
+        // Bookkeeping (effects)
         totalLocked[token] -= totalToDisburse;
-        remaining -= totalToDisburse;
-        unchecked {
-            ++paidCount;
+        uint256 amountToRefund = lockedAmount - totalToDisburse;
+        if (amountToRefund > 0) {
+            allowance[spender][token] += amountToRefund;
         }
-        rl.remainingAmount = remaining;
-        rl.paidCount = paidCount;
-        uint16 paid = paidCount;
+        delete requestLocks[requestId];
+
+        // Interaction: execute all transfers
         for (uint256 i = 0; i < len;) {
             Payment calldata p = payments[i];
             // Skip zero-amount transfers to save gas (avoids unnecessary CALL)
             if (p.feeAmount > 0) {
                 _transferToken(token, p.recipient, p.feeAmount);
-                emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount, paid);
+                emit RequestDisbursed(requestId, p.recipient, token, p.feeAmount);
             }
             unchecked {
                 ++i;
             }
         }
 
-        if (paid == redundancy) {
-            uint256 amountToRefund = remaining;
-            if (amountToRefund > 0) {
-                // increase allowance for spender (payback)
-                allowance[spender][token] += amountToRefund;
-            }
-            delete requestLocks[requestId];
-            emit RequestReleased(requestId, spender, token, amountToRefund);
-        }
+        emit RequestReleased(requestId, spender, token, amountToRefund);
     }
 
-    /// @notice Release remaining funds for a request (e.g., on timeout/cancel). Refunds remaining amount to spender allowance.
+    /// @notice Release locked funds for a request (e.g., on timeout/cancel). Refunds full amount to spender allowance.
     /// @param requestId request identifier
     function releaseForRequest(bytes32 requestId) external onlyRouter nonReentrant {
         RequestLock memory rl = requestLocks[requestId];
         if (rl.spender == address(0)) revert NoSuchRequestLock();
 
-        uint256 rem = rl.remainingAmount;
-        totalLocked[rl.token] -= rem;
-        allowance[rl.spender][rl.token] += rem;
+        totalLocked[rl.token] -= rl.amount;
+        allowance[rl.spender][rl.token] += rl.amount;
 
         delete requestLocks[requestId];
 
-        emit RequestReleased(requestId, rl.spender, rl.token, rem);
+        emit RequestReleased(requestId, rl.spender, rl.token, rl.amount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -384,14 +348,9 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
         availableBalance = totalBalance >= lockedAmount ? totalBalance - lockedAmount : 0;
     }
 
-    /// @notice Remaining locked amount for a given request.
+    /// @notice Locked amount for a given request.
     function lockedOfRequest(bytes32 requestId) external view returns (uint256) {
-        return requestLocks[requestId].spender != address(0) ? requestLocks[requestId].remainingAmount : 0;
-    }
-
-    /// @notice Number of payouts already executed for a request.
-    function paidCountOfRequest(bytes32 requestId) external view returns (uint16) {
-        return requestLocks[requestId].spender != address(0) ? requestLocks[requestId].paidCount : 0;
+        return requestLocks[requestId].spender != address(0) ? requestLocks[requestId].amount : 0;
     }
 
     /*//////////////////////////////////////////////////////////////

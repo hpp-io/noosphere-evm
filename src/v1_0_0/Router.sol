@@ -56,7 +56,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         uint64 indexed subscriptionId,
         bytes32 indexed containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         uint256 feeAmount,
         address feeToken,
@@ -201,7 +200,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         PayloadData calldata input,
         PayloadData calldata output,
         PayloadData calldata proof,
-        uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,
         Commitment calldata commitment
@@ -221,28 +219,14 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         _payForFulfillment(commitment.requestId, commitment.walletAddress, payments);
 
-        if (numRedundantDeliveries == commitment.redundancy) {
-            delete requestCommitments[commitment.requestId];
-        }
+        // Single delivery: always delete commitment after fulfillment
+        delete requestCommitments[commitment.requestId];
 
         // Process payment and handle callback
-        _callback(
-            commitment.subscriptionId,
-            commitment.interval,
-            numRedundantDeliveries,
-            commitment.useDeliveryInbox,
-            nodeWallet,
-            input,
-            output,
-            proof
-        );
+        _callback(commitment.subscriptionId, commitment.interval, commitment.useDeliveryInbox, nodeWallet, input, output, proof);
 
-        // Deactivate the subscription only if the current delivery is the last one for this interval
-        // and there are no more intervals to execute.
-        if (
-            numRedundantDeliveries == commitment.redundancy
-                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false
-        ) {
+        // Deactivate subscription if no more intervals to execute
+        if (_hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false) {
             _makeSubscriptionInactive(commitment.subscriptionId);
         }
 
@@ -534,14 +518,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment = ICoordinator(coordinatorAddr).getCommitment(subscriptionId, interval);
         } else {
             // New request, mark it and start it in the coordinator.
-            _markRequestInFlight(
-                requestId,
-                payable(subscription.wallet),
-                subscription.client,
-                subscription.redundancy,
-                subscription.feeToken,
-                subscription.feeAmount
-            );
+            _markRequestInFlight(requestId, payable(subscription.wallet), subscription.client, subscription.feeToken, subscription.feeAmount);
 
             /// Update the activeAt timestamp to reflect the last activity
             if (subscription.activeAt == type(uint32).max) {
@@ -554,7 +531,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscriptionId,
                 subscription.containerId,
                 interval,
-                subscription.redundancy,
                 subscription.useDeliveryInbox,
                 subscription.feeToken,
                 subscription.feeAmount,
@@ -569,7 +545,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscriptionId,
             subscription.containerId,
             interval,
-            subscription.redundancy,
             subscription.useDeliveryInbox,
             subscription.feeAmount,
             subscription.feeToken,

@@ -27,15 +27,6 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     /// @notice Address of the SubscriptionBatchReader utility contract.
     address private subscriptionBatchReader;
 
-    /// @notice Counts redundant deliveries for a request: key = keccak256(requestId)
-    mapping(bytes32 => uint16) public redundancyCount;
-
-    /// @notice Tracks whether a node has already responded for a given subscription/interval.
-    /// @dev key: keccak256(abi.encode(subscriptionId, interval, nodeAddress))
-    /// @dev Note: These entries are not cleaned up after request completion for gas optimization.
-    ///      Since each request has a unique interval, keys never collide across requests.
-    mapping(bytes32 => bool) public nodeResponded;
-
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
@@ -62,26 +53,14 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
         address wallet,
         address verifier
     ) external override onlyRouter returns (Commitment memory) {
-        Commitment memory commitment = _startBilling(
-            requestId,
-            subscriptionId,
-            containerId,
-            interval,
-            redundancy,
-            useDeliveryInbox,
-            feeToken,
-            feeAmount,
-            wallet,
-            verifier
-        );
-        // Gas optimization: redundancyCount[requestId] default is 0, no need to explicitly set
+        Commitment memory commitment =
+            _startBilling(requestId, subscriptionId, containerId, interval, useDeliveryInbox, feeToken, feeAmount, wallet, verifier);
         emit RequestStarted(requestId, subscriptionId, containerId, commitment);
         return commitment;
     }
@@ -180,7 +159,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
     }
 
     /// @dev Internal: core logic for processing a compute delivery from a node.
-    ///      Validates interval, redundancy, node wallet, deduplicates per-node responses, then processes delivery.
+    ///      Validates interval, wallet, checks commitment exists (prevents duplicate), then processes delivery.
     function _reportComputeResult(
         uint32 deliveryInterval,
         PayloadData calldata input,
@@ -193,13 +172,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         // decode commitment supplied by caller (router produced this when request was started)
         Commitment memory commitment = abi.decode(commitmentData, (Commitment));
 
-        // check redundancy limit for this request: if already reached, revert
-        uint16 currentRedundancy = redundancyCount[commitment.requestId];
-        if (currentRedundancy >= commitment.redundancy) {
-            revert IntervalCompleted();
-        }
         // Compute commitmentHash once here to avoid duplicate computation in _processDelivery
         bytes32 commitmentHash = keccak256(commitmentData);
+        // Check commitment exists - this also prevents duplicate responses since commitment is deleted after processing
         if (s_requestCommitments[commitment.requestId] != commitmentHash) {
             revert InvalidCommitment();
         }
@@ -222,32 +197,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         if (!walletsValid) {
             revert InvalidWallet();
         }
-        // prevent the same node (msg.sender) from responding twice for the same subscription/interval
-        bytes32 nodeResponseKey = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, msg.sender));
-        if (nodeResponded[nodeResponseKey] == true) {
-            revert NodeRespondedAlready();
-        }
-        nodeResponded[nodeResponseKey] = true;
-        uint16 newRedundancyCount;
-        unchecked {
-            newRedundancyCount = currentRedundancy + 1;
-        }
-        redundancyCount[commitment.requestId] = newRedundancyCount;
-        _processDelivery(
-            commitment,
-            commitmentHash,
-            msg.sender,
-            nodeWallet,
-            input,
-            output,
-            proof,
-            newRedundancyCount,
-            newRedundancyCount == commitment.redundancy,
-            delegatedSubHash
-        );
-        emit ComputeDelivered(
-            commitment.requestId, nodeWallet, newRedundancyCount, input.contentHash, output.contentHash, proof.contentHash
-        );
+        // Single delivery: process and cleanup
+        _processDelivery(commitment, commitmentHash, msg.sender, nodeWallet, input, output, proof, delegatedSubHash);
+        emit ComputeDelivered(commitment.requestId, nodeWallet, input.contentHash, output.contentHash, proof.contentHash);
     }
 
     /// @dev ConfirmedOwner abstract hook (required override).
@@ -255,16 +207,12 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         _validateOwnership();
     }
 
-    /// @dev Cleanup is simplified - nodeResponded entries are intentionally not deleted.
-    ///      Since each request has a unique interval, the keys never collide.
-    ///      This saves ~35,000+ gas per reportComputeResult call.
+    /// @dev Cleanup request state after fulfillment. Simply delegates to parent.
     function _cleanupRequestState(bytes32 requestId, uint64 subscriptionId, uint32 interval, address proofSubmitter)
         internal
         override
     {
         super._cleanupRequestState(requestId, subscriptionId, interval, proofSubmitter);
-        // Note: nodeResponded entries are not cleaned up for gas optimization.
-        // Each request has a unique interval, so keys (subscriptionId, interval, nodeAddress) never collide.
     }
 
     /*//////////////////////////////////////////////////////////////

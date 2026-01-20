@@ -20,7 +20,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -28,19 +27,9 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         address verifier,
         bytes32 routeId
     ) external returns (uint64) {
-        return _getRouter()
-            .createComputeSubscription(
-                containerId,
-                maxExecutions,
-                intervalSeconds,
-                redundancy,
-                useDeliveryInbox,
-                feeToken,
-                feeAmount,
-                wallet,
-                verifier,
-                routeId
-            );
+        return _getRouter().createComputeSubscription(
+            containerId, maxExecutions, intervalSeconds, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
+        );
     }
 
     function sendRequest(uint64 subscriptionId, uint32 interval)
@@ -53,7 +42,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
     function receiveRequestCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,
@@ -73,17 +61,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
             _enqueuePendingDelivery(requestId, node, subscriptionId, interval, input, output, proof);
         } else {
             // Call internal receive function, since caller is validated
-            _receiveCompute(
-                subscriptionId,
-                interval,
-                numRedundantDeliveries,
-                useDeliveryInbox,
-                node,
-                input,
-                output,
-                proof,
-                containerId
-            );
+            _receiveCompute(subscriptionId, interval, useDeliveryInbox, node, input, output, proof, containerId);
         }
     }
 
@@ -110,7 +88,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,

@@ -16,7 +16,7 @@ contract ComputeSubscriptionTest is ComputeTest {
     function test_Succeeds_When_CancellingSubscription() public {
         // Create subscription
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         vm.warp(block.timestamp + 10 minutes);
         // Cancel subscription and expect event emission
@@ -27,7 +27,7 @@ contract ComputeSubscriptionTest is ComputeTest {
 
     function test_Succeeds_When_CancellingFulfilledSubscription() public {
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         bytes memory commitmentData = abi.encode(commitment);
@@ -35,7 +35,6 @@ contract ComputeSubscriptionTest is ComputeTest {
         emit ICoordinator.ComputeDelivered(
             commitment.requestId,
             aliceWalletAddress,
-            1,
             _mockInput().contentHash,
             _mockOutput().contentHash,
             _mockProof().contentHash
@@ -61,7 +60,7 @@ contract ComputeSubscriptionTest is ComputeTest {
     function test_RevertIf_Cancelling_AlreadyCancelledSubscription() public {
         // Create and cancel subscription
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         vm.warp(block.timestamp + 10 minutes);
 
@@ -93,7 +92,6 @@ contract ComputeSubscriptionTest is ComputeTest {
             MOCK_CONTAINER_ID,
             maxExecutions,
             intervalSeconds,
-            1,
             false,
             NO_PAYMENT_TOKEN,
             0,
@@ -145,7 +143,6 @@ contract ComputeSubscriptionTest is ComputeTest {
             containerId: HASHED_MOCK_CONTAINER_ID,
             interval: 1,
             useDeliveryInbox: false,
-            redundancy: 1,
             walletAddress: userWalletAddress,
             feeAmount: 0,
             feeToken: NO_PAYMENT_TOKEN,
@@ -171,7 +168,6 @@ contract ComputeSubscriptionTest is ComputeTest {
             MOCK_CONTAINER_ID,
             2, // maxExecutions = 2
             10 minutes,
-            2,
             false,
             NO_PAYMENT_TOKEN,
             0,
@@ -190,8 +186,8 @@ contract ComputeSubscriptionTest is ComputeTest {
         vm.warp(20 minutes);
 
         // Now, the current interval is 2. Attempting to deliver for interval 1 should fail.
-        // We use the commitment from the first interval to simulate this.
-        vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
+        // Since the commitment was deleted after the first delivery, we get InvalidCommitment
+        vm.expectRevert(ICoordinator.InvalidCommitment.selector);
         alice.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, aliceWalletAddress);
     }
 
@@ -210,7 +206,6 @@ contract ComputeSubscriptionTest is ComputeTest {
             MOCK_CONTAINER_ID,
             1, // maxExecutions
             shortInterval,
-            1, // redundancy
             false, // useDeliveryInbox
             NO_PAYMENT_TOKEN,
             0,
@@ -245,7 +240,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Create subscription
         vm.warp(0);
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Move to interval 2 without creating any commitments
@@ -270,7 +265,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitment for interval 1
@@ -316,7 +311,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
         bytes32 requestId1 = commitment1.requestId;
 
@@ -347,7 +342,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 5);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 5, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitments for intervals 1-4
@@ -383,7 +378,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         // Create subscription
         vm.warp(0);
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Non-owner tries to cancel
@@ -404,7 +399,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 4);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 4, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 4, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitments for intervals 1-3
@@ -472,7 +467,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitment for interval 1
@@ -517,7 +512,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 3);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
         bytes32 requestId1 = commitment1.requestId;
 
@@ -547,7 +542,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 5);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 5, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitments for intervals 1-4
@@ -589,7 +584,7 @@ contract ComputeSubscriptionTest is ComputeTest {
         Wallet(payable(userWalletAddress)).approve(address(ScheduledClient), NO_PAYMENT_TOKEN, feeAmount * 4);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 4, 10 minutes, 1, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 4, 10 minutes, false, NO_PAYMENT_TOKEN, feeAmount, userWalletAddress, NO_VERIFIER
         );
 
         // Create commitments for intervals 1-3

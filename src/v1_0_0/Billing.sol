@@ -92,7 +92,6 @@ abstract contract Billing is IBilling, Routable {
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -118,7 +117,6 @@ abstract contract Billing is IBilling, Routable {
             subscriptionId: subscriptionId,
             containerId: containerId,
             interval: interval,
-            redundancy: redundancy,
             useDeliveryInbox: useDeliveryInbox,
             walletAddress: wallet,
             feeAmount: feeAmount,
@@ -134,6 +132,7 @@ abstract contract Billing is IBilling, Routable {
     /// @notice Processes a computation delivery, calculating fees and orchestrating fulfillment and/or verification.
     /// @dev This is the main entry point for billing logic from the Coordinator.
     /// @dev Commitment validation is done by the caller (Coordinator) before calling this function.
+    /// @dev Single delivery per request - always cleans up after processing.
     function _processDelivery(
         Commitment memory commitment,
         bytes32 commitmentHash,
@@ -142,8 +141,6 @@ abstract contract Billing is IBilling, Routable {
         PayloadData calldata input,
         PayloadData calldata output,
         PayloadData calldata proof,
-        uint16 numRedundantDeliveries,
-        bool isLastDelivery,
         bytes32 delegatedSubHash
     ) internal virtual {
         // Note: Commitment validation (s_requestCommitments check) is performed by the caller
@@ -151,21 +148,14 @@ abstract contract Billing is IBilling, Routable {
         FulfillResult result;
         if (commitment.verifier != address(0)) {
             result = _processVerifiedDelivery(
-                commitment,
-                commitmentHash,
-                proofSubmitter,
-                nodeWallet,
-                input,
-                output,
-                proof,
-                numRedundantDeliveries,
-                delegatedSubHash
+                commitment, commitmentHash, proofSubmitter, nodeWallet, input, output, proof, delegatedSubHash
             );
         } else {
-            result = _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
+            result = _processStandardDelivery(commitment, nodeWallet, input, output, proof);
         }
 
-        if (result == FulfillResult.FULFILLED && isLastDelivery == true) {
+        // Single delivery: always cleanup after processing
+        if (result == FulfillResult.FULFILLED) {
             _cleanupRequestState(commitment.requestId, commitment.subscriptionId, commitment.interval, proofSubmitter);
         }
     }
@@ -179,7 +169,6 @@ abstract contract Billing is IBilling, Routable {
         PayloadData calldata input,
         PayloadData calldata output,
         PayloadData calldata proof,
-        uint16 numRedundantDeliveries,
         bytes32 delegatedSubHash
     ) private returns (FulfillResult) {
         bytes32 proofDataHash;
@@ -188,12 +177,10 @@ abstract contract Billing is IBilling, Routable {
         uint256 verifierFee = commitment.verifierFee;
         address verifierPaymentRecipient = verifier.paymentRecipient();
 
-        Payment[] memory payments =
-            _prepareVerificationPayments(commitment, verifierFee, verifierPaymentRecipient);
+        Payment[] memory payments = _prepareVerificationPayments(commitment, verifierFee, verifierPaymentRecipient);
         ProofVerificationRequest memory request =
             _initiateVerification(commitment, commitmentHash, proofSubmitter, nodeWallet, verifierFee);
-        FulfillResult result =
-            _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        FulfillResult result = _getRouter().fulfill(input, output, proof, nodeWallet, payments, commitment);
         if (result == FulfillResult.FULFILLED) {
             // Use contentHash from PayloadData for verification
             bytes32 inputHash = input.contentHash;
@@ -214,11 +201,10 @@ abstract contract Billing is IBilling, Routable {
         address nodeWallet,
         PayloadData calldata input,
         PayloadData calldata output,
-        PayloadData calldata proof,
-        uint16 numRedundantDeliveries
+        PayloadData calldata proof
     ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
-        return _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        return _getRouter().fulfill(input, output, proof, nodeWallet, payments, commitment);
     }
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.

@@ -18,7 +18,7 @@ contract SubscriptionBatchReader {
     /// @notice Router instance used to fetch subscription records.
     Router private immutable ROUTER;
 
-    /// @notice Coordinator instance used to fetch commitments and redundancy data.
+    /// @notice Coordinator instance used to fetch commitments.
     Coordinator private immutable COORDINATOR;
 
     /*//////////////////////////////////////////////////////////////
@@ -37,10 +37,8 @@ contract SubscriptionBatchReader {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Snapshot of interval-related state for a subscription interval.
-    /// @param redundancyCount Number of redundant deliveries recorded for the requestId.
     /// @param commitmentExists True if the Coordinator holds a commitment for the requestId.
     struct IntervalStatus {
-        uint16 redundancyCount;
         bool commitmentExists;
     }
 
@@ -68,7 +66,7 @@ contract SubscriptionBatchReader {
         }
     }
 
-    /// @notice For each (subscriptionId, interval) pair returns redundancy count and whether a commitment exists.
+    /// @notice For each (subscriptionId, interval) pair returns whether a commitment exists.
     /// @dev Inputs must be of equal length and are matched element-wise. Computes requestId as keccak256(abi.encodePacked(id, interval)).
     /// @param ids Array of subscription IDs.
     /// @param intervals Array of interval indices; intervals[i] corresponds to ids[i].
@@ -83,9 +81,8 @@ contract SubscriptionBatchReader {
 
         for (uint256 i = 0; i < n; ++i) {
             bytes32 requestId = RequestIdUtils.requestIdPacked(ids[i], intervals[i]);
-            uint16 count = COORDINATOR.redundancyCount(requestId);
             bool exists = COORDINATOR.requestCommitments(requestId) != bytes32(0);
-            statuses[i] = IntervalStatus({redundancyCount: count, commitmentExists: exists});
+            statuses[i] = IntervalStatus({commitmentExists: exists});
         }
     }
 }

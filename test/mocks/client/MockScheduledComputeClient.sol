@@ -39,7 +39,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -51,7 +50,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -65,7 +63,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -81,7 +78,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -92,7 +88,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -106,7 +101,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -124,7 +118,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -136,7 +129,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
 
         assertEq(sub.activeAt, type(uint32).max);
         assertEq(sub.client, address(this));
-        assertEq(sub.redundancy, redundancy);
         assertEq(sub.maxExecutions, maxExecutions);
         assertEq(sub.intervalSeconds, intervalSeconds);
         assertEq(sub.containerId, keccak256(abi.encode(containerId)));
@@ -164,7 +156,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,
@@ -173,10 +164,9 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         bytes32 containerId
     ) internal virtual override {
         // Log delivered output
-        outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
+        outputs[subscriptionId][interval] = DeliveredOutput({
             subscriptionId: subscriptionId,
             interval: interval,
-            redundancy: redundancy,
             useDeliveryInbox: useDeliveryInbox,
             node: node,
             input: input,

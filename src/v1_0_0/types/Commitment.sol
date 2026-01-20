@@ -12,8 +12,6 @@ struct Commitment {
     uint32 interval;
     /// @dev Indicates if the commitment is useDeliveryInbox (i.e., renewed only when needed).
     bool useDeliveryInbox;
-    /// @dev The number of redundant nodes for the commitment.
-    uint16 redundancy;
     /// @dev The wallet address associated with the commitment.
     address walletAddress;
     /// @dev The amount of payment for the commitment.

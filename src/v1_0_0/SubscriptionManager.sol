@@ -31,14 +31,14 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @notice EIP-712 struct(Subscription) typeHash.
     /// @dev The fields must exactly match the order and types in the `Subscription` struct.
     bytes32 private constant EIP712_SUBSCRIPTION_TYPEHASH = keccak256(
-        "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+        "Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
     );
 
     /// @notice EIP-712 struct(DelegateSubscription) typeHash.
     /// @dev The `nonce` prevents signature replay for a given subscriber.
     /// @dev The `expiry` defines when the delegated subscription signature expires.
     bytes32 private constant EIP712_DELEGATE_SUBSCRIPTION_TYPEHASH = keccak256(
-        "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,uint16 redundancy,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
+        "DelegateSubscription(uint32 nonce,uint32 expiry,Subscription sub)Subscription(address client,uint32 activeAt,uint32 intervalSeconds,uint32 maxExecutions,bytes32 containerId,bool useDeliveryInbox,address verifier,uint256 feeAmount,address feeToken,address wallet,bytes32 routeId)"
     );
 
     /// @dev Mapping of subscription IDs to `Subscription` objects.
@@ -91,7 +91,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @param containerId The ID of the container to execute.
     /// @param maxExecutions The maximum number of times the subscription can be executed.
     /// @param intervalSeconds The time interval between executions in seconds.
-    /// @param redundancy The number of redundant executions expected.
     /// @param useDeliveryInbox Whether to use a delivery inbox for results.
     /// @param feeToken The address of the ERC20 token used for fees.
     /// @param feeAmount The amount of fee per execution.
@@ -103,7 +102,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -122,7 +120,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         subscriptions[subscriptionId] = ComputeSubscription({
             activeAt: type(uint32).max,
             client: msg.sender,
-            redundancy: redundancy,
             maxExecutions: maxExecutions,
             intervalSeconds: intervalSeconds,
             containerId: keccak256(abi.encode(containerId)),
@@ -324,7 +321,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
                 sub.activeAt,
                 sub.intervalSeconds,
                 sub.maxExecutions,
-                sub.redundancy,
                 sub.containerId,
                 sub.useDeliveryInbox,
                 sub.verifier,
@@ -359,27 +355,17 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     /// @notice Lock funds (request-level). Coordinator will return/issue commitment externally.
-    /// @dev This locks `feeAmount * redundancy` on the Wallet (via lockForRequest).
+    /// @dev This locks `feeAmount` on the Wallet (via lockForRequest). Single payout per request.
     /// @param walletAddr Wallet address (subscriptions[subscriptionId].wallet)
     /// @param client subscription client address (spender for lockForRequest)
-    /// @param redundancy number of expected payouts
     /// @param feeToken token used for payment
     /// @param feeAmount per-response payment amount
-    function _markRequestInFlight(
-        bytes32 requestId,
-        address payable walletAddr,
-        address client,
-        uint16 redundancy,
-        address feeToken,
-        uint256 feeAmount
-    ) internal {
-        // compute total to lock (feeAmount * redundancy)
-        uint256 total = feeAmount * redundancy; // solhint-disable-line no-inline-assembly
+    function _markRequestInFlight(bytes32 requestId, address payable walletAddr, address client, address feeToken, uint256 feeAmount) internal {
         // Gas optimization: wallet was already validated in createComputeSubscription(),
         // and createdWallets mapping never becomes false once set to true.
         // Removing redundant isValidWallet() call saves ~47k gas on Arbitrum Nitro v3.9+.
         // Gas optimization #8: client is passed as parameter to avoid redundant SLOAD (~2.1k gas).
-        Wallet(walletAddr).lockForRequest(client, feeToken, total, requestId, redundancy);
+        Wallet(walletAddr).lockForRequest(client, feeToken, feeAmount, requestId);
     }
 
     /// @notice Locks funds in the consumer's wallet for proof verification.
@@ -415,7 +401,6 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     function _callback(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,
@@ -426,8 +411,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         // Encode the callback call
         bytes memory callData = abi.encodeCall(
-            ComputeClient.receiveRequestCompute,
-            (subscriptionId, interval, numRedundantDeliveries, useDeliveryInbox, node, input, output, proof, bytes32(0))
+            ComputeClient.receiveRequestCompute, (subscriptionId, interval, useDeliveryInbox, node, input, output, proof, bytes32(0))
         );
 
         // Execute with gas limit - failure doesn't revert the whole tx
@@ -471,17 +455,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     {
         ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
-            abi.encode(
-                subscriptionId,
-                interval,
-                s.containerId,
-                s.useDeliveryInbox,
-                s.verifier,
-                s.feeAmount,
-                s.feeToken,
-                s.redundancy,
-                coordinator
-            )
+            abi.encode(subscriptionId, interval, s.containerId, s.useDeliveryInbox, s.verifier, s.feeAmount, s.feeToken, coordinator)
         );
     }
 
@@ -493,8 +467,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions)
-        {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
             return false;
         }
         ComputeSubscription storage sub = subscriptions[subscriptionId];
@@ -502,7 +475,7 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
         // If a payment is required for the subscription, check for sufficient funds and allowance.
         if (sub.feeAmount > 0) {
             Wallet wallet = Wallet(sub.wallet);
-            uint256 requiredAmount = sub.feeAmount * sub.redundancy;
+            uint256 requiredAmount = sub.feeAmount; // Single payout per request
 
             // Gas optimization: single external call instead of 3 separate calls
             // Saves ~90,000 gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing)

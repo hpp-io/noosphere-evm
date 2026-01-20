@@ -110,8 +110,7 @@ contract FreqtradeClient is ScheduledComputeClient {
             "noosphere-hello-world", // The prediction container to execute
             maxExecutions, // User-specified number of executions
             interval, // User-specified interval in seconds
-            1, // Redundancy for reliability
-            true, // Delivery pattern
+            true, // Delivery pattern (useDeliveryInbox)
             address(0), // feeToken (ETH)
             feeAmount, // Fee per execution
             wallet, // Payment wallet
@@ -199,7 +198,7 @@ contract FreqtradeClient is ScheduledComputeClient {
 
         // Create the subscription
         subscriptionId = _createComputeSubscription(
-            "noosphere-hello-world", maxExecutions, interval, 1, true, address(0), feeAmount, wallet, verifier, routeId
+            "noosphere-hello-world", maxExecutions, interval, true, address(0), feeAmount, wallet, verifier, routeId
         );
 
         // Store bidirectional mapping

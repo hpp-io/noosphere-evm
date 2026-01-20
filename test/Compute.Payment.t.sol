@@ -29,7 +29,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(transientClient), ZERO_ADDRESS, 1 ether);
 
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
         assertEq(subId, 1);
 
@@ -72,7 +72,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(ScheduledClient), ZERO_ADDRESS, 1 ether);
 
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 1, 10 minutes, 1, true, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, 1, 10 minutes, true, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
         assertEq(subId, 1);
 
@@ -120,7 +120,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(transientClient), address(erc20Token), 90e6);
 
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), 50e6, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, address(erc20Token), 50e6, aliceWallet, NO_VERIFIER
         );
         assertEq(subId, 1);
 
@@ -165,10 +165,10 @@ contract ComputePaymentNoProofTest is ComputeTest {
         // Verify initial balances and allowances
         assertEq(erc20Token.balanceOf(aliceWallet), 100e6);
 
-        // Create new two-time subscription with 40e6 payout
+        // Create new two-time subscription with 20e6 payout per interval
         vm.warp(0 minutes);
         (, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 2, 10 minutes, 2, false, address(erc20Token), 20e6, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, address(erc20Token), 20e6, aliceWallet, NO_VERIFIER
         );
 
         // Execute response fulfillment from Bob
@@ -190,8 +190,8 @@ contract ComputePaymentNoProofTest is ComputeTest {
         assertEq(erc20Token.balanceOf(bobWallet), (20e6 * 2) - (2_044_000 * 2));
         assertEq(erc20Token.balanceOf(protocolWalletAddress), 2_044_000 * 2);
 
-        // Assert consumed allowance
-        assertEq(Wallet(payable(aliceWallet)).allowance(address(ScheduledClient), address(erc20Token)), 10e6);
+        // Assert consumed allowance (90e6 initial - 20e6 * 2 intervals = 50e6 remaining)
+        assertEq(Wallet(payable(aliceWallet)).allowance(address(ScheduledClient), address(erc20Token)), 50e6);
     }
 
     /// @notice Subscription cannot be fulfilled with an invalid `Wallet` not created by `WalletFactory`
@@ -209,7 +209,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         vm.expectRevert(bytes("InvalidWallet()"));
         // Create a new one-time subscription with a 50e6 payout.
         transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), 50e6, address(aliceWallet), NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, address(erc20Token), 50e6, address(aliceWallet), NO_VERIFIER
         );
     }
 
@@ -224,7 +224,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
 
         // Create a new one-time subscription with a 50e6 payout.
         (, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), 50e6, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, address(erc20Token), 50e6, aliceWallet, NO_VERIFIER
         );
 
         Wallet bobWallet = new Wallet(address(ROUTER), address(bob));
@@ -246,7 +246,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
 
         vm.expectRevert(Wallet.InsufficientAllowance.selector);
         transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
     }
 
@@ -267,7 +267,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
 
         // Attempt to create a new one-time subscription with a 1 ether payout.
         transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, ZERO_ADDRESS, 1 ether, aliceWallet, NO_VERIFIER
         );
     }
 
@@ -280,7 +280,7 @@ contract ComputePaymentNoProofTest is ComputeTest {
         Wallet(payable(aliceWallet)).approve(address(transientClient), ZERO_ADDRESS, 1 ether);
 
         (uint64 subId, Commitment memory firstCommitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, ZERO_ADDRESS, 0.01 ether, aliceWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, ZERO_ADDRESS, 0.01 ether, aliceWallet, NO_VERIFIER
         );
 
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(subId);
@@ -292,7 +292,6 @@ contract ComputePaymentNoProofTest is ComputeTest {
         assertEq(firstCommitment.containerId, commitmentResult.containerId);
         assertEq(firstCommitment.interval, commitmentResult.interval);
         assertEq(firstCommitment.useDeliveryInbox, commitmentResult.useDeliveryInbox);
-        assertEq(firstCommitment.redundancy, commitmentResult.redundancy);
         assertEq(firstCommitment.walletAddress, commitmentResult.walletAddress);
         assertEq(firstCommitment.feeToken, commitmentResult.feeToken);
         assertEq(firstCommitment.feeAmount, commitmentResult.feeAmount);
