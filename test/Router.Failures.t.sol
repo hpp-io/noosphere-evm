@@ -256,7 +256,7 @@ contract RouterFailuresTest is ComputeTest {
     /// @notice Test 1.5: Empty Request Data - Revert with proper error
     function test_Scenario1_5_EmptyRequestData_RevertsIfInvalidSubscription() public {
         // Attempt to send request for non-existent subscription
-        vm.expectRevert(bytes("InvalidSubscription"));
+        vm.expectRevert(abi.encodeWithSignature("InvalidSubscription()"));
         ROUTER.sendRequest(999, 1);
     }
 
@@ -455,7 +455,7 @@ contract RouterFailuresTest is ComputeTest {
         // Already tested in Compute.General.t.sol::test_Router_RevertIf_InvalidRouteId
         bytes32 invalidRouteId = bytes32("invalid_route");
 
-        vm.expectRevert(bytes("Coordinator not found"));
+        vm.expectRevert(abi.encodeWithSignature("CoordinatorNotFound()"));
         transientClient.createMockRequestWithRouteId(
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,

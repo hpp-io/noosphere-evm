@@ -112,6 +112,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     error InvalidRequestCommitment(bytes32 requestId);
     error MismatchedRequestId();
     error MismatchedSubscriptionId();
+    error CoordinatorNotFound();
+    error WalletFactoryAlreadySet();
+    error InvalidWalletFactoryAddress();
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -127,8 +130,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @param _walletFactory The address of the deployed WalletFactory contract.
      */
     function setWalletFactory(address _walletFactory) external onlyOwner {
-        require(address(walletFactory) == address(0), "WalletFactory already set");
-        require(_walletFactory != address(0), "Invalid WalletFactory address");
+        if (address(walletFactory) != address(0)) revert WalletFactoryAlreadySet();
+        if (_walletFactory == address(0)) revert InvalidWalletFactoryAddress();
         walletFactory = WalletFactory(_walletFactory);
     }
 
@@ -519,11 +522,11 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         returns (bytes32 requestId, Commitment memory commitment)
     {
         _whenNotPaused();
-        require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
+        if (!_isExistingSubscription(subscriptionId)) revert InvalidSubscription();
 
         ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
-        require(coordinatorAddr != address(0), "Coordinator not found");
+        if (coordinatorAddr == address(0)) revert CoordinatorNotFound();
 
         requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         if (requestCommitments[requestId] != bytes32(0)) {
@@ -534,7 +537,7 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             _markRequestInFlight(
                 requestId,
                 payable(subscription.wallet),
-                subscriptionId,
+                subscription.client,
                 subscription.redundancy,
                 subscription.feeToken,
                 subscription.feeAmount
@@ -580,9 +583,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function _timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) internal {
         ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
-        require(coordinatorAddr != address(0), "Coordinator not found");
-        ICoordinator coordinator = ICoordinator(coordinatorAddr);
+        if (coordinatorAddr == address(0)) revert CoordinatorNotFound();
         _releaseTimeoutRequestLock(requestId, subscriptionId, interval);
-        coordinator.cancelRequest(requestId);
+        ICoordinator(coordinatorAddr).cancelRequest(requestId);
     }
 }

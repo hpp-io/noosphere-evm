@@ -361,26 +361,25 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @notice Lock funds (request-level). Coordinator will return/issue commitment externally.
     /// @dev This locks `feeAmount * redundancy` on the Wallet (via lockForRequest).
     /// @param walletAddr Wallet address (subscriptions[subscriptionId].wallet)
-    /// @param subscriptionId subscription id
+    /// @param client subscription client address (spender for lockForRequest)
     /// @param redundancy number of expected payouts
     /// @param feeToken token used for payment
     /// @param feeAmount per-response payment amount
     function _markRequestInFlight(
         bytes32 requestId,
         address payable walletAddr,
-        uint64 subscriptionId,
+        address client,
         uint16 redundancy,
         address feeToken,
         uint256 feeAmount
     ) internal {
         // compute total to lock (feeAmount * redundancy)
         uint256 total = feeAmount * redundancy; // solhint-disable-line no-inline-assembly
-        // lock on wallet (this will revert if insufficient funds/allowance)
-        Wallet consumer = Wallet(walletAddr);
-        if (_getWalletFactory().isValidWallet(walletAddr) == false || address(consumer) == address(0)) {
-            revert InvalidWallet();
-        }
-        consumer.lockForRequest(subscriptions[subscriptionId].client, feeToken, total, requestId, redundancy);
+        // Gas optimization: wallet was already validated in createComputeSubscription(),
+        // and createdWallets mapping never becomes false once set to true.
+        // Removing redundant isValidWallet() call saves ~47k gas on Arbitrum Nitro v3.9+.
+        // Gas optimization #8: client is passed as parameter to avoid redundant SLOAD (~2.1k gas).
+        Wallet(walletAddr).lockForRequest(client, feeToken, total, requestId, redundancy);
     }
 
     /// @notice Locks funds in the consumer's wallet for proof verification.

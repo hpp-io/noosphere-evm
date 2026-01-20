@@ -81,7 +81,7 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
             wallet,
             verifier
         );
-        redundancyCount[requestId] = 0;
+        // Gas optimization: redundancyCount[requestId] default is 0, no need to explicitly set
         emit RequestStarted(requestId, subscriptionId, containerId, commitment);
         return commitment;
     }
