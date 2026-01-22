@@ -11,7 +11,6 @@ class Commitment {
      * @param {string} params.containerId
      * @param {number} params.interval
      * @param {boolean} params.useDeliveryInbox
-     * @param {number} params.redundancy
      * @param {string} params.walletAddress
      * @param {bigint} params.feeAmount
      * @param {string} params.feeToken
@@ -25,7 +24,6 @@ class Commitment {
                     containerId,
                     interval,
                     useDeliveryInbox,
-                    redundancy,
                     walletAddress,
                     feeAmount,
                     feeToken,
@@ -39,7 +37,6 @@ class Commitment {
             containerId,
             interval,
             useDeliveryInbox,
-            redundancy,
             walletAddress,
             feeAmount,
             feeToken,
@@ -62,7 +59,6 @@ class Commitment {
             containerId: commitmentData.containerId,
             interval: commitmentData.interval,
             useDeliveryInbox: commitmentData.useDeliveryInbox,
-            redundancy: commitmentData.redundancy,
             walletAddress: commitmentData.walletAddress,
             feeAmount: commitmentData.feeAmount,
             feeToken: commitmentData.feeToken,
@@ -83,7 +79,6 @@ class Commitment {
             this.data.containerId,
             this.data.interval,
             this.data.useDeliveryInbox,
-            this.data.redundancy,
             this.data.walletAddress,
             this.data.feeAmount,
             this.data.feeToken,
@@ -93,7 +88,7 @@ class Commitment {
         ];
 
         return ethers.AbiCoder.defaultAbiCoder().encode(
-            ['(bytes32,uint64,bytes32,uint32,bool,uint16,address,uint256,address,address,address,uint256)'],
+            ['(bytes32,uint64,bytes32,uint32,bool,address,uint256,address,address,address,uint256)'],
             [commitmentTuple]
         );
     }

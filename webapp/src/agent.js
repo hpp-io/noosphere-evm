@@ -59,7 +59,7 @@ function calculateRequestIdPacked(subscriptionId, interval) {
  * @param {string} coordinator - The address of the coordinator.
  * @returns {Commitment} A new Commitment instance.
  */
-function buildCommitment(sub, subscriptionId, interval, coordinator) {
+function buildCommitment(sub, subscriptionId, interval, coordinator, verifierFee = 0n) {
     const requestId = calculateRequestIdPacked(subscriptionId, interval);
 
     // Note: The field names in the `sub` object from ethers.js match the Solidity struct.
@@ -70,12 +70,12 @@ function buildCommitment(sub, subscriptionId, interval, coordinator) {
         containerId: sub.containerId,
         interval: interval,
         useDeliveryInbox: sub.useDeliveryInbox,
-        redundancy: sub.redundancy,
         walletAddress: sub.wallet, // Map sub.wallet to walletAddress
         feeAmount: sub.feeAmount,
         feeToken: sub.feeToken,
         verifier: sub.verifier,
-        coordinator: coordinator
+        coordinator: coordinator,
+        verifierFee: verifierFee
     };
     return new Commitment(commitmentParams);
 }
@@ -235,12 +235,12 @@ async function main() {
             console.log(`         Container ID: ${eventCommitment.data.containerId}`);
             console.log(`         Interval: ${eventCommitment.data.interval}`);
             console.log(`         Use Delivery Inbox: ${eventCommitment.data.useDeliveryInbox}`);
-            console.log(`         Redundancy: ${eventCommitment.data.redundancy}`);
             console.log(`         Wallet Address: ${eventCommitment.data.walletAddress}`);
             console.log(`         Fee Amount: ${eventCommitment.data.feeAmount}`);
             console.log(`         Fee Token: ${eventCommitment.data.feeToken}`);
             console.log(`         Verifier: ${eventCommitment.data.verifier}`);
             console.log(`         Coordinator: ${eventCommitment.data.coordinator}`);
+            console.log(`         Verifier Fee: ${eventCommitment.data.verifierFee}`);
 
 
             const reportTx = await coordinatorContract.reportComputeResult(

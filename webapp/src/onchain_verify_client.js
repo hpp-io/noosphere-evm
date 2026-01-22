@@ -149,7 +149,6 @@ async function main() {
         console.log("\n1️⃣  Sending transaction to create a new compute subscription with Verifier...");
         const subscriptionParams = {
             containerId: "my-optimistic-container-id",
-            redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress, // Native ETH
             feeAmount: ethers.parseEther("0.1"),
@@ -161,7 +160,6 @@ async function main() {
         // Use the pending-based nonce
         const createSubTx = await clientContract.createSubscription.send(
             subscriptionParams.containerId,
-            subscriptionParams.redundancy,
             subscriptionParams.useDeliveryInbox,
             subscriptionParams.feeToken,
             subscriptionParams.feeAmount,
