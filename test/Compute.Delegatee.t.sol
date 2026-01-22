@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
@@ -7,6 +7,7 @@ import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
 import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {DeployUtils} from "./lib/DeployUtils.sol";
@@ -157,7 +158,6 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         return ComputeSubscription({
             activeAt: uint32(block.timestamp),
             client: address(transientClient),
-            redundancy: 1,
             maxExecutions: 1,
             intervalSeconds: 0,
             containerId: HASHED_MOCK_CONTAINER_ID,
@@ -207,7 +207,6 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         ComputeSubscription memory stored = router.getComputeSubscription(expectedId);
         assertEq(sub.activeAt, stored.activeAt);
         assertEq(sub.client, stored.client);
-        assertEq(sub.redundancy, stored.redundancy);
         assertEq(sub.maxExecutions, stored.maxExecutions);
         assertEq(sub.intervalSeconds, stored.intervalSeconds);
         assertEq(sub.containerId, stored.containerId);
@@ -313,7 +312,6 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         ComputeSubscription memory stored = router.getComputeSubscription(1);
         assertEq(sub.activeAt, stored.activeAt);
         assertEq(sub.client, stored.client);
-        assertEq(sub.redundancy, stored.redundancy);
         assertEq(sub.maxExecutions, stored.maxExecutions);
         assertEq(sub.intervalSeconds, stored.intervalSeconds);
         assertEq(sub.containerId, stored.containerId);
@@ -377,10 +375,10 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         uint64 subscriptionId = router.createSubscriptionDelegatee(nonce, expiry, sub, signature);
         assertEq(subscriptionId, 1);
 
-        // create another payload with different redundancy but same nonce
+        // create another payload with different maxExecutions but same nonce
         sub = mockSubscription();
-        uint16 originalRedundancy = sub.redundancy;
-        sub.redundancy = 5;
+        uint32 originalMaxExecutions = sub.maxExecutions;
+        sub.maxExecutions = 5;
 
         // sign and attempt to create with same nonce
         typed = buildTypedMessage(nonce, expiry, sub);
@@ -388,10 +386,10 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         signature = abi.encodePacked(r, s, v);
 
         subscriptionId = router.createSubscriptionDelegatee(nonce, expiry, sub, signature);
-        // should return the existing id and not update redundancy
+        // should return the existing id and not update maxExecutions
         assertEq(subscriptionId, 1);
         ComputeSubscription memory stored = router.getComputeSubscription(subscriptionId);
-        assertEq(stored.redundancy, originalRedundancy);
+        assertEq(stored.maxExecutions, originalMaxExecutions);
 
         // rotating signer and attempting to use same nonce with a different signer must also not overwrite
         transientClient.updateMockSigner(backupDelegateeAddr);
@@ -401,7 +399,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
 
         assertEq(subscriptionId, 1);
         stored = router.getComputeSubscription(subscriptionId);
-        assertEq(stored.redundancy, originalRedundancy);
+        assertEq(stored.maxExecutions, originalMaxExecutions);
     }
 
     /// @notice Delegated subscription creation should accept out-of-order nonces (non-monotonic), but maxSubscriberNonce should track the maximum seen nonce.
@@ -468,16 +466,12 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
             nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
-        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval, 1);
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval);
         assertEq(out.subscriptionId, 1);
         assertEq(out.interval, deliveryInterval);
-        assertEq(out.redundancy, 1);
         assertEq(out.input.contentHash, _mockInput().contentHash);
         assertEq(out.output.contentHash, _mockOutput().contentHash);
         assertEq(out.proof.contentHash, _mockProof().contentHash);
-
-        bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
-        assertEq(coordinator.redundancyCount(requestId), 1);
     }
 
     /// @notice When a subscription requests inbox delivery, the delegated delivery should store the pending delivery in the client's inbox.
@@ -511,7 +505,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         assertEq(pd.proof.contentHash, _mockProof().contentHash);
     }
 
-    /// @notice Attempting to deliver for a completed interval must revert.
+    /// @notice Reusing the same nonce after a transient subscription is completed should revert
     function test_RevertsIf_AtomicallyDeliveringOutput_ForCompletedSubscription() public {
         uint32 nonce = router.maxSubscriberNonce(address(transientClient));
         ComputeSubscription memory sub = mockSubscription();
@@ -521,52 +515,40 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         uint32 deliveryInterval = 1;
-
-        // 1. First call: This should succeed, create the subscription, and complete the request.
+        // First delivery: creates subscription and delivers output
         nodeAlice.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
-        // The request is now complete because redundancy (1) has been met.
-        // The commitment has been deleted from the Coordinator's state.
+        // Verify delivery succeeded
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval);
+        assertEq(out.subscriptionId, 1);
 
-        // 2. Second call: Attempt to deliver for the same (now completed) request.
-        // This should revert because the commitment is no longer valid/active.
-        // The subscription itself is NOT recreated due to idempotency.
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
+        // Second attempt with same nonce should revert because subscription is completed
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
     }
 
-    /// @notice Delegated delivery to an existing subscription should accept multiple distinct node responses up to redundancy.
-    function test_Succeeds_When_DeliveringDelegatedComputeResponse_ForExistingSubscription() public {
+    /// @notice Trying to deliver twice for the same interval should revert with InvalidCommitment
+    function test_RevertsIf_DeliveringDelegatedComputeResponse_Twice() public {
         uint32 nonce = router.maxSubscriberNonce(address(transientClient));
         ComputeSubscription memory sub = mockSubscription();
-        sub.redundancy = 2;
-
         uint32 expiry = uint32(block.timestamp) + 30 minutes;
         bytes32 typed = buildTypedMessage(nonce, expiry, sub);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(delegateeKey, typed);
         bytes memory signature = abi.encodePacked(r, s, v);
 
         uint32 deliveryInterval = 1;
-        // first node responds
+        // First delivery succeeds
         nodeAlice.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
-        bytes32 requestId = RequestIdUtils.requestIdPacked(uint64(1), deliveryInterval);
-        assertEq(coordinator.redundancyCount(requestId), 1);
 
-        // second node responds
-        nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
-        );
-        // The request is now complete (redundancy 2 of 2 met).
-        assertEq(coordinator.redundancyCount(requestId), 2);
-
-        // a duplicate attempt from the same node should revert
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
+        // Bob tries to deliver for the same subscription/interval - should revert
+        // The subscription is already completed (transient with maxExecutions=1), so it should revert
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
         nodeBob.reportDelegatedComputeResult(
             nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
         );
@@ -649,7 +631,7 @@ contract DelegateeComputeTest is Test, CoordinatorConstants {
 
         // 7. Assert that the output was delivered to the client
         uint64 createdSubId = router.delegateCreatedIds(expectedRequestId);
-        DeliveredOutput memory out = transientClient.getDeliveredOutput(createdSubId, deliveryInterval, 1);
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(createdSubId, deliveryInterval);
         assertEq(out.subscriptionId, createdSubId);
         assertEq(out.output.contentHash, _mockOutput().contentHash);
     }

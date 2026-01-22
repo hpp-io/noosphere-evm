@@ -169,7 +169,6 @@ async function main() {
         console.log('\n1️⃣  Sending transaction to create a new compute subscription...');
         const subscriptionParams = {
             containerId: 'my-container-id',
-            redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress,
             feeAmount: ethers.parseUnits('1', 'wei'),
@@ -180,7 +179,6 @@ async function main() {
 
         const createSubTx = await clientContract.createSubscription(
             subscriptionParams.containerId,
-            subscriptionParams.redundancy,
             subscriptionParams.useDeliveryInbox,
             subscriptionParams.feeToken,
             subscriptionParams.feeAmount,
@@ -197,7 +195,6 @@ async function main() {
         try {
             const calldataInfoCreateSub = computeCalldataInfo(clientContract.interface, 'createSubscription', [
                 subscriptionParams.containerId,
-                subscriptionParams.redundancy,
                 subscriptionParams.useDeliveryInbox,
                 subscriptionParams.feeToken,
                 subscriptionParams.feeAmount,

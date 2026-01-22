@@ -22,7 +22,7 @@ all: install clean format build test
 
 # -----------------------------------------------------------------------------
 # Install dependencies
-# - Fetch forge dependencies (libraries, etc.)
+# - Fetch forge dependencies (libraries, etc.)z
 # -----------------------------------------------------------------------------
 install:
 	@echo "=> installing dependencies..."

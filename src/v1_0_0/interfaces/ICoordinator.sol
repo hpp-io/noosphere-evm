@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import "../types/ProofVerificationRequest.sol";
 import {Commitment} from "../types/Commitment.sol";
@@ -28,21 +28,14 @@ interface ICoordinator {
     event RequestCancelled(bytes32 indexed requestId);
 
     /// @notice Emitted when a node delivers a compute result.
-    /// @dev Uses PayloadData struct for off-chain data references with integrity verification.
-    ///      Stack depth: 7 slots (safe under 16 limit).
+    /// @dev Gas optimized: only contentHash is logged. Full URI available in tx calldata.
     /// @param requestId Opaque request key for this delivery (ties to Commitment.requestId).
     /// @param nodeWallet Node wallet address that submitted the delivery.
-    /// @param numRedundantDeliveries Number of redundant deliveries now recorded for the request.
-    /// @param input PayloadData for input (contentHash + uri).
-    /// @param output PayloadData for output (contentHash + uri).
-    /// @param proof PayloadData for proof (contentHash + uri).
+    /// @param inputHash keccak256 hash of input content.
+    /// @param outputHash keccak256 hash of output content.
+    /// @param proofHash keccak256 hash of proof content.
     event ComputeDelivered(
-        bytes32 indexed requestId,
-        address indexed nodeWallet,
-        uint16 numRedundantDeliveries,
-        PayloadData input,
-        PayloadData output,
-        PayloadData proof
+        bytes32 indexed requestId, address indexed nodeWallet, bytes32 inputHash, bytes32 outputHash, bytes32 proofHash
     );
 
     /// @notice Emitted when a proof verification outcome is processed.
@@ -61,8 +54,6 @@ interface ICoordinator {
 
     error InvalidCommitment();
     error IntervalMismatch(uint32 deliveryInterval);
-    error IntervalCompleted();
-    error NodeRespondedAlready();
     error InvalidWallet();
     error NotReadyForNextInterval();
     error NoNextInterval();
@@ -78,7 +69,6 @@ interface ICoordinator {
     /// @param subscriptionId Subscription the request belongs to.
     /// @param containerId Container identifier describing the compute target.
     /// @param interval Interval index (round) the request targets.
-    /// @param redundancy Number of redundant node responses expected for this request.
     /// @param useDeliveryInbox If true, responses are saved to a delivery inbox rather than delivered immediately.
     /// @param feeToken Token used for payment for this request (address(0) for native ETH).
     /// @param feeAmount Fee amount associated with the request (in token base units).
@@ -90,7 +80,6 @@ interface ICoordinator {
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,

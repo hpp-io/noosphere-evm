@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeTest} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
@@ -30,7 +30,6 @@ contract RouterFailuresTest is ComputeTest {
             MOCK_CONTAINER_ID,
             3, // maxExecutions
             10 minutes,
-            1, // redundancy
             false,
             NO_PAYMENT_TOKEN,
             0,
@@ -48,28 +47,21 @@ contract RouterFailuresTest is ComputeTest {
             subscriptionId: subId,
             containerId: sub.containerId,
             interval: 999,
-            redundancy: 1,
             useDeliveryInbox: false,
             walletAddress: userWalletAddress,
             feeAmount: 0,
             feeToken: NO_PAYMENT_TOKEN,
             verifier: NO_VERIFIER,
-            coordinator: address(COORDINATOR)
+            coordinator: address(COORDINATOR),
+            verifierFee: 0
         });
 
         Payment[] memory payments = new Payment[](0);
 
         // Attempt to fulfill with invalid request ID
         vm.prank(address(COORDINATOR));
-        FulfillResult result = ROUTER.fulfill(
-            _mockInput(),
-            _mockOutput(),
-            _mockProof(),
-            1, // numRedundantDeliveries
-            userWalletAddress,
-            payments,
-            fakeCommitment
-        );
+        FulfillResult result =
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), userWalletAddress, payments, fakeCommitment);
 
         assertEq(uint256(result), uint256(FulfillResult.INVALID_REQUEST_ID));
     }
@@ -78,7 +70,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario1_1_Recovery_RecreateRequest() public {
         // Create subscription with a request (this activates it)
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Get current interval (should be 1 since subscription is now active)
@@ -108,7 +100,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario1_2_InvalidCommitment_ReturnsInvalidCommitment() public {
         // Create a request
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Modify commitment data (tampering)
@@ -119,7 +111,7 @@ contract RouterFailuresTest is ComputeTest {
         // Attempt to fulfill with invalid commitment
         vm.prank(address(COORDINATOR));
         FulfillResult result =
-            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), userWalletAddress, payments, commitment);
 
         assertEq(uint256(result), uint256(FulfillResult.INVALID_COMMITMENT));
     }
@@ -128,7 +120,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario1_2_Recovery_RetrieveCorrectCommitment() public {
         // Create a request
         (uint64 subId, Commitment memory originalCommitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Retrieve commitment from coordinator
@@ -139,7 +131,6 @@ contract RouterFailuresTest is ComputeTest {
         assertEq(retrievedCommitment.subscriptionId, originalCommitment.subscriptionId);
         assertEq(retrievedCommitment.containerId, originalCommitment.containerId);
         assertEq(retrievedCommitment.interval, originalCommitment.interval);
-        assertEq(retrievedCommitment.redundancy, originalCommitment.redundancy);
         assertEq(retrievedCommitment.feeAmount, originalCommitment.feeAmount);
         assertEq(retrievedCommitment.feeToken, originalCommitment.feeToken);
         assertEq(retrievedCommitment.verifier, originalCommitment.verifier);
@@ -152,8 +143,7 @@ contract RouterFailuresTest is ComputeTest {
 
         address consumerWallet = walletFactory.createWallet(address(this));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 2;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval * 2);
 
         vm.prank(address(this));
@@ -161,15 +151,7 @@ contract RouterFailuresTest is ComputeTest {
             .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to second interval
@@ -191,8 +173,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario1_3_Recovery_RecreateAfterTimeout() public {
         address consumerWallet = walletFactory.createWallet(address(this));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval * 3);
 
         vm.prank(address(this));
@@ -200,15 +181,7 @@ contract RouterFailuresTest is ComputeTest {
             .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 3);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to third interval (20 minutes = 2 full intervals, so we're in interval 3)
@@ -234,7 +207,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario1_4_DuplicateRequest_IdempotentCreation() public {
         // Create subscription and first request
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         vm.warp(block.timestamp + 2 minutes);
@@ -255,7 +228,7 @@ contract RouterFailuresTest is ComputeTest {
     /// @notice Test 1.5: Empty Request Data - Revert with proper error
     function test_Scenario1_5_EmptyRequestData_RevertsIfInvalidSubscription() public {
         // Attempt to send request for non-existent subscription
-        vm.expectRevert(bytes("InvalidSubscription"));
+        vm.expectRevert(abi.encodeWithSignature("InvalidSubscription()"));
         ROUTER.sendRequest(999, 1);
     }
 
@@ -289,7 +262,7 @@ contract RouterFailuresTest is ComputeTest {
         if (sub.client == address(0)) {
             // Subscription doesn't exist, create a new one
             uint64 newSubId = ScheduledClient.createMockSubscriptionWithoutRequest(
-                MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+                MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
             );
             assertEq(newSubId, lastSubId + 1);
         } else {
@@ -311,7 +284,7 @@ contract RouterFailuresTest is ComputeTest {
         );
 
         ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, tooShortInterval, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, tooShortInterval, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
     }
 
@@ -325,7 +298,7 @@ contract RouterFailuresTest is ComputeTest {
         uint32 safeInterval = desiredInterval < minInterval ? minInterval : desiredInterval;
 
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, safeInterval, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, safeInterval, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         ComputeSubscription memory sub = ROUTER.getComputeSubscription(subId);
@@ -336,7 +309,6 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario2_3_CancelWithPendingRequests_CleansUp() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
         erc20Token.mint(consumerWallet, feeAmount * 5);
 
         vm.prank(address(ScheduledClient));
@@ -344,15 +316,7 @@ contract RouterFailuresTest is ComputeTest {
 
         // Create subscription with request
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to create multiple intervals worth of potential requests
@@ -379,8 +343,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario2_4_InsufficientFunds_PreventsNextInterval() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
 
         // Only fund for ONE interval
         erc20Token.mint(consumerWallet, paymentForOneInterval);
@@ -389,15 +352,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Check that next interval is NOT available due to insufficient funds
@@ -409,8 +364,7 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario2_4_Recovery_FundWalletAndIncreaseAllowance() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
 
         // Initially fund for one interval
         erc20Token.mint(consumerWallet, paymentForOneInterval);
@@ -418,15 +372,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Verify no next interval initially
@@ -454,11 +400,10 @@ contract RouterFailuresTest is ComputeTest {
         // Already tested in Compute.General.t.sol::test_Router_RevertIf_InvalidRouteId
         bytes32 invalidRouteId = bytes32("invalid_route");
 
-        vm.expectRevert(bytes("Coordinator not found"));
+        vm.expectRevert(abi.encodeWithSignature("CoordinatorNotFound()"));
         transientClient.createMockRequestWithRouteId(
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,
-            1,
             NO_PAYMENT_TOKEN,
             0,
             userWalletAddress,
@@ -522,24 +467,15 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario4_1_InsufficientFunds_RevertsOnLock() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 100e6;
-        uint16 redundancy = 2;
 
         // Don't fund the wallet
         vm.prank(address(ScheduledClient));
-        Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), feeAmount * redundancy);
+        Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), feeAmount);
 
         // Attempt to create subscription (will fail when trying to lock funds)
         vm.expectRevert(); // Will revert with InsufficientFunds when attempting to lock
         ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
     }
 
@@ -547,23 +483,14 @@ contract RouterFailuresTest is ComputeTest {
     function test_Scenario4_2_InsufficientAllowance_RevertsOnLock() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 100e6;
-        uint16 redundancy = 2;
 
         // Fund wallet but don't set allowance
-        erc20Token.mint(consumerWallet, feeAmount * redundancy);
+        erc20Token.mint(consumerWallet, feeAmount);
         // No approve call
 
         vm.expectRevert(); // Will revert with InsufficientAllowance
         ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
     }
 
@@ -577,7 +504,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(transientClient), address(erc20Token), feeAmount);
 
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // This scenario is prevented at the protocol level
@@ -608,7 +535,6 @@ contract RouterFailuresTest is ComputeTest {
         transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,
-            1,
             address(erc20Token),
             insufficientFee,
             consumerWallet,
@@ -654,7 +580,7 @@ contract RouterFailuresTest is ComputeTest {
     /// @notice Test 5.2: Only callable by coordinator - fulfill
     function test_Scenario5_2_OnlyCoordinator_Fulfill() public {
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         Payment[] memory payments = new Payment[](0);
@@ -663,7 +589,7 @@ contract RouterFailuresTest is ComputeTest {
         // Should revert with OnlyCallableFromCoordinator error
         vm.prank(address(alice));
         vm.expectRevert(abi.encodeWithSignature("OnlyCallableFromCoordinator()"));
-        ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
+        ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), userWalletAddress, payments, commitment);
     }
 
     /// @notice Test 5.3: Reentrancy protection
@@ -673,7 +599,7 @@ contract RouterFailuresTest is ComputeTest {
         // Actual reentrancy attempts would require a malicious contract
 
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         Payment[] memory payments = new Payment[](0);
@@ -681,7 +607,7 @@ contract RouterFailuresTest is ComputeTest {
         // Normal call should succeed
         vm.prank(address(COORDINATOR));
         FulfillResult result =
-            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), 1, userWalletAddress, payments, commitment);
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), userWalletAddress, payments, commitment);
 
         assertEq(uint256(result), uint256(FulfillResult.FULFILLED));
     }
@@ -699,7 +625,7 @@ contract RouterFailuresTest is ComputeTest {
         // Attempt to create subscription
         vm.expectRevert();
         ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // Unpause
@@ -708,7 +634,7 @@ contract RouterFailuresTest is ComputeTest {
 
         // Now should succeed
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         assertGt(subId, 0);
     }
@@ -722,7 +648,6 @@ contract RouterFailuresTest is ComputeTest {
             MOCK_CONTAINER_ID,
             3,
             10 minutes,
-            1,
             false,
             NO_PAYMENT_TOKEN,
             0,
@@ -742,7 +667,7 @@ contract RouterFailuresTest is ComputeTest {
 
         // Use valid wallet in subscription
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 10 minutes, 1, false, NO_PAYMENT_TOKEN, 0, validWallet, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, validWallet, NO_VERIFIER
         );
 
         assertGt(subId, 0);
@@ -757,23 +682,14 @@ contract RouterFailuresTest is ComputeTest {
         // 1. Create subscription with insufficient funds for multiple intervals
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
 
         erc20Token.mint(consumerWallet, paymentForOneInterval);
         vm.prank(address(ScheduledClient));
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // 2. Interval passes without fulfillment (timeout scenario)
@@ -818,22 +734,13 @@ contract RouterFailuresTest is ComputeTest {
     function test_Integration_BatchTimeoutRecovery() public {
         address consumerWallet = walletFactory.createWallet(address(ScheduledClient));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
         erc20Token.mint(consumerWallet, feeAmount * 10);
 
         vm.prank(address(ScheduledClient));
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), feeAmount * 10);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            10,
-            10 minutes,
-            redundancy,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 10, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Simulate time passing for multiple intervals

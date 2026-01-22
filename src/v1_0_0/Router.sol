@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ICoordinator} from "./interfaces/ICoordinator.sol";
 import {Commitment} from "./types/Commitment.sol";
@@ -14,7 +14,6 @@ import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
 import {SubscriptionsManager} from "./SubscriptionManager.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {WalletFactory} from "./wallet/WalletFactory.sol";
-import {CommitmentUtils} from "./utility/CommitmentUtils.sol";
 import {RequestIdUtils} from "./utility/RequestIdUtils.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {PayloadData} from "./types/PayloadData.sol";
@@ -57,7 +56,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         uint64 indexed subscriptionId,
         bytes32 indexed containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         uint256 feeAmount,
         address feeToken,
@@ -113,6 +111,9 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     error InvalidRequestCommitment(bytes32 requestId);
     error MismatchedRequestId();
     error MismatchedSubscriptionId();
+    error CoordinatorNotFound();
+    error WalletFactoryAlreadySet();
+    error InvalidWalletFactoryAddress();
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -128,8 +129,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
      * @param _walletFactory The address of the deployed WalletFactory contract.
      */
     function setWalletFactory(address _walletFactory) external onlyOwner {
-        require(address(walletFactory) == address(0), "WalletFactory already set");
-        require(_walletFactory != address(0), "Invalid WalletFactory address");
+        if (address(walletFactory) != address(0)) revert WalletFactoryAlreadySet();
+        if (_walletFactory == address(0)) revert InvalidWalletFactoryAddress();
         walletFactory = WalletFactory(_walletFactory);
     }
 
@@ -199,7 +200,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         PayloadData calldata input,
         PayloadData calldata output,
         PayloadData calldata proof,
-        uint16 numRedundantDeliveries,
         address nodeWallet,
         Payment[] calldata payments,
         Commitment calldata commitment
@@ -219,15 +219,13 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
 
         _payForFulfillment(commitment.requestId, commitment.walletAddress, payments);
 
-        if (numRedundantDeliveries == commitment.redundancy) {
-            delete requestCommitments[commitment.requestId];
-        }
+        // Single delivery: always delete commitment after fulfillment
+        delete requestCommitments[commitment.requestId];
 
         // Process payment and handle callback
         _callback(
             commitment.subscriptionId,
             commitment.interval,
-            numRedundantDeliveries,
             commitment.useDeliveryInbox,
             nodeWallet,
             input,
@@ -235,12 +233,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             proof
         );
 
-        // Deactivate the subscription only if the current delivery is the last one for this interval
-        // and there are no more intervals to execute.
-        if (
-            numRedundantDeliveries == commitment.redundancy
-                && _hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false
-        ) {
+        // Deactivate subscription if no more intervals to execute
+        if (_hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false) {
             _makeSubscriptionInactive(commitment.subscriptionId);
         }
 
@@ -305,6 +299,39 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             proofRequest.submitterAddress,
             proofRequest.escrowedAmount
         );
+    }
+
+    /**
+     * @notice Unlock verification escrow and execute payment in a single call.
+     * @dev Gas optimization: combines unlockForVerification + payFromCoordinator into one external call.
+     *      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+     * @param proofRequest The proof verification request details.
+     * @param spenderWallet Wallet address from which funds will be drawn.
+     * @param spenderAddress Address that authorized the spend.
+     * @param payments Array of payments to execute.
+     */
+    function unlockAndPayForVerification(
+        ProofVerificationRequest calldata proofRequest,
+        address spenderWallet,
+        address spenderAddress,
+        Payment[] calldata payments
+    ) external override {
+        address coordinatorAddress = getContractById(subscriptions[proofRequest.subscriptionId].routeId);
+        if (msg.sender != coordinatorAddress) {
+            revert OnlyCallableFromCoordinator();
+        }
+
+        // Unlock escrow (inlined for bytecode reduction)
+        _unlockForVerification(proofRequest);
+        emit VerificationFundsUnlocked(
+            proofRequest.subscriptionId,
+            proofRequest.interval,
+            proofRequest.submitterAddress,
+            proofRequest.escrowedAmount
+        );
+
+        // Execute payment using calldata version
+        _pay(spenderWallet, spenderAddress, payments);
     }
 
     function hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval)
@@ -422,6 +449,44 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         return walletFactory.isValidWallet(walletAddr);
     }
 
+    /// @inheritdoc IRouter
+    function areValidWallets(address[] calldata walletAddrs) external view override returns (bool) {
+        uint256 len = walletAddrs.length;
+        for (uint256 i = 0; i < len;) {
+            if (!walletFactory.isValidWallet(walletAddrs[i])) {
+                return false;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        return true;
+    }
+
+    /// @inheritdoc IRouter
+    function getIntervalAndValidateWallets(uint64 subscriptionId, address[] calldata walletAddrs)
+        external
+        view
+        override
+        returns (uint32 interval, bool allWalletsValid)
+    {
+        // Get subscription interval
+        interval = _getSubscriptionInterval(subscriptionId);
+
+        // Validate all wallets
+        allWalletsValid = true;
+        uint256 len = walletAddrs.length;
+        for (uint256 i = 0; i < len;) {
+            if (!walletFactory.isValidWallet(walletAddrs[i])) {
+                allWalletsValid = false;
+                break;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                         TYPE & VERSION
     //////////////////////////////////////////////////////////////*/
@@ -449,23 +514,22 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         returns (bytes32 requestId, Commitment memory commitment)
     {
         _whenNotPaused();
-        require(_isExistingSubscription(subscriptionId), "InvalidSubscription");
+        if (!_isExistingSubscription(subscriptionId)) revert InvalidSubscription();
 
         ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
-        require(coordinatorAddr != address(0), "Coordinator not found");
+        if (coordinatorAddr == address(0)) revert CoordinatorNotFound();
 
         requestId = RequestIdUtils.requestIdPacked(subscriptionId, interval);
         if (requestCommitments[requestId] != bytes32(0)) {
-            // Request already exists, reconstruct the commitment to make the call idempotent.
-            commitment = CommitmentUtils.build(subscription, subscriptionId, interval, coordinatorAddr);
+            // Request already exists, delegate to Coordinator for commitment reconstruction (includes verifierFee).
+            commitment = ICoordinator(coordinatorAddr).getCommitment(subscriptionId, interval);
         } else {
             // New request, mark it and start it in the coordinator.
             _markRequestInFlight(
                 requestId,
                 payable(subscription.wallet),
-                subscriptionId,
-                subscription.redundancy,
+                subscription.client,
                 subscription.feeToken,
                 subscription.feeAmount
             );
@@ -481,7 +545,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
                 subscriptionId,
                 subscription.containerId,
                 interval,
-                subscription.redundancy,
                 subscription.useDeliveryInbox,
                 subscription.feeToken,
                 subscription.feeAmount,
@@ -496,7 +559,6 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             subscriptionId,
             subscription.containerId,
             interval,
-            subscription.redundancy,
             subscription.useDeliveryInbox,
             subscription.feeAmount,
             subscription.feeToken,
@@ -510,9 +572,8 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
     function _timeoutRequest(bytes32 requestId, uint64 subscriptionId, uint32 interval) internal {
         ComputeSubscription storage subscription = subscriptions[subscriptionId];
         address coordinatorAddr = getContractById(subscription.routeId);
-        require(coordinatorAddr != address(0), "Coordinator not found");
-        ICoordinator coordinator = ICoordinator(coordinatorAddr);
+        if (coordinatorAddr == address(0)) revert CoordinatorNotFound();
         _releaseTimeoutRequestLock(requestId, subscriptionId, interval);
-        coordinator.cancelRequest(requestId);
+        ICoordinator(coordinatorAddr).cancelRequest(requestId);
     }
 }

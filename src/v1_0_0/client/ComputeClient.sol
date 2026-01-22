@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Routable} from "../utility/Routable.sol";
 import {DeliveryInbox} from "./DeliveryInbox.sol";
@@ -20,7 +20,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -33,7 +32,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
                 containerId,
                 maxExecutions,
                 intervalSeconds,
-                redundancy,
                 useDeliveryInbox,
                 feeToken,
                 feeAmount,
@@ -53,7 +51,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
     function receiveRequestCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,
@@ -73,17 +70,7 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
             _enqueuePendingDelivery(requestId, node, subscriptionId, interval, input, output, proof);
         } else {
             // Call internal receive function, since caller is validated
-            _receiveCompute(
-                subscriptionId,
-                interval,
-                numRedundantDeliveries,
-                useDeliveryInbox,
-                node,
-                input,
-                output,
-                proof,
-                containerId
-            );
+            _receiveCompute(subscriptionId, interval, useDeliveryInbox, node, input, output, proof, containerId);
         }
     }
 
@@ -110,7 +97,6 @@ abstract contract ComputeClient is Routable, DeliveryInbox {
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 numRedundantDeliveries,
         bool useDeliveryInbox,
         address node,
         PayloadData calldata input,

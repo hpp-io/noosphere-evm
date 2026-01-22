@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ProofVerificationRequest} from "../../../src/v1_0_0/types/ProofVerificationRequest.sol";
 import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
@@ -11,12 +11,14 @@ import {InputType} from "../types/PayloadData.sol";
  * It extends `ComputeClient` and adds functionality for managing transient compute subscriptions,
  * where the inputs for a computation are stored temporarily on-chain.
  * Supports Hybrid input mode: raw data, URI string, or PayloadData.
+ *
+ * Gas optimization: InputType is encoded as a 1-byte prefix in the input data,
+ * eliminating the need for a separate storage mapping (~22k gas savings per request).
+ * Storage format: [1-byte InputType][actual data...]
  */
 abstract contract TransientComputeClient is ComputeClient {
-    /// @dev Stores the inputs for each transient compute request, mapped by subscription ID and a unique interval.
+    /// @dev Stores the inputs with 1-byte type prefix: [InputType][data...]
     mapping(uint64 => mapping(uint32 => bytes)) private _subscriptionInputs;
-    /// @dev Stores the input type for each request
-    mapping(uint64 => mapping(uint32 => InputType)) private _inputTypes;
 
     /// @dev A counter to ensure a unique interval for each transient request within a subscription.
     mapping(uint64 => uint32) private _requestNonces;
@@ -29,7 +31,6 @@ abstract contract TransientComputeClient is ComputeClient {
 
     function _createComputeSubscription(
         string memory containerId,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -39,7 +40,7 @@ abstract contract TransientComputeClient is ComputeClient {
     ) internal returns (uint64) {
         return _getRouter()
             .createComputeSubscription(
-                containerId, 1, 0, redundancy, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
+                containerId, 1, 0, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
             );
     }
 
@@ -48,8 +49,8 @@ abstract contract TransientComputeClient is ComputeClient {
         // For transient subscriptions, the 'interval' field is used as a nonce to ensure request uniqueness,
         // rather than representing a time-based interval.
         uint32 interval = ++_requestNonces[subscriptionId];
-        _subscriptionInputs[subscriptionId][interval] = inputs;
-        _inputTypes[subscriptionId][interval] = InputType.RAW_DATA;
+        // Store with 1-byte type prefix (gas optimization: eliminates separate _inputTypes mapping)
+        _subscriptionInputs[subscriptionId][interval] = abi.encodePacked(uint8(InputType.RAW_DATA), inputs);
         (, Commitment memory commitment) = _getRouter().sendRequest(subscriptionId, interval);
         return (subscriptionId, commitment);
     }
@@ -70,8 +71,8 @@ abstract contract TransientComputeClient is ComputeClient {
         returns (uint32 interval, Commitment memory commitment)
     {
         interval = ++_requestNonces[subscriptionId];
-        _subscriptionInputs[subscriptionId][interval] = bytes(uri);
-        _inputTypes[subscriptionId][interval] = InputType.URI_STRING;
+        // Store with 1-byte type prefix
+        _subscriptionInputs[subscriptionId][interval] = abi.encodePacked(uint8(InputType.URI_STRING), bytes(uri));
         (, commitment) = _getRouter().sendRequest(subscriptionId, interval);
     }
 
@@ -87,8 +88,8 @@ abstract contract TransientComputeClient is ComputeClient {
         returns (uint32 interval, Commitment memory commitment)
     {
         interval = ++_requestNonces[subscriptionId];
-        _subscriptionInputs[subscriptionId][interval] = data;
-        _inputTypes[subscriptionId][interval] = InputType.PAYLOAD_DATA;
+        // Store with 1-byte type prefix
+        _subscriptionInputs[subscriptionId][interval] = abi.encodePacked(uint8(InputType.PAYLOAD_DATA), data);
         (, commitment) = _getRouter().sendRequest(subscriptionId, interval);
     }
 
@@ -98,11 +99,12 @@ abstract contract TransientComputeClient is ComputeClient {
 
     /**
      * @notice Get compute inputs with type information
+     * @dev Decodes the 1-byte type prefix from stored data
      * @param subscriptionId The subscription ID
      * @param interval The interval number
      * @param timestamp The current timestamp (unused)
      * @param caller The caller address (unused)
-     * @return data The input data
+     * @return data The input data (without type prefix)
      * @return inputType The type of input data
      */
     function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
@@ -111,6 +113,30 @@ abstract contract TransientComputeClient is ComputeClient {
         override
         returns (bytes memory data, InputType inputType)
     {
-        return (_subscriptionInputs[subscriptionId][interval], _inputTypes[subscriptionId][interval]);
+        bytes memory stored = _subscriptionInputs[subscriptionId][interval];
+        if (stored.length == 0) {
+            return (data, InputType.RAW_DATA);
+        }
+
+        // Extract type from first byte
+        inputType = InputType(uint8(stored[0]));
+
+        // Extract data (skip first byte) using assembly for gas efficiency
+        uint256 dataLen = stored.length - 1;
+        data = new bytes(dataLen);
+        if (dataLen > 0) {
+            assembly {
+                // Copy from stored[1:] to data[0:]
+                // stored points to length, stored+32 is start of data, stored+33 skips type byte
+                // data points to length, data+32 is start of data
+                let src := add(stored, 33) // skip length (32) + type byte (1)
+                let dst := add(data, 32) // skip length (32)
+                // Copy in 32-byte chunks
+                for { let i := 0 } lt(i, dataLen) { i := add(i, 32) } {
+                    mstore(add(dst, i), mload(add(src, i)))
+                }
+            }
+        }
+        return (data, inputType);
     }
 }

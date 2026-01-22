@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import "../../src/v1_0_0/types/BillingConfig.sol";
 import {ProofVerificationRequest} from "../../src/v1_0_0/types/ProofVerificationRequest.sol";
@@ -14,7 +14,7 @@ contract MockCoordinatorV2 is ICoordinator {
 
     function initialize(BillingConfig calldata) external pure {}
 
-    function startRequest(bytes32, uint64, bytes32, uint32, uint16, bool, address, uint256, address, address)
+    function startRequest(bytes32, uint64, bytes32, uint32, bool, address, uint256, address, address)
         external
         pure
         override

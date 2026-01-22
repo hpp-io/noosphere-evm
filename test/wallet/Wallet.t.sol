@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
@@ -220,7 +220,7 @@ contract WalletTest is Test, IWalletFactoryEvents {
 
         // Lock funds for a request
         vm.prank(address(router));
-        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID, 1);
+        wallet.lockForRequest(spender, address(token), lockAmount, REQUEST_ID);
 
         assertEq(wallet.totalLockedFor(address(token)), lockAmount);
         assertEq(wallet.lockedOfRequest(REQUEST_ID), lockAmount);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Coordinator} from "../../../src/v1_0_0/Coordinator.sol";
 import {IVerifier} from "../../../src/v1_0_0/interfaces/IVerifier.sol";
@@ -59,6 +59,13 @@ abstract contract MockVerifier is IVerifier {
     /// @notice Returns fee required when paying in `token`.
     function fee(address token) external view override returns (uint256 amount) {
         return feeByToken[token];
+    }
+
+    /// @notice Returns token support status and fee in a single call.
+    /// @dev Gas optimization: combines isPaymentTokenSupported + fee into one external call.
+    function getTokenFeeInfo(address token) external view override returns (bool supported, uint256 feeAmount) {
+        supported = allowedTokens[token];
+        feeAmount = feeByToken[token];
     }
 
     /*//////////////////////////////////////////////////////////////////////////

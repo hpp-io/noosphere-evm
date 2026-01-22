@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {MockImmediateVerifier} from "./mocks/verifier/MockImmediateVerifier.sol";
 import {MockDeferredVerifier} from "./mocks/verifier/MockDeferredVerifier.sol";
@@ -63,7 +63,6 @@ contract ComputeVerifierTest is ComputeTest {
         (, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             address(erc20Token),
             50e6,
             aliceWallet,
@@ -112,7 +111,6 @@ contract ComputeVerifierTest is ComputeTest {
         (, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             address(erc20Token),
             50e6,
             aliceWallet,
@@ -161,7 +159,6 @@ contract ComputeVerifierTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             address(erc20Token),
             40e6,
             aliceWallet,
@@ -220,7 +217,6 @@ contract ComputeVerifierTest is ComputeTest {
             MOCK_CONTAINER_ID,
             1, // maxExecutions
             10 minutes, // intervalSeconds
-            1, // redundancy
             true, // useDeliveryInbox
             address(erc20Token),
             40e6,
@@ -289,7 +285,6 @@ contract ComputeVerifierTest is ComputeTest {
         (, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             ZERO_ADDRESS,
             1 ether,
             aliceWallet,
@@ -351,7 +346,6 @@ contract ComputeVerifierTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             ZERO_ADDRESS,
             1 ether,
             aliceWallet,
@@ -437,7 +431,6 @@ contract ComputeVerifierTest is ComputeTest {
         (uint64 subId, Commitment memory commitment) = transientClient.createMockRequest(
             MOCK_CONTAINER_ID,
             MOCK_INPUT,
-            1,
             address(erc20Token),
             40e6,
             aliceWallet,
@@ -474,7 +467,9 @@ contract ComputeVerifierTest is ComputeTest {
         // Create PayloadData for the dynamic proof
         PayloadData memory proof_ = PayloadData({contentHash: keccak256(proof), uri: bytes("")});
         vm.expectEmit(true, false, false, true, address(COORDINATOR));
-        emit ICoordinator.ComputeDelivered(commitment.requestId, nodeWallet, 1, _mockInput(), _mockOutput(), proof_);
+        emit ICoordinator.ComputeDelivered(
+            commitment.requestId, nodeWallet, _mockInput().contentHash, _mockOutput().contentHash, proof_.contentHash
+        );
 
         // 9. Bob reports the compute result
         // The EOA `bob` initiates the transaction by calling the Coordinator directly.
@@ -539,7 +534,7 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 2. Create a subscription
         (, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+            MOCK_CONTAINER_ID, MOCK_INPUT, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -628,7 +623,7 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 2. Create a subscription
         (, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+            MOCK_CONTAINER_ID, MOCK_INPUT, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
         );
         bytes memory commitmentData = abi.encode(commitment);
 
@@ -723,7 +718,7 @@ contract ComputeVerifierTest is ComputeTest {
 
         // 2. Create a subscription
         (, Commitment memory commitment) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_INPUT, 1, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
+            MOCK_CONTAINER_ID, MOCK_INPUT, address(erc20Token), 40e6, aliceWallet, address(immediateFinalizeVerifier)
         );
         bytes memory commitmentData = abi.encode(commitment);
 

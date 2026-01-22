@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -91,6 +91,12 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
     function isPaymentTokenSupported(address token) external view override returns (bool accepted) {
         // This verifier does not charge a fee, but it must still indicate which tokens it "supports" for fee-less transactions.
         return supportedTokens[token];
+    }
+
+    /// @inheritdoc IVerifier
+    function getTokenFeeInfo(address token) external view override returns (bool supported, uint256 feeAmount) {
+        supported = supportedTokens[token];
+        feeAmount = tokenFees[token];
     }
 
     /**

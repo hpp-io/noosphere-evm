@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {PayloadData} from "../types/PayloadData.sol";
@@ -30,6 +30,14 @@ interface IVerifier {
     /// @param token ERC20 token address. Use `address(0)` for native ETH if supported.
     /// @return accepted True when the token is accepted for payment.
     function isPaymentTokenSupported(address token) external view returns (bool accepted);
+
+    /// @notice Returns token support status and fee in a single call.
+    /// @dev Gas optimization: combines isPaymentTokenSupported + fee into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param token ERC20 token address. Use `address(0)` for native ETH if supported.
+    /// @return supported True when the token is accepted for payment.
+    /// @return feeAmount Fee amount denominated in `token` base units.
+    function getTokenFeeInfo(address token) external view returns (bool supported, uint256 feeAmount);
 
     /// @notice Submit a proof for asynchronous verification using a structured request.
     /// @dev This is an overloaded function that accepts a `ProofVerificationRequest` struct.

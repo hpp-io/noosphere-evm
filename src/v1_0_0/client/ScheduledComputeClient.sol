@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../types/Commitment.sol";
 import {ComputeClient} from "./ComputeClient.sol";
@@ -29,7 +29,6 @@ abstract contract ScheduledComputeClient is ComputeClient {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -42,7 +41,6 @@ abstract contract ScheduledComputeClient is ComputeClient {
                 containerId,
                 maxExecutions,
                 intervalSeconds,
-                redundancy,
                 useDeliveryInbox,
                 feeToken,
                 feeAmount,
