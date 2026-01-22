@@ -46,16 +46,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID,
-            containerId,
-            1,
-            inputs,
-            false,
-            feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            currentTimestamp
+            actualSubscriptionID, containerId, 1, inputs, false, feeToken, feeAmount, wallet, verifier, currentTimestamp
         );
 
         return (actualSubscriptionID, commitment);
@@ -72,22 +63,12 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
     ) external returns (uint64, Commitment memory) {
         // Get current block timestamp
         uint256 currentTimestamp = block.timestamp;
-        uint64 subId =
-            _createComputeSubscription(containerId, false, feeToken, feeAmount, wallet, verifier, routeId);
+        uint64 subId = _createComputeSubscription(containerId, false, feeToken, feeAmount, wallet, verifier, routeId);
 
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID,
-            containerId,
-            1,
-            inputs,
-            false,
-            feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            currentTimestamp
+            actualSubscriptionID, containerId, 1, inputs, false, feeToken, feeAmount, wallet, verifier, currentTimestamp
         );
 
         return (actualSubscriptionID, commitment);
@@ -118,16 +99,7 @@ contract MockTransientComputeClient is MockComputeClient, TransientComputeClient
         (uint64 actualSubscriptionID, Commitment memory commitment) = _requestCompute(subId, inputs);
 
         _assertSubscription(
-            actualSubscriptionID,
-            containerId,
-            1,
-            inputs,
-            true,
-            feeToken,
-            feeAmount,
-            wallet,
-            verifier,
-            currentTimestamp
+            actualSubscriptionID, containerId, 1, inputs, true, feeToken, feeAmount, wallet, verifier, currentTimestamp
         );
 
         return (actualSubscriptionID, commitment);

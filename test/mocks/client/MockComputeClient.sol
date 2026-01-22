@@ -48,11 +48,7 @@ abstract contract MockComputeClient {
     /// @param subscriptionId subscription ID
     /// @param interval subscription interval
     /// @return output delivered from node
-    function getDeliveredOutput(uint64 subscriptionId, uint32 interval)
-        external
-        view
-        returns (DeliveredOutput memory)
-    {
+    function getDeliveredOutput(uint64 subscriptionId, uint32 interval) external view returns (DeliveredOutput memory) {
         return outputs[subscriptionId][interval];
     }
 }

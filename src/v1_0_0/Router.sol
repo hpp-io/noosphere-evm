@@ -223,7 +223,15 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
         delete requestCommitments[commitment.requestId];
 
         // Process payment and handle callback
-        _callback(commitment.subscriptionId, commitment.interval, commitment.useDeliveryInbox, nodeWallet, input, output, proof);
+        _callback(
+            commitment.subscriptionId,
+            commitment.interval,
+            commitment.useDeliveryInbox,
+            nodeWallet,
+            input,
+            output,
+            proof
+        );
 
         // Deactivate subscription if no more intervals to execute
         if (_hasSubscriptionNextInterval(commitment.subscriptionId, commitment.interval) == false) {
@@ -518,7 +526,13 @@ contract Router is IRouter, ITypeAndVersion, SubscriptionsManager, Pausable, Con
             commitment = ICoordinator(coordinatorAddr).getCommitment(subscriptionId, interval);
         } else {
             // New request, mark it and start it in the coordinator.
-            _markRequestInFlight(requestId, payable(subscription.wallet), subscription.client, subscription.feeToken, subscription.feeAmount);
+            _markRequestInFlight(
+                requestId,
+                payable(subscription.wallet),
+                subscription.client,
+                subscription.feeToken,
+                subscription.feeAmount
+            );
 
             /// Update the activeAt timestamp to reflect the last activity
             if (subscription.activeAt == type(uint32).max) {

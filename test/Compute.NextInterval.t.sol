@@ -90,18 +90,12 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // 3. Approve for two intervals (even though funds are insufficient)
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
+        Wallet(payable(consumerWallet))
+            .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         // 4. Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            2,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
         // 5. Deliver compute for the first interval
         bytes memory commitmentData1 = abi.encode(commitment1);
@@ -130,14 +124,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // 4. Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            2,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
@@ -181,14 +168,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // Create the subscription
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            2,
-            10 minutes,
-            false,
-            ZERO_ADDRESS,
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, ZERO_ADDRESS, feeAmount, consumerWallet, NO_VERIFIER
         );
         assertEq(subId, 1);
 

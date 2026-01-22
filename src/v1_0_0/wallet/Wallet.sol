@@ -55,12 +55,7 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
     event Approval(address indexed spender, address indexed token, uint256 amount);
 
     /// @notice Emitted when a new request-level lock is created.
-    event RequestLocked(
-        bytes32 indexed requestId,
-        address indexed spender,
-        address indexed token,
-        uint256 amount
-    );
+    event RequestLocked(bytes32 indexed requestId, address indexed spender, address indexed token, uint256 amount);
 
     /// @notice Emitted when a request-level lock is released and leftover is refunded to allowance.
     event RequestReleased(

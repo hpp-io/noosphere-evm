@@ -60,14 +60,8 @@ contract RouterFailuresTest is ComputeTest {
 
         // Attempt to fulfill with invalid request ID
         vm.prank(address(COORDINATOR));
-        FulfillResult result = ROUTER.fulfill(
-            _mockInput(),
-            _mockOutput(),
-            _mockProof(),
-            userWalletAddress,
-            payments,
-            fakeCommitment
-        );
+        FulfillResult result =
+            ROUTER.fulfill(_mockInput(), _mockOutput(), _mockProof(), userWalletAddress, payments, fakeCommitment);
 
         assertEq(uint256(result), uint256(FulfillResult.INVALID_REQUEST_ID));
     }
@@ -157,14 +151,7 @@ contract RouterFailuresTest is ComputeTest {
             .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to second interval
@@ -194,14 +181,7 @@ contract RouterFailuresTest is ComputeTest {
             .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 3);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to third interval (20 minutes = 2 full intervals, so we're in interval 3)
@@ -336,14 +316,7 @@ contract RouterFailuresTest is ComputeTest {
 
         // Create subscription with request
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Warp to create multiple intervals worth of potential requests
@@ -379,14 +352,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Check that next interval is NOT available due to insufficient funds
@@ -406,14 +372,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Verify no next interval initially
@@ -516,14 +475,7 @@ contract RouterFailuresTest is ComputeTest {
         // Attempt to create subscription (will fail when trying to lock funds)
         vm.expectRevert(); // Will revert with InsufficientFunds when attempting to lock
         ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
     }
 
@@ -538,14 +490,7 @@ contract RouterFailuresTest is ComputeTest {
 
         vm.expectRevert(); // Will revert with InsufficientAllowance
         ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            3,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
     }
 
@@ -744,14 +689,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            5,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 5, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // 2. Interval passes without fulfillment (timeout scenario)
@@ -802,14 +740,7 @@ contract RouterFailuresTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), feeAmount * 10);
 
         (uint64 subId,) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID,
-            10,
-            10 minutes,
-            false,
-            address(erc20Token),
-            feeAmount,
-            consumerWallet,
-            NO_VERIFIER
+            MOCK_CONTAINER_ID, 10, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
         );
 
         // Simulate time passing for multiple intervals

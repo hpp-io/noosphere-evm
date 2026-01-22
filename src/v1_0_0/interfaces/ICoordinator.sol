@@ -35,11 +35,7 @@ interface ICoordinator {
     /// @param outputHash keccak256 hash of output content.
     /// @param proofHash keccak256 hash of proof content.
     event ComputeDelivered(
-        bytes32 indexed requestId,
-        address indexed nodeWallet,
-        bytes32 inputHash,
-        bytes32 outputHash,
-        bytes32 proofHash
+        bytes32 indexed requestId, address indexed nodeWallet, bytes32 inputHash, bytes32 outputHash, bytes32 proofHash
     );
 
     /// @notice Emitted when a proof verification outcome is processed.

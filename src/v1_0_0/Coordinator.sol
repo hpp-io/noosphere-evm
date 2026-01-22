@@ -59,8 +59,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         address wallet,
         address verifier
     ) external override onlyRouter returns (Commitment memory) {
-        Commitment memory commitment =
-            _startBilling(requestId, subscriptionId, containerId, interval, useDeliveryInbox, feeToken, feeAmount, wallet, verifier);
+        Commitment memory commitment = _startBilling(
+            requestId, subscriptionId, containerId, interval, useDeliveryInbox, feeToken, feeAmount, wallet, verifier
+        );
         emit RequestStarted(requestId, subscriptionId, containerId, commitment);
         return commitment;
     }
@@ -199,7 +200,9 @@ contract Coordinator is ICoordinator, Billing, ReentrancyGuard, ConfirmedOwner {
         }
         // Single delivery: process and cleanup
         _processDelivery(commitment, commitmentHash, msg.sender, nodeWallet, input, output, proof, delegatedSubHash);
-        emit ComputeDelivered(commitment.requestId, nodeWallet, input.contentHash, output.contentHash, proof.contentHash);
+        emit ComputeDelivered(
+            commitment.requestId, nodeWallet, input.contentHash, output.contentHash, proof.contentHash
+        );
     }
 
     /// @dev ConfirmedOwner abstract hook (required override).

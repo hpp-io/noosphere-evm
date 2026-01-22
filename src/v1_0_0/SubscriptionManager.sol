@@ -366,7 +366,13 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     /// @param client subscription client address (spender for lockForRequest)
     /// @param feeToken token used for payment
     /// @param feeAmount per-response payment amount
-    function _markRequestInFlight(bytes32 requestId, address payable walletAddr, address client, address feeToken, uint256 feeAmount) internal {
+    function _markRequestInFlight(
+        bytes32 requestId,
+        address payable walletAddr,
+        address client,
+        address feeToken,
+        uint256 feeAmount
+    ) internal {
         // Gas optimization: wallet was already validated in createComputeSubscription(),
         // and createdWallets mapping never becomes false once set to true.
         // Removing redundant isValidWallet() call saves ~47k gas on Arbitrum Nitro v3.9+.
@@ -417,7 +423,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
 
         // Encode the callback call
         bytes memory callData = abi.encodeCall(
-            ComputeClient.receiveRequestCompute, (subscriptionId, interval, useDeliveryInbox, node, input, output, proof, bytes32(0))
+            ComputeClient.receiveRequestCompute,
+            (subscriptionId, interval, useDeliveryInbox, node, input, output, proof, bytes32(0))
         );
 
         // Execute with gas limit - failure doesn't revert the whole tx
@@ -468,7 +475,16 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     {
         ComputeSubscription storage s = subscriptions[subscriptionId];
         return keccak256(
-            abi.encode(subscriptionId, interval, s.containerId, s.useDeliveryInbox, s.verifier, s.feeAmount, s.feeToken, coordinator)
+            abi.encode(
+                subscriptionId,
+                interval,
+                s.containerId,
+                s.useDeliveryInbox,
+                s.verifier,
+                s.feeAmount,
+                s.feeToken,
+                coordinator
+            )
         );
     }
 
@@ -480,7 +496,8 @@ abstract contract SubscriptionsManager is ISubscriptionsManager, EIP712 {
     }
 
     function _hasSubscriptionNextInterval(uint64 subscriptionId, uint32 currentInterval) internal view returns (bool) {
-        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions) {
+        if (!_isExistingSubscription(subscriptionId) || currentInterval >= subscriptions[subscriptionId].maxExecutions)
+        {
             return false;
         }
         ComputeSubscription storage sub = subscriptions[subscriptionId];

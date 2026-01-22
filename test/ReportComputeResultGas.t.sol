@@ -11,20 +11,12 @@ import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 contract ReportComputeResultGas is Test {
     // Current event (with full PayloadData)
     event ComputeDeliveredCurrent(
-        bytes32 indexed requestId,
-        address indexed nodeWallet,
-        PayloadData input,
-        PayloadData output,
-        PayloadData proof
+        bytes32 indexed requestId, address indexed nodeWallet, PayloadData input, PayloadData output, PayloadData proof
     );
 
     // Optimized event (hashes only)
     event ComputeDeliveredOptimized(
-        bytes32 indexed requestId,
-        address indexed nodeWallet,
-        bytes32 inputHash,
-        bytes32 outputHash,
-        bytes32 proofHash
+        bytes32 indexed requestId, address indexed nodeWallet, bytes32 inputHash, bytes32 outputHash, bytes32 proofHash
     );
 
     // Storage patterns
@@ -34,26 +26,15 @@ contract ReportComputeResultGas is Test {
         console.log("\n=== Event Gas: Current (PayloadData) ===");
 
         PayloadData memory input = PayloadData({
-            contentHash: keccak256("input"),
-            uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+            contentHash: keccak256("input"), uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
         });
         PayloadData memory output = PayloadData({
-            contentHash: keccak256("output"),
-            uri: "ipfs://QmOutput12345678901234567890123456789012345678"
+            contentHash: keccak256("output"), uri: "ipfs://QmOutput12345678901234567890123456789012345678"
         });
-        PayloadData memory proof = PayloadData({
-            contentHash: bytes32(0),
-            uri: ""
-        });
+        PayloadData memory proof = PayloadData({contentHash: bytes32(0), uri: ""});
 
         uint256 gasBefore = gasleft();
-        emit ComputeDeliveredCurrent(
-            keccak256("request1"),
-            address(0x1234),
-            input,
-            output,
-            proof
-        );
+        emit ComputeDeliveredCurrent(keccak256("request1"), address(0x1234), input, output, proof);
         uint256 gasUsed = gasBefore - gasleft();
         console.log("Event with PayloadData: ", gasUsed, "gas");
     }
@@ -63,11 +44,7 @@ contract ReportComputeResultGas is Test {
 
         uint256 gasBefore = gasleft();
         emit ComputeDeliveredOptimized(
-            keccak256("request1"),
-            address(0x1234),
-            keccak256("input"),
-            keccak256("output"),
-            bytes32(0)
+            keccak256("request1"), address(0x1234), keccak256("input"), keccak256("output"), bytes32(0)
         );
         uint256 gasUsed = gasBefore - gasleft();
         console.log("Event with hashes only: ", gasUsed, "gas");
@@ -96,17 +73,12 @@ contract ReportComputeResultGas is Test {
         bytes32 requestId = keccak256("request1");
 
         PayloadData memory input = PayloadData({
-            contentHash: keccak256("input"),
-            uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+            contentHash: keccak256("input"), uri: "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
         });
         PayloadData memory output = PayloadData({
-            contentHash: keccak256("output"),
-            uri: "ipfs://QmOutput12345678901234567890123456789012345678"
+            contentHash: keccak256("output"), uri: "ipfs://QmOutput12345678901234567890123456789012345678"
         });
-        PayloadData memory proof = PayloadData({
-            contentHash: bytes32(0),
-            uri: ""
-        });
+        PayloadData memory proof = PayloadData({contentHash: bytes32(0), uri: ""});
 
         uint256 totalCurrent = 0;
         uint256 totalOptimized = 0;
@@ -129,7 +101,9 @@ contract ReportComputeResultGas is Test {
 
         // 3. Event emission - Optimized
         gas = gasleft();
-        emit ComputeDeliveredOptimized(requestId, address(0x1234), input.contentHash, output.contentHash, proof.contentHash);
+        emit ComputeDeliveredOptimized(
+            requestId, address(0x1234), input.contentHash, output.contentHash, proof.contentHash
+        );
         gas = gas - gasleft();
         totalOptimized += gas;
         console.log("Event (optimized):       ", gas);

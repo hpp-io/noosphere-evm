@@ -309,7 +309,8 @@ abstract contract Billing is IBilling, Routable {
         } else {
             // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({recipient: sub.wallet, feeToken: sub.feeToken, feeAmount: sub.feeAmount});
-            _getRouter().unlockAndPayForVerification(request, request.submitterWallet, request.submitterAddress, payments);
+            _getRouter()
+                .unlockAndPayForVerification(request, request.submitterWallet, request.submitterAddress, payments);
         }
     }
 
