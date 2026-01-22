@@ -38,12 +38,20 @@ const InputType = {
 const InputTypeName = ['RAW_DATA', 'URI_STRING', 'PAYLOAD_DATA'];
 
 /**
- * Simulate off-chain storage (IPFS/R2)
+ * Simulate external storage upload (S3/IPFS)
+ * @param {Buffer} data - The data to "upload"
+ * @param {string} storageType - 's3' or 'ipfs' (default: 's3')
  */
-function simulateOffchainUpload(data) {
+function simulateOffchainUpload(data, storageType = process.env.TEST_STORAGE_TYPE || 's3') {
     const hash = crypto.createHash('sha256').update(data).digest('hex');
-    const mockCid = 'Qm' + Buffer.from(hash, 'hex').toString('base64').replace(/[+/=]/g, 'x').slice(0, 44);
-    return `ipfs://${mockCid}`;
+
+    if (storageType === 'ipfs') {
+        const mockCid = 'Qm' + Buffer.from(hash, 'hex').toString('base64').replace(/[+/=]/g, 'x').slice(0, 44);
+        return `ipfs://${mockCid}`;
+    } else {
+        // S3/R2 URL format (matches production)
+        return `https://noosphere-payload.r2.dev/${hash.slice(0, 16)}`;
+    }
 }
 
 /**
@@ -221,30 +229,97 @@ async function main() {
             let rawDataSize = 0;
 
             // Note: ethers v6 returns enum as BigInt, so use Number() for comparison
-            // Hybrid approach threshold (1KB)
-            // < 1KB: raw bytes directly in URI (no encoding overhead)
-            // >= 1KB: off-chain URI (IPFS, constant ~53 bytes)
-            const INLINE_THRESHOLD = 1024;
+            // Upload threshold (256 bytes, matches config)
+            // < 256B: inline data URI (data:;base64,...)
+            // >= 256B: external storage URL (S3/IPFS)
+            const UPLOAD_THRESHOLD = parseInt(process.env.TEST_UPLOAD_THRESHOLD ?? '256', 10);
+
+            // Helper: Create output PayloadData based on actual content size
+            function createOutputPayloadData(contentHash, actualContentSize) {
+                if (actualContentSize < UPLOAD_THRESHOLD) {
+                    // Small output: inline data URI
+                    // Simulate output content (same size as input for benchmark)
+                    const simulatedOutput = Buffer.alloc(actualContentSize, 0xbb);
+                    const base64 = simulatedOutput.toString('base64');
+                    const dataUri = `data:;base64,${base64}`;
+                    console.log(`      [OUTPUT INLINE] ${actualContentSize}B < ${UPLOAD_THRESHOLD}B -> data URI (${dataUri.length} chars)`);
+                    return createPayloadData(contentHash, dataUri);
+                } else {
+                    // Large output: external storage URL
+                    const offchainUri = simulateOffchainUpload(Buffer.from(contentHash.slice(2), 'hex'));
+                    console.log(`      [OUTPUT EXTERNAL] ${actualContentSize}B >= ${UPLOAD_THRESHOLD}B -> S3 URL (${offchainUri.length} chars)`);
+                    return createPayloadData(contentHash, offchainUri);
+                }
+            }
 
             if (Number(inputType) === InputType.RAW_DATA) {
                 // RAW_DATA: input is raw bytes stored on-chain
+                // However, it might be ABI-encoded PayloadData - try to decode it first
                 rawDataSize = inputLen;
-                const contentHash = inputData !== '0x' ? ethers.keccak256(inputData) : ethers.ZeroHash;
 
-                if (rawDataSize < INLINE_THRESHOLD) {
-                    // Small data: raw bytes directly in URI (no encoding)
-                    // This is the most gas-efficient for small data
-                    const rawUri = inputData;  // Use raw bytes directly
-                    inputPayloadData = createPayloadData(contentHash, rawUri);
-                    outputPayloadData = createPayloadData(contentHash, rawUri);
-                    console.log(`      [HYBRID < 1KB] Raw bytes in URI: ${rawDataSize}B`);
-                } else {
-                    // Large data: use off-chain URI (simulated IPFS, ~53 bytes)
-                    const offchainUri = simulateOffchainUpload(Buffer.from(inputData.slice(2), 'hex'));
-                    inputPayloadData = createPayloadData(contentHash, offchainUri);
-                    outputPayloadData = createPayloadData(contentHash, offchainUri);
-                    console.log(`      [HYBRID >= 1KB] Off-chain URI: ${offchainUri}`);
+                // Try to decode as PayloadData (tuple(bytes32, bytes))
+                let decodedAsPayloadData = false;
+                try {
+                    const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
+                        ['tuple(bytes32 contentHash, bytes uri)'],
+                        inputData
+                    );
+                    const uriBytes = decoded[0].uri;
+                    if (uriBytes && uriBytes.length > 2) {
+                        const uriStr = ethers.toUtf8String(uriBytes);
+                        // Check if it looks like a valid URI
+                        if (uriStr.startsWith('data:') || uriStr.startsWith('https://') || uriStr.startsWith('ipfs://')) {
+                            decodedAsPayloadData = true;
+                            console.log(`      [RAW_DATA -> PAYLOAD_DATA detected] URI: ${uriStr.substring(0, 60)}...`);
+
+                            inputPayloadData = {
+                                contentHash: decoded[0].contentHash,
+                                uri: uriBytes
+                            };
+
+                            // Determine output based on input URI type
+                            if (uriStr.startsWith('data:')) {
+                                // Data URI: decode to get actual content size
+                                const base64Match = uriStr.match(/base64,(.+)$/);
+                                let actualContentSize = 0;
+                                if (base64Match) {
+                                    actualContentSize = Buffer.from(base64Match[1], 'base64').length;
+                                }
+                                console.log(`      [INPUT] Data URI -> actual content: ${actualContentSize}B`);
+                                outputPayloadData = createOutputPayloadData(decoded[0].contentHash, actualContentSize);
+                            } else {
+                                // External URI: output should also use external storage
+                                const offchainUri = simulateOffchainUpload(Buffer.from(decoded[0].contentHash.slice(2), 'hex'));
+                                outputPayloadData = createPayloadData(decoded[0].contentHash, offchainUri);
+                                console.log(`      [INPUT] External URI -> output also external: ${offchainUri}`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Not a valid PayloadData, treat as raw bytes
                 }
+
+                if (!decodedAsPayloadData) {
+                    // Treat as actual raw bytes (v1 compatible)
+                    const contentHash = inputData !== '0x' ? ethers.keccak256(inputData) : ethers.ZeroHash;
+
+                    if (rawDataSize < UPLOAD_THRESHOLD) {
+                        // Small data: inline data URI (data:;base64,...)
+                        const base64 = Buffer.from(inputData.slice(2), 'hex').toString('base64');
+                        const dataUri = `data:;base64,${base64}`;
+                        inputPayloadData = createPayloadData(contentHash, dataUri);
+                        console.log(`      [INPUT RAW INLINE] ${rawDataSize}B < ${UPLOAD_THRESHOLD}B -> data URI (${dataUri.length} chars)`);
+                    } else {
+                        // Large data: external storage URL (simulated S3/IPFS)
+                        const offchainUri = simulateOffchainUpload(Buffer.from(inputData.slice(2), 'hex'));
+                        inputPayloadData = createPayloadData(contentHash, offchainUri);
+                        console.log(`      [INPUT RAW EXTERNAL] ${rawDataSize}B >= ${UPLOAD_THRESHOLD}B -> S3 URL (${offchainUri.length} chars)`);
+                    }
+
+                    // Output: apply threshold to actual content size
+                    outputPayloadData = createOutputPayloadData(contentHash, rawDataSize);
+                }
+
             } else if (Number(inputType) === InputType.PAYLOAD_DATA) {
                 // PAYLOAD_DATA: input is ABI-encoded PayloadData (hash + URI)
                 // The actual data is off-chain, we only have the reference
@@ -258,14 +333,29 @@ async function main() {
                         uri: decoded[0].uri
                     };
 
-                    // In production, agent would fetch from URI and process
-                    // For benchmark, we simulate processing and create output PayloadData
-                    const outputUri = simulateOffchainUpload(Buffer.from(decoded[0].contentHash.slice(2), 'hex'));
-                    outputPayloadData = createPayloadData(decoded[0].contentHash, outputUri);
-
                     const uriStr = ethers.toUtf8String(decoded[0].uri);
-                    console.log(`      [PAYLOAD_DATA] Off-chain reference: ${uriStr}`);
-                    console.log(`      [PAYLOAD_DATA] On-chain: ~${formatBytes(32 + decoded[0].uri.length)} (hash + URI)`);
+                    console.log(`      [INPUT PAYLOAD_DATA] URI: ${uriStr.substring(0, 60)}...`);
+
+                    // Determine output URI type based on input URI type
+                    // Production logic: if input is external, output should also be external
+                    if (uriStr.startsWith('data:')) {
+                        // Data URI input: decode base64 to get actual content size
+                        const base64Match = uriStr.match(/base64,(.+)$/);
+                        let actualContentSize = 0;
+                        if (base64Match) {
+                            actualContentSize = Buffer.from(base64Match[1], 'base64').length;
+                        }
+                        console.log(`      [INPUT] Data URI -> actual content: ${actualContentSize}B`);
+                        // Output: apply threshold to actual content size
+                        outputPayloadData = createOutputPayloadData(decoded[0].contentHash, actualContentSize);
+                    } else {
+                        // External URI input (S3/IPFS): output should also use external storage
+                        // This matches production behavior - large input implies large output
+                        const offchainUri = simulateOffchainUpload(Buffer.from(decoded[0].contentHash.slice(2), 'hex'));
+                        outputPayloadData = createPayloadData(decoded[0].contentHash, offchainUri);
+                        console.log(`      [INPUT] External URI -> output also external: ${offchainUri}`);
+                    }
+
                 } catch (e) {
                     console.warn('      Failed to decode PayloadData:', e.message);
                     inputPayloadData = createPayloadData(ethers.keccak256(inputData), 'data:raw');
@@ -276,7 +366,9 @@ async function main() {
                 const uri = ethers.toUtf8String(inputData);
                 const contentHash = ethers.keccak256(inputData);
                 inputPayloadData = createPayloadData(contentHash, uri);
-                outputPayloadData = createPayloadData(contentHash, simulateOffchainUpload(Buffer.from(inputData.slice(2), 'hex')));
+                // For URI_STRING, assume content is large (external)
+                const actualContentSize = parseInt(process.env.TEST_PAYLOAD_SIZE ?? '256', 10);
+                outputPayloadData = createOutputPayloadData(contentHash, actualContentSize);
                 console.log(`      [URI_STRING] URI: ${uri}`);
             } else {
                 // Unknown, treat as raw

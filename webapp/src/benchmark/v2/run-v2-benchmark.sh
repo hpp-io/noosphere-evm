@@ -14,19 +14,22 @@ BENCH_DIR="${SCRIPT_DIR}/.."
 # -------------------------
 # User configurable
 # -------------------------
-# Payload sizes to test (expanded for production scenarios)
-# Design spec: < 1KB inline (data:), >= 1KB off-chain (ipfs://)
-# Sizes: 64B, 256B, 512B, 1KB, 4KB, 10KB, 100KB, 1MB
-SIZES=(64 256 512 1024 4096 10240 102400 1048576)
+# Payload sizes to test around the 256 byte threshold
+# Design spec: < 256B inline (data:;base64,...), >= 256B external storage (S3/IPFS)
+# Sizes: 64B, 128B, 200B, 256B, 300B, 512B, 1KB, 4KB, 10KB
+SIZES=(64 128 200 256 300 512 1024 4096 10240)
 
-# Inline threshold: data below this size uses RAW_DATA, above uses PAYLOAD_DATA with URI
-INLINE_THRESHOLD="${INLINE_THRESHOLD:-1024}"  # 1KB default
+# Upload threshold: data below this size uses inline data URI, above uses external storage
+UPLOAD_THRESHOLD="${UPLOAD_THRESHOLD:-256}"  # 256 bytes default (matches config)
+
+# Storage type for external storage: 's3' or 'ipfs'
+STORAGE_TYPE="${STORAGE_TYPE:-s3}"
 
 # Input type mode:
-# - AUTO: automatically select based on size (< threshold = RAW_DATA, >= threshold = PAYLOAD_DATA)
-# - RAW_DATA: force all inline (v1 compatible)
-# - PAYLOAD_DATA: force all off-chain URI reference
-INPUT_TYPE_MODE="${INPUT_TYPE_MODE:-AUTO}"
+# - AUTO: automatically select URI type based on size vs threshold
+# - RAW_DATA: force raw bytes (v1 compatible, no PayloadData)
+# - PAYLOAD_DATA: force PayloadData (auto selects inline vs external based on threshold)
+INPUT_TYPE_MODE="${INPUT_TYPE_MODE:-PAYLOAD_DATA}"
 
 # Default values
 ANVIL_PORT_DEFAULT=8545
@@ -240,10 +243,11 @@ function start_agent() {
 echo "=== V2 Benchmark run start ==="
 echo "Environment: ${ENV}"
 echo "Input Type Mode: ${INPUT_TYPE_MODE}"
-echo "Inline Threshold: ${INLINE_THRESHOLD} bytes (1KB)"
+echo "Upload Threshold: ${UPLOAD_THRESHOLD} bytes"
+echo "Storage Type: ${STORAGE_TYPE}"
 echo "Payload Sizes: ${SIZES[*]}"
-echo "  - Below ${INLINE_THRESHOLD}B: RAW_DATA (inline on-chain)"
-echo "  - Above ${INLINE_THRESHOLD}B: PAYLOAD_DATA (off-chain URI reference)"
+echo "  - Below ${UPLOAD_THRESHOLD}B: inline data URI (data:;base64,...)"
+echo "  - Above ${UPLOAD_THRESHOLD}B: external storage URL (${STORAGE_TYPE})"
 echo "Logs dir: ${LOG_DIR}"
 echo "CSV: ${CSV_PATH}"
 
@@ -284,24 +288,27 @@ FAILURES=0
 for SIZE in "${SIZES[@]}"; do
   echo ""
 
-  # Determine input type based on mode and size
-  if [[ "${INPUT_TYPE_MODE}" == "AUTO" ]]; then
-    if (( SIZE < INLINE_THRESHOLD )); then
-      CURRENT_INPUT_TYPE="RAW_DATA"
-    else
-      CURRENT_INPUT_TYPE="PAYLOAD_DATA"
-    fi
-  elif [[ "${INPUT_TYPE_MODE}" == "RAW_DATA" ]]; then
+  # Determine input type based on mode
+  if [[ "${INPUT_TYPE_MODE}" == "RAW_DATA" ]]; then
     CURRENT_INPUT_TYPE="RAW_DATA"
   else
+    # PAYLOAD_DATA or AUTO: use PayloadData with automatic URI selection
     CURRENT_INPUT_TYPE="PAYLOAD_DATA"
   fi
 
-  echo "=== RUN payload size=${SIZE} bytes ($(numfmt --to=iec ${SIZE} 2>/dev/null || echo ${SIZE})) inputType=${CURRENT_INPUT_TYPE} ==="
+  # Determine expected URI type for logging
+  if (( SIZE < UPLOAD_THRESHOLD )); then
+    EXPECTED_URI="data_uri"
+  else
+    EXPECTED_URI="${STORAGE_TYPE}"
+  fi
+
+  echo "=== RUN payload size=${SIZE} bytes ($(numfmt --to=iec ${SIZE} 2>/dev/null || echo ${SIZE})) inputType=${CURRENT_INPUT_TYPE} expectedUri=${EXPECTED_URI} ==="
   export TEST_PAYLOAD_SIZE="${SIZE}"
   export TEST_ITERATION="${TEST_ITERATION:-1}"
   export TEST_INPUT_TYPE="${CURRENT_INPUT_TYPE}"
-  export TEST_INLINE_THRESHOLD="${INLINE_THRESHOLD}"
+  export TEST_UPLOAD_THRESHOLD="${UPLOAD_THRESHOLD}"
+  export TEST_STORAGE_TYPE="${STORAGE_TYPE}"
 
   CLIENT_RUN_LOG="${CLIENT_LOG_DIR}/client_size_${SIZE}_${TIMESTAMP}.log"
   echo "Running V2 client -> ${CLIENT_RUN_LOG}"

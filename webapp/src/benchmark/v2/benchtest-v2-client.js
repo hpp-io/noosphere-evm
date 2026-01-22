@@ -1,12 +1,11 @@
 // webapp/src/benchmark/v2/benchtest-v2-client.js
-// V2 Benchmark Client: Production scenario with off-chain storage simulation
+// V2 Benchmark Client: Production scenario with PayloadData storage
 //
-// Design spec (from URI_SCHEME_PAYLOAD_DESIGN.md):
-// - < 1KB: RAW_DATA (inline on-chain)
-// - >= 1KB: PAYLOAD_DATA with URI reference (off-chain storage)
+// Storage strategy based on uploadThreshold (default: 256 bytes):
+// - < threshold: data URI inline (data:;base64,...)
+// - >= threshold: external storage URL (S3/IPFS)
 //
-// This measures real gas costs for production scenarios where large data
-// is stored off-chain (IPFS/R2) and only the URI reference is on-chain.
+// This measures real gas costs for production scenarios using PayloadData.
 
 const path = require('path');
 const fs = require('fs');
@@ -62,35 +61,84 @@ const InputType = {
 };
 
 /**
- * Simulate off-chain storage by generating a mock IPFS CID
- * In production, this would upload to actual IPFS/R2/Arweave
+ * Simulate external storage upload (S3/IPFS)
+ * In production, this would upload to actual S3/IPFS/Arweave
  *
  * @param {Uint8Array} data - The data to "upload"
- * @returns {string} Mock IPFS URI (ipfs://Qm...)
+ * @param {string} storageType - 's3' or 'ipfs'
+ * @returns {string} Mock storage URI
  */
-function simulateOffchainUpload(data) {
-    // Generate a realistic IPFS CIDv0 (46 chars starting with Qm)
-    // In production, this would be actual IPFS upload
+function simulateExternalUpload(data, storageType = 's3') {
     const hash = crypto.createHash('sha256').update(data).digest('hex');
-    // CIDv0 format: Qm + base58(multihash)
-    const mockCid = 'Qm' + Buffer.from(hash, 'hex').toString('base64').replace(/[+/=]/g, 'x').slice(0, 44);
-    return `ipfs://${mockCid}`;
+
+    if (storageType === 'ipfs') {
+        // CIDv0 format: Qm + base58-like hash
+        const mockCid = 'Qm' + Buffer.from(hash, 'hex').toString('base64').replace(/[+/=]/g, 'x').slice(0, 44);
+        return `ipfs://${mockCid}`;
+    } else {
+        // S3/R2 URL format (matches production)
+        return `https://noosphere-payload.r2.dev/${hash.slice(0, 16)}`;
+    }
 }
 
 /**
- * Create PayloadData for off-chain reference
- * Only contentHash (32 bytes) + URI (~50 bytes) goes on-chain
+ * Create inline data URI PayloadData
+ * Uses short format: data:;base64,... (13 byte prefix)
  *
- * @param {Uint8Array} data - Original data (stored off-chain)
- * @returns {Object} PayloadData struct for on-chain storage
+ * @param {Uint8Array} data - Data to embed inline
+ * @returns {Object} PayloadData struct with data URI
  */
-function createOffchainPayloadData(data) {
+function createInlinePayloadData(data) {
     const contentHash = ethers.keccak256(data);
-    const uri = simulateOffchainUpload(data);
+    const base64 = Buffer.from(data).toString('base64');
+    const uri = `data:;base64,${base64}`;
     return {
         contentHash: contentHash,
         uri: ethers.toUtf8Bytes(uri)
     };
+}
+
+/**
+ * Create external storage PayloadData
+ * Only contentHash (32 bytes) + URI (~50-60 bytes) goes on-chain
+ *
+ * @param {Uint8Array} data - Original data (stored off-chain)
+ * @param {string} storageType - 's3' or 'ipfs'
+ * @returns {Object} PayloadData struct for on-chain storage
+ */
+function createExternalPayloadData(data, storageType = 's3') {
+    const contentHash = ethers.keccak256(data);
+    const uri = simulateExternalUpload(data, storageType);
+    return {
+        contentHash: contentHash,
+        uri: ethers.toUtf8Bytes(uri)
+    };
+}
+
+/**
+ * Create PayloadData based on size threshold
+ * < threshold: inline data URI
+ * >= threshold: external storage URL
+ *
+ * @param {Uint8Array} data - Data to store
+ * @param {number} threshold - Size threshold in bytes (default: 256)
+ * @param {string} storageType - External storage type: 's3' or 'ipfs'
+ * @returns {Object} { payloadData, isInline, uriType }
+ */
+function createPayloadDataByThreshold(data, threshold = 256, storageType = 's3') {
+    if (data.length < threshold) {
+        return {
+            payloadData: createInlinePayloadData(data),
+            isInline: true,
+            uriType: 'data_uri'
+        };
+    } else {
+        return {
+            payloadData: createExternalPayloadData(data, storageType),
+            isInline: false,
+            uriType: storageType
+        };
+    }
 }
 
 /**
@@ -234,7 +282,6 @@ async function main() {
         console.log('\n[Step 1] Creating compute subscription...');
         const subscriptionParams = {
             containerId: 'v2-bench-container',
-            redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress,
             feeAmount: ethers.parseUnits('1', 'wei'),
@@ -245,7 +292,6 @@ async function main() {
 
         const createSubTx = await clientContract.createSubscription(
             subscriptionParams.containerId,
-            subscriptionParams.redundancy,
             subscriptionParams.useDeliveryInbox,
             subscriptionParams.feeToken,
             subscriptionParams.feeAmount,
@@ -260,7 +306,6 @@ async function main() {
         try {
             const calldataInfoCreateSub = computeCalldataInfo(clientContract.interface, 'createSubscription', [
                 subscriptionParams.containerId,
-                subscriptionParams.redundancy,
                 subscriptionParams.useDeliveryInbox,
                 subscriptionParams.feeToken,
                 subscriptionParams.feeAmount,
@@ -290,10 +335,11 @@ async function main() {
         console.log('\n[Step 2] Requesting compute job...');
 
         // Get configuration from environment
-        const size = parseInt(process.env.TEST_PAYLOAD_SIZE ?? '1024', 10);
+        const size = parseInt(process.env.TEST_PAYLOAD_SIZE ?? '256', 10);
         const iteration = parseInt(process.env.TEST_ITERATION ?? '0', 10);
-        const inputType = process.env.TEST_INPUT_TYPE ?? 'RAW_DATA';
-        const inlineThreshold = parseInt(process.env.TEST_INLINE_THRESHOLD ?? '1024', 10);
+        const inputType = process.env.TEST_INPUT_TYPE ?? 'PAYLOAD_DATA'; // Default to PayloadData
+        const uploadThreshold = parseInt(process.env.TEST_UPLOAD_THRESHOLD ?? '256', 10);
+        const storageType = process.env.TEST_STORAGE_TYPE ?? 's3'; // 's3' or 'ipfs'
 
         // Generate test data of specified size
         const testData = new Uint8Array(size);
@@ -302,33 +348,43 @@ async function main() {
         }
 
         let computeInputs;
-        let actualInputType = inputType;
         let onchainBytes = 0;
         let offchainBytes = 0;
+        let uriType = 'none';
 
         if (inputType === 'RAW_DATA') {
-            // Inline on-chain storage (v1 compatible)
-            // All data goes on-chain as calldata
+            // Legacy: raw bytes on-chain (v1 compatible)
             computeInputs = size > 0 ? '0x' + Buffer.from(testData).toString('hex') : '0x';
             onchainBytes = size;
             offchainBytes = 0;
+            uriType = 'raw';
             console.log(`   [RAW_DATA] Storing ${formatBytes(size)} directly on-chain`);
             console.log(`   -> On-chain calldata: ${formatBytes(size)}`);
         } else if (inputType === 'PAYLOAD_DATA') {
-            // Off-chain storage with URI reference
-            // Only hash (32 bytes) + URI (~50 bytes) goes on-chain
-            const payloadData = createOffchainPayloadData(testData);
+            // PayloadData with automatic URI selection based on threshold
+            const { payloadData, isInline, uriType: selectedUriType } = createPayloadDataByThreshold(testData, uploadThreshold, storageType);
             computeInputs = encodePayloadData(payloadData);
+            uriType = selectedUriType;
 
             // Calculate actual on-chain size
             const uriLength = payloadData.uri.length;
             onchainBytes = 32 + uriLength + 64; // hash + uri + ABI encoding overhead
-            offchainBytes = size;
 
-            console.log(`   [PAYLOAD_DATA] Data: ${formatBytes(size)} -> off-chain`);
-            console.log(`   -> On-chain: ~${formatBytes(onchainBytes)} (hash + URI)`);
-            console.log(`   -> Off-chain: ${formatBytes(offchainBytes)} (IPFS/R2)`);
-            console.log(`   -> Gas savings: ~${((1 - onchainBytes / size) * 100).toFixed(1)}%`);
+            if (isInline) {
+                // Data URI: data is embedded in URI
+                offchainBytes = 0;
+                console.log(`   [PAYLOAD_DATA - INLINE] Size: ${formatBytes(size)} < threshold (${uploadThreshold})`);
+                console.log(`   -> Using data URI: data:;base64,... (${uriLength} bytes)`);
+                console.log(`   -> On-chain: ~${formatBytes(onchainBytes)} (hash + data URI)`);
+            } else {
+                // External storage: data is off-chain
+                offchainBytes = size;
+                console.log(`   [PAYLOAD_DATA - EXTERNAL] Size: ${formatBytes(size)} >= threshold (${uploadThreshold})`);
+                console.log(`   -> Using ${storageType.toUpperCase()} URL (~${uriLength} bytes)`);
+                console.log(`   -> On-chain: ~${formatBytes(onchainBytes)} (hash + URL)`);
+                console.log(`   -> Off-chain: ${formatBytes(offchainBytes)} (${storageType.toUpperCase()})`);
+                console.log(`   -> Gas savings: ~${((1 - onchainBytes / size) * 100).toFixed(1)}%`);
+            }
         }
 
         console.log(`   Using nonce: ${nonce}, payloadSize=${formatBytes(size)}, iteration=${iteration}`);
@@ -344,7 +400,7 @@ async function main() {
                 role: 'client',
                 payloadSize: size,
                 iteration,
-                note: `inputType=${inputType},onchain=${onchainBytes},offchain=${offchainBytes}`,
+                note: `inputType=${inputType},uriType=${uriType},threshold=${uploadThreshold},onchain=${onchainBytes},offchain=${offchainBytes}`,
                 calldataBytes: calldataInfoRequest.calldataBytes,
                 calldataZeroBytes: calldataInfoRequest.zeroBytes,
                 calldataNonZeroBytes: calldataInfoRequest.nonZeroBytes,
@@ -356,7 +412,7 @@ async function main() {
                 role: 'client',
                 payloadSize: size,
                 iteration,
-                note: `inputType=${inputType},onchain=${onchainBytes},offchain=${offchainBytes}`
+                note: `inputType=${inputType},uriType=${uriType},threshold=${uploadThreshold},onchain=${onchainBytes},offchain=${offchainBytes}`
             });
         }
 
@@ -408,6 +464,8 @@ async function main() {
         console.log('\nV2 Client test finished.');
         console.log(`   Data size: ${formatBytes(size)}`);
         console.log(`   Input type: ${inputType}`);
+        console.log(`   URI type: ${uriType}`);
+        console.log(`   Upload threshold: ${uploadThreshold} bytes`);
         console.log(`   On-chain bytes: ${formatBytes(onchainBytes)}`);
         console.log(`   Off-chain bytes: ${formatBytes(offchainBytes)}`);
         process.exit(0);
