@@ -43,6 +43,7 @@ abstract contract NoosphereVRFConsumer is TransientComputeClient, Delegator {
     //////////////////////////////////////////////////////////////*/
 
     event SubscriptionCreated(uint64 indexed subscriptionId, address indexed owner);
+    event SubscriptionCancelled(uint64 indexed subscriptionId, address indexed owner);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -97,6 +98,21 @@ abstract contract NoosphereVRFConsumer is TransientComputeClient, Delegator {
     function cancelSubscription(uint64 subscriptionId) external {
         if (subscriptionOwner[subscriptionId] != msg.sender) revert NotSubscriptionOwner();
         _cancelComputeSubscription(subscriptionId);
+
+        // Clean up: remove from userSubscriptions array (swap-and-pop)
+        uint64[] storage subs = userSubscriptions[msg.sender];
+        for (uint256 i = 0; i < subs.length; i++) {
+            if (subs[i] == subscriptionId) {
+                subs[i] = subs[subs.length - 1];
+                subs.pop();
+                break;
+            }
+        }
+
+        // Clear ownership mapping
+        delete subscriptionOwner[subscriptionId];
+
+        emit SubscriptionCancelled(subscriptionId, msg.sender);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -104,21 +120,20 @@ abstract contract NoosphereVRFConsumer is TransientComputeClient, Delegator {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Request a random value via the Noosphere VRF pipeline
-    /// @dev Sends compute request to VRNG container, then registers with NoosphereVRF singleton.
-    ///      Uses Peek+Commit pattern: reads nextRequestId first, includes it in container input,
-    ///      then registers with NoosphereVRF which assigns the actual requestId.
+    /// @dev Reserve-then-bind pattern: atomically reserves requestId first to avoid race conditions,
+    ///      then uses the actual ID in the container input, then binds the interval for fulfillment routing.
     /// @param subscriptionId The subscription to use for VRNG
     /// @return requestId The globally unique request ID assigned by NoosphereVRF
     function _requestRandomValue(uint64 subscriptionId) internal returns (uint256 requestId) {
-        // Peek at the next request ID (for container input)
-        uint256 expectedId = noosphereVRF.nextRequestId();
+        // Atomically reserve request ID (no race condition — counter incremented in same tx)
+        requestId = noosphereVRF.reserveRequestId();
 
-        // Send compute request to VRNG container
-        bytes memory input = abi.encodePacked('{"action":"reveal","game_id":', _uint2str(expectedId), "}");
+        // Send compute request to VRNG container with the actual (not peeked) request ID
+        bytes memory input = abi.encodePacked('{"action":"reveal","game_id":', _uint2str(requestId), "}");
         (, Commitment memory commitment) = _requestCompute(subscriptionId, input);
 
-        // Register with NoosphereVRF (assigns requestId, records block number)
-        requestId = noosphereVRF.requestRandomValue(subscriptionId, commitment.interval);
+        // Bind interval to the reserved request ID for fulfillment routing
+        noosphereVRF.bindRequest(subscriptionId, commitment.interval, requestId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -165,8 +180,22 @@ abstract contract NoosphereVRFConsumer is TransientComputeClient, Delegator {
                            VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getUserSubscriptions(address user) external view returns (uint64[] memory) {
-        return userSubscriptions[user];
+    function getUserSubscriptions(address user, uint256 offset, uint256 limit) external view returns (uint64[] memory) {
+        uint64[] storage subs = userSubscriptions[user];
+        uint256 total = subs.length;
+        if (offset >= total) return new uint64[](0);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 count = end - offset;
+        uint64[] memory result = new uint64[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = subs[offset + i];
+        }
+        return result;
+    }
+
+    function getUserSubscriptionCount(address user) external view returns (uint256) {
+        return userSubscriptions[user].length;
     }
 
     function getSubscriptionOwner(uint64 subscriptionId) external view returns (address) {

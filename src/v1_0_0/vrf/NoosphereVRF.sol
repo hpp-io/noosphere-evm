@@ -67,7 +67,9 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     error EpochAlreadyRegistered();
     error EpochNotRegistered();
     error AlreadyFulfilledOrInvalid();
+    error InvalidRequestId();
     error InvalidMerkleProof();
+    error InvalidOutputData();
 
     /*//////////////////////////////////////////////////////////////
                               MODIFIERS
@@ -107,11 +109,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc INoosphereVRF
-    function requestRandomValue(uint64 subscriptionId, uint32 interval)
-        external
-        onlyConsumer
-        returns (uint256 requestId)
-    {
+    function reserveRequestId() external onlyConsumer returns (uint256 requestId) {
         requestId = _nextRequestId++;
         uint256 epoch = requestId / EPOCH_SIZE;
         if (epochRoots[epoch] == bytes32(0)) revert EpochNotRegistered();
@@ -119,14 +117,17 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         // Record block number for 2-party entropy
         requestBlocks[requestId] = ARB_SYS.arbBlockNumber();
 
-        // Store interval → requestId mapping (requestId+1 offset; 0 = empty)
-        intervalToRequestId[subscriptionId][interval] = requestId + 1;
-
         // Warn when epoch is running low
         uint256 usedInEpoch = requestId % EPOCH_SIZE + 1;
         if (EPOCH_SIZE >= 100 && EPOCH_SIZE - usedInEpoch < 100) {
             emit EpochRunningLow(epoch, EPOCH_SIZE - usedInEpoch);
         }
+    }
+
+    /// @inheritdoc INoosphereVRF
+    function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external onlyConsumer {
+        if (requestBlocks[requestId] == 0) revert InvalidRequestId();
+        intervalToRequestId[subscriptionId][interval] = requestId + 1;
     }
 
     /// @inheritdoc INoosphereVRF
@@ -248,6 +249,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         pure
         returns (bytes32 randomValue, bytes32[] memory proof)
     {
+        uint256 decodedLen;
         assembly {
             // ── Build base64 lookup table (256 bytes) ──
             let table := mload(0x40)
@@ -319,36 +321,37 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
                 rp := add(rp, 3)
             }
 
+            // Store decoded length for post-assembly validation
+            decodedLen := innerDecLen
+
             // ── Step 4: Extract randomValue (first 32 bytes) ──
-            // rawBytes is NOT 32-byte aligned for mload, so copy to aligned location
-            let aligned := add(rawBytes, innerDecLen)
-            // Copy 32 bytes for randomValue
-            for { let i := 0 } lt(i, 32) { i := add(i, 1) } {
-                mstore8(add(aligned, i), byte(0, mload(add(rawBytes, i))))
-            }
-            randomValue := mload(aligned)
+            // EVM mload works at any memory offset — no alignment copy needed
+            randomValue := mload(rawBytes)
 
             // ── Step 5: Build proof array ──
-            if lt(innerDecLen, 32) { revert(0, 0) }
-            let proofBytes := sub(innerDecLen, 32)
-            let proofCount := div(proofBytes, 32)
+            let proofBytes := 0
+            let proofCount := 0
+            if gt(innerDecLen, 31) {
+                proofBytes := sub(innerDecLen, 32)
+                proofCount := div(proofBytes, 32)
+            }
 
-            // Allocate proof array
-            proof := add(aligned, 32)
+            // Allocate proof array after raw data region
+            let proofArrayStart := add(rawBytes, innerDecLen)
+            proof := proofArrayStart
             mstore(proof, proofCount)
             let proofData := add(proof, 32)
             let rawProofStart := add(rawBytes, 32)
+            // Single mload+mstore per 32-byte element (replaces 32x byte-by-byte copy)
             for { let i := 0 } lt(i, proofCount) { i := add(i, 1) } {
-                let elemDst := add(proofData, mul(i, 32))
-                let elemSrc := add(rawProofStart, mul(i, 32))
-                // byte-by-byte copy for unaligned source
-                for { let j := 0 } lt(j, 32) { j := add(j, 1) } {
-                    mstore8(add(elemDst, j), byte(0, mload(add(elemSrc, j))))
-                }
+                mstore(add(proofData, mul(i, 32)), mload(add(rawProofStart, mul(i, 32))))
             }
 
             // Update free memory pointer
             mstore(0x40, add(proofData, mul(proofCount, 32)))
         }
+
+        // Validate decoded output has at least 32 bytes (randomValue)
+        if (decodedLen < 32) revert InvalidOutputData();
     }
 }

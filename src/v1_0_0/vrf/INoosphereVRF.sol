@@ -37,11 +37,17 @@ interface INoosphereVRF {
                         REQUEST LIFECYCLE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Assign a global request ID and record block number (called by VRFConsumer)
+    /// @notice Atomically reserve a global request ID (called by VRFConsumer before _requestCompute)
+    /// @dev Increments the global counter and records block number for 2-party entropy.
+    ///      Must be called before building container input to avoid race conditions.
+    /// @return requestId The globally unique request ID
+    function reserveRequestId() external returns (uint256 requestId);
+
+    /// @notice Bind a reserved request ID to a (subscriptionId, interval) pair for fulfillment routing
     /// @param subscriptionId The Noosphere subscription ID
     /// @param interval The interval assigned by _requestCompute()
-    /// @return requestId The globally unique request ID
-    function requestRandomValue(uint64 subscriptionId, uint32 interval) external returns (uint256 requestId);
+    /// @param requestId The previously reserved request ID
+    function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external;
 
     /// @notice Verify Merkle proof and return random value (called by VRFConsumer callback)
     /// @param subscriptionId The Noosphere subscription ID
