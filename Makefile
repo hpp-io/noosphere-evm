@@ -13,7 +13,7 @@ endif
 # -----------------------------------------------------------------------------
 # PHONY targets (force these to run even if a file with the same name exists)
 # -----------------------------------------------------------------------------
-.PHONY: all install clean build test format docs snapshot diff deploy deploy-anvil deploy-hpp-sepolia
+.PHONY: all install clean build test format docs snapshot diff deploy deploy-anvil deploy-hpp-sepolia deploy-vrf deploy-vrf-hpp-sepolia register-epoch
 
 # -----------------------------------------------------------------------------
 # Default target: run dependency install -> clean -> format -> build -> test
@@ -123,6 +123,64 @@ deploy-hpp-sepolia:
 		--verifier blockscout \
 		--verifier-url https://sepolia-explorer.hpp.io/api/ \
 		--sig "run(address,address)" $(PRODUCTION_OWNER_ADDR) $(INITIAL_FEE_RECIPIENT_ADDR)
+
+# -----------------------------------------------------------------------------
+# Deploy NoosphereVRF singleton
+# - Requires: RPC_URL, PRIVATE_KEY
+# - Optional: VRF_OWNER (defaults to deployer address)
+# -----------------------------------------------------------------------------
+deploy-vrf:
+	@if [ -z "$(RPC_URL)" ] || [ -z "$(PRIVATE_KEY)" ]; then \
+		echo "ERROR: RPC_URL and PRIVATE_KEY environment variables are required."; \
+		exit 1; \
+	fi
+	@echo "=> Deploying NoosphereVRF singleton to $(RPC_URL)..."
+	@forge script scripts/DeployVRF.sol:DeployVRF \
+		--broadcast \
+		--skip-simulation \
+		--gas-estimate-multiplier 130 \
+		--optimize \
+		--optimizer-runs 1000000 \
+		--extra-output-files abi \
+		--rpc-url $(RPC_URL) \
+		--chain-id $(CHAIN_ID) \
+		--private-key $(PRIVATE_KEY)
+
+deploy-vrf-hpp-sepolia:
+	@if [ -z "$(RPC_URL)" ] || [ -z "$(PRIVATE_KEY)" ]; then \
+		echo "ERROR: RPC_URL and PRIVATE_KEY environment variables are required."; \
+		exit 1; \
+	fi
+	@echo "=> Deploying NoosphereVRF to HPP Sepolia with verification..."
+	@forge script scripts/DeployVRF.sol:DeployVRF \
+		--broadcast \
+		--skip-simulation \
+		--gas-estimate-multiplier 130 \
+		--optimize \
+		--optimizer-runs 1000000 \
+		--extra-output-files abi \
+		--rpc-url $(RPC_URL) \
+		--chain-id $(CHAIN_ID) \
+		--private-key $(PRIVATE_KEY) \
+		--verify \
+		--verifier blockscout \
+		--verifier-url https://sepolia-explorer.hpp.io/api/
+
+# -----------------------------------------------------------------------------
+# Register epoch on NoosphereVRF
+# - Requires: RPC_URL, PRIVATE_KEY, VRF_ADDRESS, EPOCH, MERKLE_ROOT
+# -----------------------------------------------------------------------------
+register-epoch:
+	@if [ -z "$(RPC_URL)" ] || [ -z "$(PRIVATE_KEY)" ] || [ -z "$(VRF_ADDRESS)" ] || [ -z "$(EPOCH)" ] || [ -z "$(MERKLE_ROOT)" ]; then \
+		echo "ERROR: RPC_URL, PRIVATE_KEY, VRF_ADDRESS, EPOCH, MERKLE_ROOT are required."; \
+		exit 1; \
+	fi
+	@echo "=> Registering epoch $(EPOCH) on NoosphereVRF $(VRF_ADDRESS)..."
+	@NOOSPHERE_VRF_ADDRESS=$(VRF_ADDRESS) forge script scripts/RegisterEpoch.sol:RegisterEpoch \
+		--broadcast \
+		--rpc-url $(RPC_URL) \
+		--chain-id $(CHAIN_ID) \
+		--private-key $(PRIVATE_KEY)
 
 # -----------------------------------------------------------------------------
 # Save gas snapshot (using forge snapshot)
