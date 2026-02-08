@@ -16,17 +16,10 @@ import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 contract MockRouter {
     uint64 private _nextSubId = 1;
 
-    function createComputeSubscription(
-        string memory,
-        uint32,
-        uint32,
-        bool,
-        address,
-        uint256,
-        address,
-        address,
-        bytes32
-    ) external returns (uint64) {
+    function createComputeSubscription(string memory, uint32, uint32, bool, address, uint256, address, address, bytes32)
+        external
+        returns (uint64)
+    {
         return _nextSubId++;
     }
 
@@ -71,11 +64,7 @@ contract NoosphereVRFCoreTest is Test {
     function setUp() public {
         // Mock ArbSys predeploy at 0x64
         vm.mockCall(address(0x64), abi.encodeWithSignature("arbBlockNumber()"), abi.encode(uint256(100)));
-        vm.mockCall(
-            address(0x64),
-            abi.encodeWithSignature("arbBlockHash(uint256)"),
-            abi.encode(keccak256("block100"))
-        );
+        vm.mockCall(address(0x64), abi.encodeWithSignature("arbBlockHash(uint256)"), abi.encode(keccak256("block100")));
 
         vrf = new NoosphereVRF(OWNER);
 
