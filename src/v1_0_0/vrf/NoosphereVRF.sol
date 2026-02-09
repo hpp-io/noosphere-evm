@@ -69,7 +69,6 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     error AlreadyFulfilledOrInvalid();
     error InvalidRequestId();
     error InvalidMerkleProof();
-    error InvalidOutputData();
 
     /*//////////////////////////////////////////////////////////////
                               MODIFIERS
@@ -131,10 +130,10 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     }
 
     /// @inheritdoc INoosphereVRF
-    function fulfillRandomValue(uint64 subscriptionId, uint32 interval, bytes calldata outputUri)
+    function fulfillRandomValue(uint64 subscriptionId, uint32 interval, bytes32 randomValue, bytes32[] calldata proof)
         external
         onlyConsumer
-        returns (uint256 requestId, bytes32 randomValue, bytes32 blockHash, bool expired)
+        returns (uint256 requestId, bytes32 blockHash, bool expired)
     {
         // ① Resolve requestId (replay prevention: delete after read)
         uint256 stored = intervalToRequestId[subscriptionId][interval];
@@ -142,17 +141,13 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         requestId = stored - 1;
         delete intervalToRequestId[subscriptionId][interval]; // replay prevention + gas refund
 
-        // ② Decode packed hex from data URI
-        bytes32[] memory proof;
-        (randomValue, proof) = _decodeRevealOutput(outputUri);
-
-        // ③ Verify Merkle proof (leaf bound to index within epoch)
+        // ② Verify Merkle proof (leaf bound to index within epoch)
         uint256 epoch = requestId / EPOCH_SIZE;
         uint256 indexInEpoch = requestId % EPOCH_SIZE;
         bytes32 leaf = keccak256(abi.encodePacked(indexInEpoch, randomValue));
         if (!MerkleProof.verify(proof, epochRoots[epoch], leaf)) revert InvalidMerkleProof();
 
-        // ④ Get L2 blockhash for 2-party entropy (via ArbSys)
+        // ③ Get L2 blockhash for 2-party entropy (via ArbSys)
         blockHash = ARB_SYS.arbBlockHash(requestBlocks[requestId]);
         delete requestBlocks[requestId]; // gas refund — no longer needed
 
@@ -235,123 +230,4 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         return "NoosphereVRF_v1.0.0";
     }
 
-    /*//////////////////////////////////////////////////////////////
-            RAW BYTES DECODE (DATA URI → randomValue + proof)
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Decode reveal output from data URI: base64(raw bytes) → (randomValue, proof[])
-    /// @dev Raw bytes format: randomValue(32 bytes) + proof[0](32 bytes) + ...
-    ///      Agent wraps container output: data:;base64,<base64(base64(rawBytes))>
-    ///      This function does double base64 decode in a single assembly block
-    ///      with one shared lookup table for maximum gas efficiency.
-    function _decodeRevealOutput(bytes calldata uri)
-        internal
-        pure
-        returns (bytes32 randomValue, bytes32[] memory proof)
-    {
-        uint256 decodedLen;
-        assembly {
-            // ── Build base64 lookup table (256 bytes) ──
-            let table := mload(0x40)
-            // Zero-fill 256 bytes (8 × 32-byte words)
-            for { let i := 0 } lt(i, 8) { i := add(i, 1) } {
-                mstore(add(table, mul(i, 32)), 0)
-            }
-            // A-Z → 0-25
-            for { let i := 0 } lt(i, 26) { i := add(i, 1) } { mstore8(add(table, add(65, i)), i) }
-            // a-z → 26-51
-            for { let i := 0 } lt(i, 26) { i := add(i, 1) } { mstore8(add(table, add(97, i)), add(26, i)) }
-            // 0-9 → 52-61
-            for { let i := 0 } lt(i, 10) { i := add(i, 1) } { mstore8(add(table, add(48, i)), add(52, i)) }
-            // + → 62, / → 63
-            mstore8(add(table, 43), 62)
-            mstore8(add(table, 47), 63)
-
-            // ── Step 1: Copy outer base64 from calldata to memory ──
-            // URI format: "data:;base64," (13 bytes) + base64 content
-            let outerLen := sub(uri.length, 13)
-            let outerSrc := add(uri.offset, 13)
-            // Allocate memory for outer base64 data
-            let outerMem := add(table, 256)
-            calldatacopy(outerMem, outerSrc, outerLen)
-
-            // ── Step 2: Decode outer base64 → inner base64 string ──
-            let outerDecLen := mul(div(outerLen, 4), 3)
-            // Check padding
-            let outerEnd := add(outerMem, sub(outerLen, 1))
-            if eq(byte(0, mload(outerEnd)), 0x3d) { outerDecLen := sub(outerDecLen, 1) }
-            if eq(byte(0, mload(sub(outerEnd, 1))), 0x3d) { outerDecLen := sub(outerDecLen, 1) }
-
-            let innerB64 := add(outerMem, outerLen) // place after outer data (reuse memory)
-            let rp := innerB64
-            let dp := outerMem
-            let dpEnd := add(dp, outerLen)
-            for {} lt(dp, dpEnd) { dp := add(dp, 4) } {
-                let a := byte(0, mload(add(table, byte(0, mload(dp)))))
-                let b := byte(0, mload(add(table, byte(0, mload(add(dp, 1))))))
-                let c := byte(0, mload(add(table, byte(0, mload(add(dp, 2))))))
-                let d := byte(0, mload(add(table, byte(0, mload(add(dp, 3))))))
-                let triple := or(or(shl(18, a), shl(12, b)), or(shl(6, c), d))
-                mstore8(rp, shr(16, triple))
-                mstore8(add(rp, 1), and(shr(8, triple), 0xFF))
-                mstore8(add(rp, 2), and(triple, 0xFF))
-                rp := add(rp, 3)
-            }
-
-            // ── Step 3: Decode inner base64 → raw bytes ──
-            let innerLen := outerDecLen
-            let innerDecLen := mul(div(innerLen, 4), 3)
-            let innerEnd := add(innerB64, sub(innerLen, 1))
-            if eq(byte(0, mload(innerEnd)), 0x3d) { innerDecLen := sub(innerDecLen, 1) }
-            if eq(byte(0, mload(sub(innerEnd, 1))), 0x3d) { innerDecLen := sub(innerDecLen, 1) }
-
-            let rawBytes := add(innerB64, innerLen)
-            rp := rawBytes
-            dp := innerB64
-            dpEnd := add(dp, innerLen)
-            for {} lt(dp, dpEnd) { dp := add(dp, 4) } {
-                let a := byte(0, mload(add(table, byte(0, mload(dp)))))
-                let b := byte(0, mload(add(table, byte(0, mload(add(dp, 1))))))
-                let c := byte(0, mload(add(table, byte(0, mload(add(dp, 2))))))
-                let d := byte(0, mload(add(table, byte(0, mload(add(dp, 3))))))
-                let triple := or(or(shl(18, a), shl(12, b)), or(shl(6, c), d))
-                mstore8(rp, shr(16, triple))
-                mstore8(add(rp, 1), and(shr(8, triple), 0xFF))
-                mstore8(add(rp, 2), and(triple, 0xFF))
-                rp := add(rp, 3)
-            }
-
-            // Store decoded length for post-assembly validation
-            decodedLen := innerDecLen
-
-            // ── Step 4: Extract randomValue (first 32 bytes) ──
-            // EVM mload works at any memory offset — no alignment copy needed
-            randomValue := mload(rawBytes)
-
-            // ── Step 5: Build proof array ──
-            let proofBytes := 0
-            let proofCount := 0
-            if gt(innerDecLen, 31) {
-                proofBytes := sub(innerDecLen, 32)
-                proofCount := div(proofBytes, 32)
-            }
-
-            // Allocate proof array after raw data region
-            let proofArrayStart := add(rawBytes, innerDecLen)
-            proof := proofArrayStart
-            mstore(proof, proofCount)
-            let proofData := add(proof, 32)
-            let rawProofStart := add(rawBytes, 32)
-            // Single mload+mstore per 32-byte element (replaces 32x byte-by-byte copy)
-            for { let i := 0 } lt(i, proofCount) { i := add(i, 1) } {
-                mstore(add(proofData, mul(i, 32)), mload(add(rawProofStart, mul(i, 32))))
-            }
-
-            // Update free memory pointer
-            mstore(0x40, add(proofData, mul(proofCount, 32)))
-        }
-
-        // Validate decoded output has at least 32 bytes (randomValue)
-        if (decodedLen < 32) revert InvalidOutputData();
-    }
 }

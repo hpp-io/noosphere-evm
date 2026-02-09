@@ -50,16 +50,17 @@ interface INoosphereVRF {
     function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external;
 
     /// @notice Verify Merkle proof and return random value (called by VRFConsumer callback)
+    /// @dev Consumer decodes the data URI and passes pre-decoded values to minimize external call gas.
     /// @param subscriptionId The Noosphere subscription ID
     /// @param interval The interval from the callback
-    /// @param outputUri The raw output URI from the VRNG container
+    /// @param randomValue The random value decoded by the consumer
+    /// @param proof The Merkle proof decoded by the consumer
     /// @return requestId The resolved request ID
-    /// @return randomValue The verified random value from the Merkle tree
     /// @return blockHash The L2 block hash for 2-party entropy
     /// @return expired Whether the request expired (blockHash unavailable)
-    function fulfillRandomValue(uint64 subscriptionId, uint32 interval, bytes calldata outputUri)
+    function fulfillRandomValue(uint64 subscriptionId, uint32 interval, bytes32 randomValue, bytes32[] calldata proof)
         external
-        returns (uint256 requestId, bytes32 randomValue, bytes32 blockHash, bool expired);
+        returns (uint256 requestId, bytes32 blockHash, bool expired);
 
     /*//////////////////////////////////////////////////////////////
                            VIEW FUNCTIONS

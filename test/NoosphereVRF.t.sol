@@ -317,15 +317,15 @@ contract NoosphereVRFCoreTest is Test {
         uint256 requestId = vrf.reserveRequestId();
         vrf.bindRequest(1, 7, requestId);
 
-        // Build data URI with proof for leaf0: [leaf1, node23]
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        // Proof for leaf0: [leaf1, node23]
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
 
-        (uint256 retId, bytes32 retRv, bytes32 retBlockHash, bool expired) = vrf.fulfillRandomValue(1, 7, uri);
+        (uint256 retId, bytes32 retBlockHash, bool expired) = vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
 
         assertEq(retId, requestId);
-        assertEq(retRv, RV0);
         assertTrue(retBlockHash != bytes32(0));
         assertFalse(expired);
     }
@@ -335,12 +335,13 @@ contract NoosphereVRFCoreTest is Test {
         uint256 requestId = vrf.reserveRequestId();
         vrf.bindRequest(1, 7, requestId);
 
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
 
         vm.expectEmit(true, false, false, true);
         emit INoosphereVRF.RandomValueVerified(requestId, RV0, keccak256("block100"));
-        vrf.fulfillRandomValue(1, 7, uri);
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
     }
 
@@ -349,13 +350,14 @@ contract NoosphereVRFCoreTest is Test {
         vrf.reserveRequestId();
         vrf.bindRequest(1, 7, 0);
 
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
 
-        vrf.fulfillRandomValue(1, 7, uri);
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
 
         vm.expectRevert(NoosphereVRF.AlreadyFulfilledOrInvalid.selector);
-        vrf.fulfillRandomValue(1, 7, uri);
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
     }
 
@@ -365,11 +367,12 @@ contract NoosphereVRFCoreTest is Test {
         vrf.bindRequest(1, 7, 0);
 
         // Wrong proof: leaf2 instead of leaf1
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf2, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf2;
+        proof[1] = node23;
 
         vm.expectRevert(NoosphereVRF.InvalidMerkleProof.selector);
-        vrf.fulfillRandomValue(1, 7, uri);
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
     }
 
@@ -382,11 +385,12 @@ contract NoosphereVRFCoreTest is Test {
         // Mock expired block hash (return 0)
         vm.mockCall(address(0x64), abi.encodeWithSignature("arbBlockHash(uint256)"), abi.encode(bytes32(0)));
 
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
 
         vm.prank(CONSUMER);
-        (uint256 retId,, bytes32 retBlockHash, bool expired) = vrf.fulfillRandomValue(1, 7, uri);
+        (uint256 retId, bytes32 retBlockHash, bool expired) = vrf.fulfillRandomValue(1, 7, RV0, proof);
 
         assertEq(retId, 0);
         assertEq(retBlockHash, bytes32(0));
@@ -401,14 +405,14 @@ contract NoosphereVRFCoreTest is Test {
         vrf.bindRequest(1, 8, requestId);
 
         // Proof for leaf1 (index=1): [leaf0, node23]
-        bytes memory rawBytes = abi.encodePacked(RV1, leaf0, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf0;
+        proof[1] = node23;
 
-        (uint256 retId, bytes32 retRv,, bool expired) = vrf.fulfillRandomValue(1, 8, uri);
+        (uint256 retId,, bool expired) = vrf.fulfillRandomValue(1, 8, RV1, proof);
         vm.stopPrank();
 
         assertEq(retId, 1);
-        assertEq(retRv, RV1);
         assertFalse(expired);
     }
 
@@ -436,9 +440,10 @@ contract NoosphereVRFCoreTest is Test {
         vrf.reserveRequestId();
         vrf.bindRequest(1, 7, 0);
 
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
-        vrf.fulfillRandomValue(1, 7, uri);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
 
         // After fulfillment, blockNum is deleted → treated as expired
@@ -450,22 +455,14 @@ contract NoosphereVRFCoreTest is Test {
         vrf.reserveRequestId();
         vrf.bindRequest(1, 7, 0);
 
-        bytes memory rawBytes = abi.encodePacked(RV0, leaf1, node23);
-        bytes memory uri = _buildDataUri(rawBytes);
-        vrf.fulfillRandomValue(1, 7, uri);
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = node23;
+        vrf.fulfillRandomValue(1, 7, RV0, proof);
         vm.stopPrank();
 
         // Block number deleted after fulfillment (gas refund)
         assertEq(vrf.getRequestBlock(0), 0);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                  InvalidOutputData error (Fix #4)
-    //////////////////////////////////////////////////////////////*/
-
-    function test_InvalidOutputData_errorExists() public pure {
-        bytes4 selector = NoosphereVRF.InvalidOutputData.selector;
-        assertTrue(selector != bytes4(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -474,35 +471,6 @@ contract NoosphereVRFCoreTest is Test {
 
     function _commHash(bytes32 a, bytes32 b) internal pure returns (bytes32) {
         return a < b ? keccak256(abi.encodePacked(a, b)) : keccak256(abi.encodePacked(b, a));
-    }
-
-    function _buildDataUri(bytes memory rawBytes) internal pure returns (bytes memory) {
-        string memory inner = _base64Encode(rawBytes);
-        string memory outer = _base64Encode(bytes(inner));
-        return abi.encodePacked("data:;base64,", outer);
-    }
-
-    function _base64Encode(bytes memory data) internal pure returns (string memory) {
-        bytes memory TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        if (data.length == 0) return "";
-
-        uint256 encodedLen = 4 * ((data.length + 2) / 3);
-        bytes memory result = new bytes(encodedLen);
-
-        for (uint256 i = 0; i < data.length; i += 3) {
-            uint256 a = uint8(data[i]);
-            uint256 b = (i + 1 < data.length) ? uint8(data[i + 1]) : 0;
-            uint256 c = (i + 2 < data.length) ? uint8(data[i + 2]) : 0;
-            uint256 triple = (a << 16) | (b << 8) | c;
-
-            uint256 j = (i / 3) * 4;
-            result[j] = TABLE[(triple >> 18) & 0x3F];
-            result[j + 1] = TABLE[(triple >> 12) & 0x3F];
-            result[j + 2] = (i + 1 < data.length) ? TABLE[(triple >> 6) & 0x3F] : bytes1("=");
-            result[j + 3] = (i + 2 < data.length) ? TABLE[triple & 0x3F] : bytes1("=");
-        }
-
-        return string(result);
     }
 }
 
