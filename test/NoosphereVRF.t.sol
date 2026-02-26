@@ -77,10 +77,8 @@ contract NoosphereVRFCoreTest is Test {
         node23 = _commHash(leaf2, leaf3);
         merkleRoot = _commHash(node01, node23);
 
-        vm.startPrank(OWNER);
+        vm.prank(OWNER);
         vrf.registerEpoch(0, merkleRoot);
-        vrf.addConsumer(CONSUMER);
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -128,36 +126,45 @@ contract NoosphereVRFCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                       CONSUMER MANAGEMENT
+                       CONSUMER MANAGEMENT (BLACKLIST)
     //////////////////////////////////////////////////////////////*/
 
-    function test_addConsumer() public {
-        address newConsumer = address(0x50);
-        assertFalse(vrf.isAuthorizedConsumer(newConsumer));
+    function test_blockConsumer() public {
+        assertFalse(vrf.isBlocked(CONSUMER));
 
         vm.prank(OWNER);
         vm.expectEmit(true, false, false, false);
-        emit INoosphereVRF.ConsumerAdded(newConsumer);
-        vrf.addConsumer(newConsumer);
+        emit INoosphereVRF.ConsumerBlocked(CONSUMER);
+        vrf.blockConsumer(CONSUMER);
 
-        assertTrue(vrf.isAuthorizedConsumer(newConsumer));
+        assertTrue(vrf.isBlocked(CONSUMER));
     }
 
-    function test_removeConsumer() public {
-        assertTrue(vrf.isAuthorizedConsumer(CONSUMER));
+    function test_unblockConsumer() public {
+        vm.prank(OWNER);
+        vrf.blockConsumer(CONSUMER);
+        assertTrue(vrf.isBlocked(CONSUMER));
 
         vm.prank(OWNER);
         vm.expectEmit(true, false, false, false);
-        emit INoosphereVRF.ConsumerRemoved(CONSUMER);
-        vrf.removeConsumer(CONSUMER);
+        emit INoosphereVRF.ConsumerUnblocked(CONSUMER);
+        vrf.unblockConsumer(CONSUMER);
 
-        assertFalse(vrf.isAuthorizedConsumer(CONSUMER));
+        assertFalse(vrf.isBlocked(CONSUMER));
     }
 
-    function test_addConsumer_onlyOwner() public {
+    function test_blockConsumer_onlyOwner() public {
         vm.prank(address(0x999));
         vm.expectRevert(NoosphereVRF.NotOwner.selector);
-        vrf.addConsumer(address(0x50));
+        vrf.blockConsumer(address(0x50));
+    }
+
+    function test_anyoneCanCallByDefault() public {
+        // Any address can call reserveRequestId without being explicitly added
+        address random = address(0x777);
+        vm.prank(random);
+        uint256 id = vrf.reserveRequestId();
+        assertEq(id, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -173,7 +180,7 @@ contract NoosphereVRFCoreTest is Test {
         // Old owner can no longer act
         vm.prank(OWNER);
         vm.expectRevert(NoosphereVRF.NotOwner.selector);
-        vrf.addConsumer(address(0x50));
+        vrf.blockConsumer(address(0x50));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -186,7 +193,7 @@ contract NoosphereVRFCoreTest is Test {
     }
 
     function test_typeAndVersion() public view {
-        assertEq(vrf.typeAndVersion(), "NoosphereVRF_v1.0.0");
+        assertEq(vrf.typeAndVersion(), "NoosphereVRF_v1.1.0");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -210,19 +217,49 @@ contract NoosphereVRFCoreTest is Test {
         assertEq(vrf.getRequestBlock(id), 100);
     }
 
-    function test_reserveRequestId_unauthorized_reverts() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(NoosphereVRF.NotAuthorizedConsumer.selector);
+    function test_reserveRequestId_blocked_reverts() public {
+        vm.prank(OWNER);
+        vrf.blockConsumer(CONSUMER);
+
+        vm.prank(CONSUMER);
+        vm.expectRevert(NoosphereVRF.Blocked.selector);
         vrf.reserveRequestId();
     }
 
     function test_reserveRequestId_noEpoch_reverts() public {
         NoosphereVRF freshVrf = new NoosphereVRF(address(this));
-        freshVrf.addConsumer(CONSUMER);
 
         vm.prank(CONSUMER);
         vm.expectRevert(NoosphereVRF.EpochNotRegistered.selector);
         freshVrf.reserveRequestId();
+    }
+
+    function test_reserveRequestId_rateLimitExceeded() public {
+        vm.startPrank(CONSUMER);
+        // Reserve MAX_RESERVES_PER_BLOCK (10) times — should succeed
+        for (uint256 i = 0; i < 10; i++) {
+            vrf.reserveRequestId();
+        }
+        // 11th should revert
+        vm.expectRevert(NoosphereVRF.RateLimitExceeded.selector);
+        vrf.reserveRequestId();
+        vm.stopPrank();
+    }
+
+    function test_reserveRequestId_rateLimitResetsNextBlock() public {
+        vm.startPrank(CONSUMER);
+        for (uint256 i = 0; i < 10; i++) {
+            vrf.reserveRequestId();
+        }
+        vm.stopPrank();
+
+        // Advance to next block
+        vm.mockCall(address(0x64), abi.encodeWithSignature("arbBlockNumber()"), abi.encode(uint256(101)));
+
+        // Should succeed again on new block
+        vm.prank(CONSUMER);
+        uint256 id = vrf.reserveRequestId();
+        assertEq(id, 10);
     }
 
     function test_bindRequest_succeeds() public {
@@ -239,12 +276,15 @@ contract NoosphereVRFCoreTest is Test {
         vrf.bindRequest(1, 42, 999);
     }
 
-    function test_bindRequest_unauthorized_reverts() public {
+    function test_bindRequest_blocked_reverts() public {
         vm.prank(CONSUMER);
         uint256 id = vrf.reserveRequestId();
 
+        vm.prank(OWNER);
+        vrf.blockConsumer(address(0x999));
+
         vm.prank(address(0x999));
-        vm.expectRevert(NoosphereVRF.NotAuthorizedConsumer.selector);
+        vm.expectRevert(NoosphereVRF.Blocked.selector);
         vrf.bindRequest(1, 42, id);
     }
 
@@ -260,8 +300,6 @@ contract NoosphereVRFCoreTest is Test {
 
     function test_multipleConsumers_noIdClash() public {
         address consumer2 = address(0x3);
-        vm.prank(OWNER);
-        vrf.addConsumer(consumer2);
 
         vm.prank(CONSUMER);
         uint256 id1 = vrf.reserveRequestId();
@@ -275,8 +313,6 @@ contract NoosphereVRFCoreTest is Test {
 
     function test_interleavedReserveAndBind() public {
         address consumer2 = address(0x3);
-        vm.prank(OWNER);
-        vrf.addConsumer(consumer2);
 
         vm.prank(CONSUMER);
         uint256 idA = vrf.reserveRequestId();
@@ -296,16 +332,22 @@ contract NoosphereVRFCoreTest is Test {
     }
 
     function test_epochRunningLow_emitsAt100Remaining() public {
-        vm.startPrank(CONSUMER);
-        for (uint256 i = 0; i < 900; i++) {
-            vrf.reserveRequestId();
+        // Use multiple consumers to bypass per-consumer rate limit (10/block)
+        for (uint256 i = 0; i < 90; i++) {
+            address consumer = address(uint160(0x1000 + i));
+            vm.startPrank(consumer);
+            for (uint256 j = 0; j < 10; j++) {
+                vrf.reserveRequestId();
+            }
+            vm.stopPrank();
         }
 
         // Request #900: usedInEpoch=901, remaining=99 → emits
         vm.expectEmit(true, false, false, true);
         emit INoosphereVRF.EpochRunningLow(0, 99);
+        address lastConsumer = address(uint160(0x2000));
+        vm.prank(lastConsumer);
         vrf.reserveRequestId();
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -529,7 +571,6 @@ contract NoosphereVRFConsumerTest is Test {
         vrf = new NoosphereVRF(address(this));
         vrf.registerEpoch(0, bytes32(uint256(0xDEAD)));
         consumer = new TestVRFConsumer(address(router), address(this), address(vrf));
-        vrf.addConsumer(address(consumer));
     }
 
     function _createSub(address user) internal returns (uint64) {

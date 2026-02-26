@@ -23,6 +23,9 @@ interface ArbSys {
 ///      - Merkle proof ensures the random value matches the committed root
 ///      - Block hash adds 2-party entropy (neither VRNG operator nor sequencer can predict both)
 ///      - Replay prevention via delete-after-use pattern (Chainlink VRF Coordinator pattern)
+///
+///      Access control: Blacklist model (default allow, owner can block bad actors)
+///      Rate limit: Per-consumer per-block cap on reserveRequestId to prevent epoch exhaustion
 contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -55,15 +58,20 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     ///      Deleted after fulfillment for replay prevention + gas refund.
     mapping(uint64 => mapping(uint32 => uint256)) private intervalToRequestId;
 
-    /// @notice Authorized consumer contracts (whitelist)
-    mapping(address => bool) public authorizedConsumers;
+    /// @notice Blocked consumer contracts (blacklist — default: all allowed)
+    mapping(address => bool) public blockedConsumers;
+
+    /// @notice Per-consumer per-block rate limit for reserveRequestId
+    uint256 public constant MAX_RESERVES_PER_BLOCK = 10;
+    mapping(address => mapping(uint256 => uint256)) private _reservesInBlock;
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
 
     error NotOwner();
-    error NotAuthorizedConsumer();
+    error Blocked();
+    error RateLimitExceeded();
     error EpochAlreadyRegistered();
     error EpochNotRegistered();
     error AlreadyFulfilledOrInvalid();
@@ -80,8 +88,8 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         _;
     }
 
-    modifier onlyConsumer() {
-        if (!authorizedConsumers[msg.sender]) revert NotAuthorizedConsumer();
+    modifier notBlocked() {
+        if (blockedConsumers[msg.sender]) revert Blocked();
         _;
     }
 
@@ -109,7 +117,12 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc INoosphereVRF
-    function reserveRequestId() external onlyConsumer returns (uint256 requestId) {
+    function reserveRequestId() external notBlocked returns (uint256 requestId) {
+        // Rate limit: max reserves per consumer per block
+        uint256 currentBlock = ARB_SYS.arbBlockNumber();
+        if (_reservesInBlock[msg.sender][currentBlock] >= MAX_RESERVES_PER_BLOCK) revert RateLimitExceeded();
+        _reservesInBlock[msg.sender][currentBlock]++;
+
         requestId = _nextRequestId++;
         uint256 epoch = requestId / EPOCH_SIZE;
         if (epochRoots[epoch] == bytes32(0)) revert EpochNotRegistered();
@@ -125,7 +138,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     }
 
     /// @inheritdoc INoosphereVRF
-    function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external onlyConsumer {
+    function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external notBlocked {
         if (requestBlocks[requestId] == 0) revert InvalidRequestId();
         intervalToRequestId[subscriptionId][interval] = requestId + 1;
     }
@@ -133,7 +146,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     /// @inheritdoc INoosphereVRF
     function fulfillRandomValue(uint64 subscriptionId, uint32 interval, bytes calldata outputUri)
         external
-        onlyConsumer
+        notBlocked
         returns (uint256 requestId, bytes32 randomValue, bytes32 blockHash, bool expired)
     {
         // ① Resolve requestId (replay prevention: delete after read)
@@ -170,20 +183,20 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc INoosphereVRF
-    function addConsumer(address consumer) external onlyOwner {
-        authorizedConsumers[consumer] = true;
-        emit ConsumerAdded(consumer);
+    function blockConsumer(address consumer) external onlyOwner {
+        blockedConsumers[consumer] = true;
+        emit ConsumerBlocked(consumer);
     }
 
     /// @inheritdoc INoosphereVRF
-    function removeConsumer(address consumer) external onlyOwner {
-        authorizedConsumers[consumer] = false;
-        emit ConsumerRemoved(consumer);
+    function unblockConsumer(address consumer) external onlyOwner {
+        blockedConsumers[consumer] = false;
+        emit ConsumerUnblocked(consumer);
     }
 
     /// @inheritdoc INoosphereVRF
-    function isAuthorizedConsumer(address consumer) external view returns (bool) {
-        return authorizedConsumers[consumer];
+    function isBlocked(address consumer) external view returns (bool) {
+        return blockedConsumers[consumer];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -232,7 +245,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
 
     /// @inheritdoc ITypeAndVersion
     function typeAndVersion() external pure returns (string memory) {
-        return "NoosphereVRF_v1.0.0";
+        return "NoosphereVRF_v1.1.0";
     }
 
     /*//////////////////////////////////////////////////////////////

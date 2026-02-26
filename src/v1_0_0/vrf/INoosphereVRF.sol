@@ -14,8 +14,8 @@ interface INoosphereVRF {
     event EpochRunningLow(uint256 indexed epoch, uint256 remaining);
     event RandomValueVerified(uint256 indexed requestId, bytes32 randomValue, bytes32 blockHash);
     event RandomValueExpired(uint256 indexed requestId);
-    event ConsumerAdded(address indexed consumer);
-    event ConsumerRemoved(address indexed consumer);
+    event ConsumerBlocked(address indexed consumer);
+    event ConsumerUnblocked(address indexed consumer);
 
     /*//////////////////////////////////////////////////////////////
                           EPOCH MANAGEMENT
@@ -88,12 +88,15 @@ interface INoosphereVRF {
                       CONSUMER MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Add an authorized consumer contract (owner only)
-    function addConsumer(address consumer) external;
+    /// @notice Block a consumer contract (owner only)
+    function blockConsumer(address consumer) external;
 
-    /// @notice Remove an authorized consumer contract (owner only)
-    function removeConsumer(address consumer) external;
+    /// @notice Unblock a consumer contract (owner only)
+    function unblockConsumer(address consumer) external;
 
-    /// @notice Check if an address is an authorized consumer
-    function isAuthorizedConsumer(address consumer) external view returns (bool);
+    /// @notice Check if a consumer is blocked
+    function isBlocked(address consumer) external view returns (bool);
+
+    /// @notice Maximum reserves per consumer per block (rate limit)
+    function MAX_RESERVES_PER_BLOCK() external view returns (uint256);
 }
