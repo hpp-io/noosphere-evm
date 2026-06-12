@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {Routable} from "./utility/Routable.sol";
 import {IBilling} from "./interfaces/IBilling.sol";
@@ -9,6 +9,8 @@ import {Payment} from "./types/Payment.sol";
 import {ComputeSubscription} from "./types/ComputeSubscription.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ProofVerificationRequest} from "./types/ProofVerificationRequest.sol";
+import {FulfillResult} from "./types/FulfillResult.sol";
+import {PayloadData} from "./types/PayloadData.sol";
 
 /// @title Billing
 /// @notice An abstract contract that provides the core logic for billing, fee calculation,
@@ -20,10 +22,10 @@ abstract contract Billing is IBilling, Routable {
 
     /// @notice A mapping from a request's unique identifier to its commitment hash.
     /// @dev The key is typically keccak256(abi.encodePacked(subscriptionId, interval)).
-    mapping(bytes32 => bytes32) public requestCommitments;
+    mapping(bytes32 => bytes32) internal s_requestCommitments;
 
-    /// @notice hash(subscriptionId, interval, caller) => proof request
-    mapping(bytes32 => ProofVerificationRequest) public proofRequests;
+    /// @notice hash(subscriptionId, interval, caller) => proof request hash
+    mapping(bytes32 => bytes32) internal s_proofRequests;
 
     error InvalidRequestCommitment(bytes32 requestId);
     error ProtocolFeeExceeds();
@@ -50,7 +52,7 @@ abstract contract Billing is IBilling, Routable {
 
     /// @inheritdoc IBilling
     function updateConfig(BillingConfig memory config) external virtual override {
-        // In a concrete implementation, this should have access control (e.g., onlyOwner).
+        _onlyOwner();
         _updateConfig(config);
     }
 
@@ -90,7 +92,6 @@ abstract contract Billing is IBilling, Routable {
         uint64 subscriptionId,
         bytes32 containerId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -100,10 +101,12 @@ abstract contract Billing is IBilling, Routable {
         uint256 verifierFee = 0;
         if (verifier != address(0)) {
             IVerifier verifierContract = IVerifier(verifier);
-            if (verifierContract.isPaymentTokenSupported(feeToken) == false) {
+            // gas optimization: combined call reduces 2 external calls to 1
+            (bool supported, uint256 fee) = verifierContract.getTokenFeeInfo(feeToken);
+            if (!supported) {
                 revert UnsupportedVerifierToken(feeToken);
             }
-            verifierFee = verifierContract.fee(feeToken);
+            verifierFee = fee;
             if (feeAmount < verifierFee) {
                 revert InsufficientForVerifierFee();
             }
@@ -114,81 +117,94 @@ abstract contract Billing is IBilling, Routable {
             subscriptionId: subscriptionId,
             containerId: containerId,
             interval: interval,
-            redundancy: redundancy,
             useDeliveryInbox: useDeliveryInbox,
             walletAddress: wallet,
             feeAmount: feeAmount,
             feeToken: feeToken,
-            verifier: verifier, // Use the address of the verifier
-            coordinator: address(this)
+            verifier: verifier,
+            coordinator: address(this),
+            verifierFee: verifierFee
         });
-        requestCommitments[requestId] = keccak256(abi.encode(commitment));
+        s_requestCommitments[requestId] = keccak256(abi.encode(commitment));
         return commitment;
     }
 
     /// @notice Processes a computation delivery, calculating fees and orchestrating fulfillment and/or verification.
     /// @dev This is the main entry point for billing logic from the Coordinator.
+    /// @dev Commitment validation is done by the caller (Coordinator) before calling this function.
+    /// @dev Single delivery per request - always cleans up after processing.
     function _processDelivery(
         Commitment memory commitment,
+        bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        uint16 numRedundantDeliveries,
-        bool isLastDelivery
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
+        bytes32 delegatedSubHash
     ) internal virtual {
-        bytes32 storedHash = requestCommitments[commitment.requestId];
-        if (storedHash == bytes32(0)) {
-            revert InvalidRequestCommitment(commitment.requestId);
-        }
-        if (keccak256(abi.encode(commitment)) != storedHash) {
-            revert InvalidRequestCommitment(commitment.requestId);
-        }
-
+        // Note: Commitment validation (s_requestCommitments check) is performed by the caller
+        // to avoid duplicate SLOAD and hash computation.
+        FulfillResult result;
         if (commitment.verifier != address(0)) {
-            _processVerifiedDelivery(
-                commitment, proofSubmitter, nodeWallet, input, output, proof, numRedundantDeliveries
+            result = _processVerifiedDelivery(
+                commitment, commitmentHash, proofSubmitter, nodeWallet, input, output, proof, delegatedSubHash
             );
         } else {
-            _processStandardDelivery(commitment, nodeWallet, input, output, proof, numRedundantDeliveries);
+            result = _processStandardDelivery(commitment, nodeWallet, input, output, proof);
         }
 
-        if (isLastDelivery == true) {
-            delete requestCommitments[commitment.requestId];
+        // Single delivery: always cleanup after processing
+        if (result == FulfillResult.FULFILLED) {
+            _cleanupRequestState(commitment.requestId, commitment.subscriptionId, commitment.interval, proofSubmitter);
         }
     }
 
     /// @dev Private helper to handle the logic for a delivery that requires verification.
     function _processVerifiedDelivery(
         Commitment memory commitment,
+        bytes32 commitmentHash,
         address proofSubmitter,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        uint16 numRedundantDeliveries
-    ) private {
-        Payment[] memory payments = _prepareVerificationPayments(commitment);
-        _initiateVerification(commitment, proofSubmitter, nodeWallet);
-        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
-        // Initiate verifier verification
-        IVerifier(commitment.verifier).submitProofForVerification(
-            commitment.subscriptionId, commitment.interval, proofSubmitter, proof
-        );
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
+        bytes32 delegatedSubHash
+    ) private returns (FulfillResult) {
+        bytes32 proofDataHash;
+        IVerifier verifier = IVerifier(commitment.verifier);
+        // Gas optimization: use cached verifierFee from commitment (saves ~45,000 gas on Nitro v3.9+)
+        uint256 verifierFee = commitment.verifierFee;
+        address verifierPaymentRecipient = verifier.paymentRecipient();
+
+        Payment[] memory payments = _prepareVerificationPayments(commitment, verifierFee, verifierPaymentRecipient);
+        ProofVerificationRequest memory request =
+            _initiateVerification(commitment, commitmentHash, proofSubmitter, nodeWallet, verifierFee);
+        FulfillResult result = _getRouter().fulfill(input, output, proof, nodeWallet, payments, commitment);
+        if (result == FulfillResult.FULFILLED) {
+            // Use contentHash from PayloadData for verification
+            bytes32 inputHash = input.contentHash;
+            bytes32 resultHash = output.contentHash;
+            if (delegatedSubHash != bytes32(0)) {
+                proofDataHash = delegatedSubHash;
+            } else {
+                proofDataHash = commitmentHash;
+            }
+            verifier.submitProofForVerification(request, proof, proofDataHash, inputHash, resultHash);
+        }
+        return result;
     }
 
     /// @dev Private helper to handle the logic for a standard, non-verified delivery.
     function _processStandardDelivery(
         Commitment memory commitment,
         address nodeWallet,
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        uint16 numRedundantDeliveries
-    ) private {
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof
+    ) private returns (FulfillResult) {
         Payment[] memory payments = _prepareStandardPayments(commitment, nodeWallet);
-        _getRouter().fulfill(input, output, proof, numRedundantDeliveries, nodeWallet, payments, commitment);
+        return _getRouter().fulfill(input, output, proof, nodeWallet, payments, commitment);
     }
 
     /// @dev Prepares the payment array for a standard, non-verified fulfillment.
@@ -199,7 +215,6 @@ abstract contract Billing is IBilling, Routable {
         returns (Payment[] memory)
     {
         uint256 feeAmount = commitment.feeAmount;
-
         // The original logic applies the fee twice, representing a fee on both
         // the consumer and the node from the total payment amount.
         uint256 paidToProtocol = _calculateFee(feeAmount, billingConfig.protocolFee * 2);
@@ -208,26 +223,21 @@ abstract contract Billing is IBilling, Routable {
         Payment[] memory payments = new Payment[](2);
         payments[0] = Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, paidToProtocol);
         payments[1] = Payment(nodeWallet, commitment.feeToken, paidToNode);
-
         return payments;
     }
 
     /// @dev Prepares the immediate payment array for a verified fulfillment (pays protocol and verifier).
-    function _prepareVerificationPayments(Commitment memory commitment)
-        internal
-        view
-        virtual
-        returns (Payment[] memory)
-    {
+    /// @param commitment The commitment data for this request.
+    /// @param verifierFee The fee amount for the verifier (pre-fetched to avoid duplicate external call).
+    /// @param verifierPaymentRecipient The address to receive verifier payment (pre-fetched).
+    function _prepareVerificationPayments(
+        Commitment memory commitment,
+        uint256 verifierFee,
+        address verifierPaymentRecipient
+    ) internal view virtual returns (Payment[] memory) {
         uint256 tokenAvailable = commitment.feeAmount;
-        IVerifier verifier = IVerifier(commitment.verifier);
-        if (!verifier.isPaymentTokenSupported(commitment.feeToken)) {
-            revert UnsupportedVerifierToken(commitment.feeToken);
-        }
         uint256 baseProtocolFee = _calculateFee(tokenAvailable, billingConfig.protocolFee) * 2;
         tokenAvailable -= baseProtocolFee;
-
-        uint256 verifierFee = verifier.fee(commitment.feeToken);
         if (tokenAvailable < verifierFee) {
             revert InsufficientForVerifierFee();
         }
@@ -235,35 +245,44 @@ abstract contract Billing is IBilling, Routable {
         Payment[] memory immediatePayments = new Payment[](2);
         immediatePayments[0] =
             Payment(billingConfig.protocolFeeRecipient, commitment.feeToken, baseProtocolFee + verifierProtocolFee);
-        immediatePayments[1] =
-            Payment(verifier.paymentRecipient(), commitment.feeToken, verifierFee - verifierProtocolFee);
+        immediatePayments[1] = Payment(verifierPaymentRecipient, commitment.feeToken, verifierFee - verifierProtocolFee);
         return immediatePayments;
     }
 
     /// @dev Handles post-fulfillment steps for verification (locking funds, calling verifier).
-    function _initiateVerification(Commitment memory commitment, address proofSubmitter, address submitterWallet)
-        internal
-        virtual
-    {
+    /// @param commitment The commitment data for this request.
+    /// @param commitmentHash The hash of the commitment.
+    /// @param proofSubmitter The address of the proof submitter.
+    /// @param submitterWallet The wallet address of the submitter.
+    /// @param verifierFee The fee amount for the verifier (pre-fetched to avoid duplicate external call).
+    function _initiateVerification(
+        Commitment memory commitment,
+        bytes32 commitmentHash,
+        address proofSubmitter,
+        address submitterWallet,
+        uint256 verifierFee
+    ) internal virtual returns (ProofVerificationRequest memory) {
         // Calculate the final amount that will be paid to the node after fees.
         // This is the amount that will be escrowed and potentially slashed.
         uint256 tokenAvailable = commitment.feeAmount;
         uint256 baseProtocolFee = _calculateFee(tokenAvailable, billingConfig.protocolFee) * 2;
-        IVerifier verifier = IVerifier(commitment.verifier);
-        uint256 verifierFee = verifier.fee(commitment.feeToken);
-        uint256 nodePaymentAmount = tokenAvailable - baseProtocolFee - verifierFee;
-        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, msg.sender));
-        proofRequests[key] = ProofVerificationRequest({
+        uint256 nodePaymentAmount = tokenAvailable - (baseProtocolFee + verifierFee);
+
+        ProofVerificationRequest memory proofRequest = ProofVerificationRequest({
             subscriptionId: commitment.subscriptionId,
-            requestId: commitment.requestId,
+            interval: commitment.interval,
             submitterAddress: proofSubmitter,
             submitterWallet: submitterWallet,
-            expiry: uint32(block.timestamp + 1 weeks), // Example expiry
+            expiry: uint32(block.timestamp) + 1 weeks,
             escrowedAmount: nodePaymentAmount,
             escrowToken: commitment.feeToken,
             slashAmount: tokenAvailable
         });
-        _getRouter().lockForVerification(proofRequests[key], commitment);
+
+        bytes32 key = keccak256(abi.encode(commitment.subscriptionId, commitment.interval, proofSubmitter));
+        s_proofRequests[key] = keccak256(abi.encode(proofRequest));
+        _getRouter().lockForVerification(proofRequest, commitmentHash);
+        return proofRequest;
     }
 
     /// @notice Finalizes the verification process based on the verifier's result.
@@ -271,30 +290,27 @@ abstract contract Billing is IBilling, Routable {
     /// @param request The proof verification request details.
     /// @param valid True if the proof was valid, false otherwise.
     function _finalizeVerification(ProofVerificationRequest memory request, bool valid) internal virtual {
+        // Note: block.timestamp is used for expiry checks. This is considered safe here
+        // because the expiry duration (e.g., 1 week) is significantly longer than the
+        // potential manipulation window of block.timestamp by miners.
         bool expired = uint32(block.timestamp) >= request.expiry;
         ComputeSubscription memory sub = _getRouter().getComputeSubscription(request.subscriptionId);
         if (msg.sender != sub.verifier) {
             revert UnauthorizedVerifier();
         }
 
-        // Unlock funds regardless of outcome, as the verification process is complete.
-        _getRouter().unlockForVerification(request);
-
+        // Gas optimization: use combined unlock + pay function to save ~45k gas on Nitro v3.9+
         Payment[] memory payments = new Payment[](1);
-        // Pay the node if the proof is valid OR if the verification intervalSeconds has expired.
         if (valid || expired) {
             payments[0] = Payment({
-                recipient: request.submitterWallet,
-                feeToken: request.escrowToken,
-                feeAmount: request.escrowedAmount
+                recipient: request.submitterWallet, feeToken: request.escrowToken, feeAmount: request.escrowedAmount
             });
-            _getRouter().payFromCoordinator(request.subscriptionId, sub.wallet, sub.client, payments);
+            _getRouter().unlockAndPayForVerification(request, sub.wallet, sub.client, payments);
         } else {
             // Slash the node if the proof is invalid AND the intervalSeconds has not expired.
             payments[0] = Payment({recipient: sub.wallet, feeToken: sub.feeToken, feeAmount: sub.feeAmount});
-            _getRouter().payFromCoordinator(
-                request.subscriptionId, request.submitterWallet, request.submitterAddress, payments
-            );
+            _getRouter()
+                .unlockAndPayForVerification(request, request.submitterWallet, request.submitterAddress, payments);
         }
     }
 
@@ -304,23 +320,37 @@ abstract contract Billing is IBilling, Routable {
         if (billingConfig.tickNodeFee > 0) {
             payments = new Payment[](1);
             payments[0] = Payment({
-                recipient: nodeWallet,
-                feeToken: billingConfig.tickNodeFeeToken,
-                feeAmount: billingConfig.tickNodeFee
+                recipient: nodeWallet, feeToken: billingConfig.tickNodeFeeToken, feeAmount: billingConfig.tickNodeFee
             });
+        } else {
+            payments = new Payment[](0);
         }
-
-        // The spender is the protocol fee recipient itself, as it's paying from its own wallet.
-        _getRouter().payFromCoordinator(
-            subscriptionId,
-            billingConfig.protocolFeeRecipient, // spenderWallet
-            billingConfig.protocolFeeRecipient, // spenderAddress
-            payments
-        );
+        _getRouter()
+            .payFromCoordinator(
+                subscriptionId, billingConfig.protocolFeeRecipient, billingConfig.protocolFeeRecipient, payments
+            );
     }
 
     function _cancelRequest(bytes32 requestId) internal virtual {
-        delete requestCommitments[requestId];
+        delete s_requestCommitments[requestId];
+    }
+
+    /// @notice Cleans up the state associated with a request after it has been fulfilled.
+    /// @dev This function is designed to be overridden by child contracts to include
+    ///      additional state cleanup, such as resetting redundancy counts or response tracking.
+    ///      The `proofSubmitter` parameter is provided to allow child contracts to clean up
+    ///      node-specific state.
+    /// @param requestId The unique identifier of the request.
+    /// @param subscriptionId The ID of the subscription associated with the request.
+    /// @param interval The interval of the request.
+    /// @param proofSubmitter The address of the node that submitted the proof.
+    function _cleanupRequestState(bytes32 requestId, uint64 subscriptionId, uint32 interval, address proofSubmitter)
+        internal
+        virtual
+    {
+        // Base implementation cleans up the commitment.
+        // Child contracts can override this to add more cleanup logic.
+        delete s_requestCommitments[requestId];
     }
 
     function _onlyOwner() internal view virtual;

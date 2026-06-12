@@ -1,31 +1,38 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../types/Commitment.sol";
 import {TransientComputeClient} from "../client/TransientComputeClient.sol";
+import {Delegator} from "../utility/Delegator.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title MyTransientClient
-/// @notice An example implementation of a TransientComputeClient.
-/// @dev This contract provides a public interface to create, request, and cancel subscriptions,
-///      and demonstrates how to receive compute results.
-contract MyTransientClient is TransientComputeClient {
+/// @notice A gas-efficient implementation of a TransientComputeClient.
+/// @dev This contract provides a public interface to create, request, and cancel subscriptions.
+///      Optimized for minimal gas usage - stores only output hash, emits event for full data.
+contract MyTransientClient is TransientComputeClient, Delegator {
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when compute result is received (for off-chain indexing)
+    event ComputeReceived(
+        uint64 indexed subscriptionId, uint32 indexed interval, address node, bytes32 outputHash, bytes outputUri
+    );
+
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    // State variables to store the result of the last compute callback for testing purposes.
-    uint64 public lastReceivedSubscriptionId;
-    uint32 public lastReceivedInterval;
-    address public lastReceivedNode;
-    bytes public lastReceivedOutput;
-    bytes32 public lastReceivedContainerId;
+    /// @notice Last received output hash (minimal storage for verification)
+    bytes32 public lastReceivedOutputHash;
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /// @param router The address of the main Router contract.
-    constructor(address router) TransientComputeClient(router) {}
+    constructor(address router, address signer) TransientComputeClient(router) Delegator(signer) {}
 
     /*//////////////////////////////////////////////////////////////
                                PUBLIC FUNCTIONS
@@ -35,7 +42,6 @@ contract MyTransientClient is TransientComputeClient {
     /// @dev This function wraps the internal `_createComputeSubscription` from the parent contract.
     function createSubscription(
         string memory containerId,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -44,23 +50,12 @@ contract MyTransientClient is TransientComputeClient {
         bytes32 routeId
     ) external returns (uint64) {
         // Call the internal function provided by TransientComputeClient
-        return _createComputeSubscription(
-            containerId, redundancy, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId
-        );
+        return _createComputeSubscription(containerId, useDeliveryInbox, feeToken, feeAmount, wallet, verifier, routeId);
     }
 
     function requestCompute(uint64 subscriptionId, bytes memory inputs)
         external
         returns (uint64 id, Commitment memory)
-    {
-        return _requestCompute(subscriptionId, inputs);
-    }
-
-    /// @notice A public function to request a compute job for an existing subscription.
-    /// @dev Wraps the internal `_requestCompute` function.
-    function MockDelegatorScheduledComputeClient(uint64 subscriptionId, bytes memory inputs)
-        external
-        returns (uint64, Commitment memory)
     {
         return _requestCompute(subscriptionId, inputs);
     }
@@ -75,31 +70,45 @@ contract MyTransientClient is TransientComputeClient {
                             CALLBACK OVERRIDE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Overrides the internal virtual function to handle the result of a compute request.
-    /// @dev This function is called by the Router upon successful fulfillment.
-    ///      Here, we simply store the received data in public state variables for easy verification.
+    /// @notice Gas-efficient callback - stores only output hash, emits event for full data.
+    /// @dev Full output data available via ComputeReceived event for off-chain indexing.
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16, /* numRedundantDeliveries */
         bool, /* useDeliveryInbox */
         address node,
-        bytes calldata, /* input */
-        bytes calldata output,
-        bytes calldata, /* proof */
-        bytes32 containerId
+        PayloadData calldata, /* input */
+        PayloadData calldata output,
+        PayloadData calldata, /* proof */
+        bytes32 /* containerId */
     ) internal override {
-        lastReceivedSubscriptionId = subscriptionId;
-        lastReceivedInterval = interval;
-        lastReceivedNode = node;
-        lastReceivedOutput = output;
-        lastReceivedContainerId = containerId;
+        // Single SSTORE: ~5,000 gas (update) or ~22,100 gas (new)
+        lastReceivedOutputHash = output.contentHash;
+
+        // Event emission: ~3,000-5,000 gas (cheaper than storage)
+        emit ComputeReceived(subscriptionId, interval, node, output.contentHash, output.uri);
+    }
+
+    /// @notice Update new signer
+    /// @param newSigner to update
+    function updateSigner(address newSigner) external {
+        _updateSigner(newSigner);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        BACKWARD COMPATIBILITY
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns a PayloadData with only the hash populated (for backward compatibility)
+    /// @dev Full output data should be retrieved from ComputeReceived events
+    function lastReceivedOutput() external view returns (PayloadData memory) {
+        return PayloadData({contentHash: lastReceivedOutputHash, uri: bytes("")});
     }
 
     /*//////////////////////////////////////////////////////////////
                             TYPE & VERSION
     //////////////////////////////////////////////////////////////*/
     function typeAndVersion() external pure override returns (string memory) {
-        return "MyTransientClient_v1.0.0";
+        return "MyTransientClient_v1.1.0";
     }
 }

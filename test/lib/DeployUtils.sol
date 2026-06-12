@@ -1,18 +1,31 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
+import "../../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {BillingConfig} from "../../src/v1_0_0/types/BillingConfig.sol";
 import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
-import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
+import {SubscriptionBatchReader} from "../../src/v1_0_0/utility/SubscriptionBatchReader.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../../src/v1_0_0/wallet/WalletFactory.sol";
+import {Wallet} from "../../src/v1_0_0/wallet/Wallet.sol";
+import {MockToken} from "../mocks/MockToken.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title LibDeploy
 /// @notice Small deployment helpers used by tests to deploy and wire protocol contracts.
 /// @dev The library purposefully keeps deployment logic minimal and splits complex constructor
 ///      initialization into helper functions to avoid "stack too deep" issues inside a single function.
 library DeployUtils {
+    struct DeployedContracts {
+        Router router;
+        DelegateeCoordinator coordinator;
+        SubscriptionBatchReader reader;
+        ImmediateFinalizeVerifier immediateFinalizeVerifier;
+        WalletFactory walletFactory;
+        MockToken mockToken;
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -28,102 +41,72 @@ library DeployUtils {
 
     /// @notice Deploy the core suite of test contracts and wire them into the Router.
     /// @param deployerAddress Address which will be used as the nominal deployer/owner for certain contracts.
-    /// @param initialFeeRecipient Address that will receive protocol fees during test setup.
+    /// @param initialOwner Address that will receive protocol fees during test setup.
     /// @param initialFee Protocol fee (basis points or protocol-defined unit).
     /// @param tokenAddr Optional token address used for tick fees / mocks (may be address(0)).
-    /// @return router Deployed Router instance.
-    /// @return coordinator Deployed DelegateeCoordinator instance (initialized).
-    /// @return reader Deployed SubscriptionBatchReader helper instance (wired to Router & Coordinator).
-    /// @return walletFactory Deployed WalletFactory instance (wired to Router).
-    function deployContracts(address deployerAddress, address initialFeeRecipient, uint16 initialFee, address tokenAddr)
+    /// @return contracts A struct containing all deployed contract instances.
+    function deployContracts(address deployerAddress, address initialOwner, uint16 initialFee, address tokenAddr)
         internal
-        returns (
-            Router router,
-            DelegateeCoordinator coordinator,
-            SubscriptionBatchReader reader,
-            WalletFactory walletFactory
-        )
+        returns (DeployedContracts memory contracts)
     {
-        // Deploy Router first (dependency for the other contracts).
-        router = new Router();
+        // --- DEPLOYMENT (as deployerAddress) ---
+        contracts.mockToken = new MockToken();
+        contracts.mockToken.mint(initialOwner, 1_000_000e18);
 
-        // Deploy delegatee coordinator and initialize its billing config via helper.
-        coordinator = _deployCoordinator(address(router), deployerAddress, initialFeeRecipient, initialFee, tokenAddr);
+        contracts.router = new Router(initialOwner);
+        contracts.coordinator = new DelegateeCoordinator(address(contracts.router), initialOwner);
+        contracts.reader = new SubscriptionBatchReader(address(contracts.router), address(contracts.coordinator));
+        contracts.walletFactory = new WalletFactory(address(contracts.router));
+        contracts.immediateFinalizeVerifier =
+            new ImmediateFinalizeVerifier(address(contracts.coordinator), initialOwner);
+    }
 
-        // Deploy lightweight reader and wallet factory wired to the router + coordinator.
-        reader = new SubscriptionBatchReader(address(router), address(coordinator));
-        walletFactory = new WalletFactory(address(router));
-        coordinator.setSubscriptionBatchReader(address(reader));
+    /// @notice Configures and wires up the deployed contracts.
+    /// @dev This function should be called after `deployContracts`. It performs all owner-only actions.
+    /// @param contracts A struct containing all deployed contract instances.
+    /// @param owner The address that has ownership of the main contracts (e.g., Router, Coordinator).
+    function configureContracts(
+        DeployedContracts memory contracts,
+        address owner,
+        address initialFeeRecipient,
+        uint16 initialFee,
+        address tokenAddr
+    ) internal {
+        // --- CONFIGURATION (as owner) ---
+        // Wire up the Router's WalletFactory first (required for createWallet)
+        contracts.router.setWalletFactory(address(contracts.walletFactory));
 
-        // Register Coordinator into the Router's contract registry so lookups succeed.
+        // Create a protocol wallet from WalletFactory for the fee recipient
+        // This ensures the protocolFeeRecipient is a valid wallet for tick fee payments
+        address protocolWallet = contracts.walletFactory.createWallet(initialFeeRecipient);
+
+        // Initialize the Coordinator's billing configuration.
+        contracts.coordinator
+            .initialize(
+                BillingConfig({
+                    verificationTimeout: 1 weeks,
+                    protocolFeeRecipient: protocolWallet,
+                    protocolFee: initialFee,
+                    tickNodeFee: 0,
+                    tickNodeFeeToken: tokenAddr
+                })
+            );
+
+        // Register the Coordinator contract in the Router.
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = "Coordinator_v1.0.0";
         address[] memory addrs = new address[](1);
-        addrs[0] = address(coordinator);
+        addrs[0] = address(contracts.coordinator);
 
-        router.proposeContractsUpdate(ids, addrs);
-        router.updateContracts();
+        contracts.router.proposeContractsUpdate(ids, addrs);
+        contracts.router.updateContracts();
 
-        return (router, coordinator, reader, walletFactory);
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                             CONFIGURATION HELPERS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Convenience helper to update Coordinator billing configuration in tests.
-    /// @param coordinator DelegateeCoordinator instance to configure.
-    /// @param verificationTimeout Timeout used by verifier-related logic.
-    /// @param protocolFeeRecipient Recipient address for protocol fees.
-    /// @param protocolFee Protocol fee value.
-    /// @param tickNodeFee Per-tick node fee paid to nodes.
-    /// @param tickNodeFeeToken Token used to pay tick node fees.
-    function updateBillingConfig(
-        DelegateeCoordinator coordinator,
-        uint32 verificationTimeout,
-        address protocolFeeRecipient,
-        uint16 protocolFee,
-        uint256 tickNodeFee,
-        address tickNodeFeeToken
-    ) internal {
-        coordinator.updateConfig(
-            BillingConfig({
-                verificationTimeout: verificationTimeout,
-                protocolFeeRecipient: protocolFeeRecipient,
-                protocolFee: protocolFee,
-                tickNodeFee: tickNodeFee,
-                tickNodeFeeToken: tickNodeFeeToken
-            })
+        // Wire up remaining owner-only configurations
+        contracts.immediateFinalizeVerifier.setTokenSupported(address(0), true);
+        contracts.coordinator.setSubscriptionBatchReader(address(contracts.reader));
+        require(
+            contracts.coordinator.getSubscriptionBatchReader() == address(contracts.reader),
+            "DeployUtils: Failed to set reader"
         );
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                               INTERNAL HELPERS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev Internal helper to deploy and initialize the DelegateeCoordinator.
-    ///      Split out to reduce local variable pressure in `deployContracts`.
-    function _deployCoordinator(
-        address routerAddress,
-        address client,
-        address initialFeeRecipient,
-        uint16 protocolFee,
-        address tokenAddr
-    ) private returns (DelegateeCoordinator) {
-        // Deploy coordinator with minimal constructor args.
-        DelegateeCoordinator coordinator = new DelegateeCoordinator(routerAddress, client);
-
-        // Initialize billing configuration in a separate transaction to avoid constructor complexity.
-        coordinator.initialize(
-            BillingConfig({
-                verificationTimeout: 1 weeks,
-                protocolFeeRecipient: initialFeeRecipient,
-                protocolFee: protocolFee,
-                tickNodeFee: 0,
-                tickNodeFeeToken: tokenAddr
-            })
-        );
-
-        return coordinator;
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {Coordinator} from "../Coordinator.sol";
 import {Router} from "../Router.sol";
@@ -18,7 +18,7 @@ contract SubscriptionBatchReader {
     /// @notice Router instance used to fetch subscription records.
     Router private immutable ROUTER;
 
-    /// @notice Coordinator instance used to fetch commitments and redundancy data.
+    /// @notice Coordinator instance used to fetch commitments.
     Coordinator private immutable COORDINATOR;
 
     /*//////////////////////////////////////////////////////////////
@@ -37,10 +37,8 @@ contract SubscriptionBatchReader {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Snapshot of interval-related state for a subscription interval.
-    /// @param redundancyCount Number of redundant deliveries recorded for the requestId.
     /// @param commitmentExists True if the Coordinator holds a commitment for the requestId.
     struct IntervalStatus {
-        uint16 redundancyCount;
         bool commitmentExists;
     }
 
@@ -48,26 +46,27 @@ contract SubscriptionBatchReader {
                                  READ HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Return a contiguous slice of ComputeSubscription structs (inclusive start, exclusive end).
-    /// @dev Reverts when endId <= startId.
+    /// @notice Return a contiguous slice of ComputeSubscription structs (inclusive start, inclusive end).
+    /// @dev Reverts when endId < startId.
     /// @param startId Inclusive start subscription id.
-    /// @param endId Exclusive end subscription id.
-    /// @return subscriptions Array of ComputeSubscription for ids in [startId, endId).
+    /// @param endId Inclusive end subscription id.
+    /// @return subscriptions Array of ComputeSubscription for ids in [startId, endId].
     function getSubscriptions(uint64 startId, uint64 endId)
         external
         view
         returns (ComputeSubscription[] memory subscriptions)
     {
-        uint256 len = uint256(endId - startId);
+        require(endId >= startId, "SubscriptionBatchReader: endId must be greater than or equal to startId");
+        uint256 len = uint256(endId - startId + 1);
         subscriptions = new ComputeSubscription[](len);
 
-        for (uint64 id = startId; id < endId; ++id) {
+        for (uint64 id = startId; id <= endId; ++id) {
             uint256 idx = uint256(id - startId);
             subscriptions[idx] = ROUTER.getComputeSubscription(id);
         }
     }
 
-    /// @notice For each (subscriptionId, interval) pair returns redundancy count and whether a commitment exists.
+    /// @notice For each (subscriptionId, interval) pair returns whether a commitment exists.
     /// @dev Inputs must be of equal length and are matched element-wise. Computes requestId as keccak256(abi.encodePacked(id, interval)).
     /// @param ids Array of subscription IDs.
     /// @param intervals Array of interval indices; intervals[i] corresponds to ids[i].
@@ -82,9 +81,8 @@ contract SubscriptionBatchReader {
 
         for (uint256 i = 0; i < n; ++i) {
             bytes32 requestId = RequestIdUtils.requestIdPacked(ids[i], intervals[i]);
-            uint16 count = COORDINATOR.redundancyCount(requestId);
             bool exists = COORDINATOR.requestCommitments(requestId) != bytes32(0);
-            statuses[i] = IntervalStatus({redundancyCount: count, commitmentExists: exists});
+            statuses[i] = IntervalStatus({commitmentExists: exists});
         }
     }
 }

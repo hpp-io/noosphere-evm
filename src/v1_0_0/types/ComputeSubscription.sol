@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 /// @notice Compute subscription configuration for off-chain compute callbacks.
 /// @dev Field ordering chosen to minimize wasted bytes across 32-byte storage slots
@@ -25,8 +25,6 @@ struct ComputeSubscription {
     address feeToken; // slot 5 (part)
     /// @notice Verifier address (optional). If non-zero, used to verify node responses before delivery.
     address payable verifier; // slot 5 (part)
-    /// @notice Number of required unique node responses per execution (redundancy).
-    uint16 redundancy; // slot 6 (part)
     /// @notice If true, responses should be stored in the client's inbox/pending queue instead of immediate callback.
     bool useDeliveryInbox; // slot 6 (part)
 }

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../types/Commitment.sol";
 import {FulfillResult} from "../types/FulfillResult.sol";
 import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
 import {Payment} from "../types/Payment.sol";
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title IRouter
 /// @notice Lightweight interface describing the Router entrypoints used by the Coordinator, Wallet and verifier
@@ -43,22 +44,20 @@ interface IRouter {
     /// @notice Accept fulfillment results and attempt on-chain settlement for a request.
     /// @dev Transfers/escrow operations are performed according to the provided `payments` array and the
     ///      Coordinator's business rules. Returns a FulfillResult enum code representing settlement outcome.
-    /// @param input Original request input bytes.
-    /// @param output Compute output bytes produced by the node.
-    /// @param proof Proof bytes supporting the fulfillment (protocol-specific).
-    /// @param numRedundantDeliveries Number of redundant deliveries reported for this fulfillment.
+    /// @param input PayloadData for input (contentHash + uri).
+    /// @param output PayloadData for output (contentHash + uri).
+    /// @param proof PayloadData for proof (contentHash + uri).
     /// @param nodeWallet Wallet address used by the reporting node for payout/escrow actions.
     /// @param payments Array of Payment entries describing recipients and amounts for this fulfillment.
     /// @param commitment The Commitment struct that corresponds to the original request.
     /// @return resultCode Fulfillment result code (see FulfillResult type).
     function fulfill(
-        bytes memory input,
-        bytes memory output,
-        bytes memory proof,
-        uint16 numRedundantDeliveries,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         address nodeWallet,
-        Payment[] memory payments,
-        Commitment memory commitment
+        Payment[] calldata payments,
+        Commitment calldata commitment
     ) external returns (FulfillResult resultCode);
 
     /// @notice Instruct Router to execute coordinator-driven payouts on behalf of Coordinator.
@@ -82,13 +81,26 @@ interface IRouter {
     /// @dev Coordinator calls this prior to invoking potentially expensive verification routines so funds
     ///      needed for verifier fees are reserved.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
-    /// @param commitment Commitment that proves the original request context and pricing.
-    function lockForVerification(ProofVerificationRequest calldata proofRequest, Commitment memory commitment)
-        external;
+    /// @param commitmentHash commitmentHash that proves the original request context and pricing.
+    function lockForVerification(ProofVerificationRequest calldata proofRequest, bytes32 commitmentHash) external;
 
     /// @notice Release/unlock previously locked funds after verification completes or is aborted.
     /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
     function unlockForVerification(ProofVerificationRequest calldata proofRequest) external;
+
+    /// @notice Unlock verification escrow and execute payment in a single call.
+    /// @dev Gas optimization: combines unlockForVerification + payFromCoordinator into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param proofRequest Proof verification request describing subscription/interval/verifier/token.
+    /// @param spenderWallet Wallet address from which funds will be drawn (consumer wallet).
+    /// @param spenderAddress Address that authorized the spend (consumer/owner).
+    /// @param payments Array of payments to execute.
+    function unlockAndPayForVerification(
+        ProofVerificationRequest calldata proofRequest,
+        address spenderWallet,
+        address spenderAddress,
+        Payment[] calldata payments
+    ) external;
 
     /// @notice Prepare node-side verification parameters for the given subscription interval.
     /// @dev Typically used by Coordinator to pre-reserve verifier fees for node operations.
@@ -108,24 +120,21 @@ interface IRouter {
     /*//////////////////////////////////////////////////////////////////////////
                            SUBSCRIPTION MANAGEMENT
     //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Create a subscription on behalf of a client via EIP-712 delegated signature.
-    /// @dev Validates the provided signature and, if accepted, creates or returns an existing subscription id.
-    /// @param nonce Subscriber-supplied nonce (used to prevent replay).
-    /// @param expiry Signature expiry timestamp.
-    /// @param sub ComputeSubscription payload describing subscription parameters.
-    /// @param signature EIP-712 encoded signature authorizing the creation.
-    /// @return subscriptionId The id of the created (or existing) subscription.
-    function createSubscriptionDelegatee(
-        uint32 nonce,
-        uint32 expiry,
-        ComputeSubscription calldata sub,
-        bytes calldata signature
-    ) external returns (uint64 subscriptionId);
-
     /// @notice Returns the last subscription id issued by the Router.
     /// @return lastId The most recently created subscription identifier.
     function getLastSubscriptionId() external view returns (uint64 lastId);
+
+    /// @notice Get subscription interval and validate wallets in a single call.
+    /// @dev Gas optimization: combines getComputeSubscriptionInterval + areValidWallets into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param subscriptionId Subscription identifier to get interval for.
+    /// @param walletAddrs Array of wallet addresses to validate.
+    /// @return interval Current interval for the subscription.
+    /// @return allWalletsValid True only when ALL addresses were produced by the WalletFactory.
+    function getIntervalAndValidateWallets(uint64 subscriptionId, address[] calldata walletAddrs)
+        external
+        view
+        returns (uint32 interval, bool allWalletsValid);
 
     /*//////////////////////////////////////////////////////////////////////////
                          CONTRACT REGISTRY & GOVERNANCE
@@ -144,8 +153,7 @@ interface IRouter {
     /// @notice Propose an updated set of contracts (ids + new addresses) for governance review.
     /// @param proposalSetIds Array of contract ids to update.
     /// @param proposalSetAddresses Corresponding array of proposed addresses.
-    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses)
-        external;
+    function proposeContractsUpdate(bytes32[] calldata proposalSetIds, address[] calldata proposalSetAddresses) external;
 
     /// @notice Commit the previously proposed contracts set into active use.
     function updateContracts() external;
@@ -163,6 +171,12 @@ interface IRouter {
     /// @return isValid True when `walletAddr` was produced by the WalletFactory and is tracked.
     function isValidWallet(address walletAddr) external view returns (bool isValid);
 
+    /// @notice Batch validate whether multiple addresses are Wallets created by the WalletFactory.
+    /// @dev Gas optimization: reduces multiple external calls to a single call.
+    /// @param walletAddrs Array of candidate wallet addresses to validate.
+    /// @return allValid True only when ALL addresses were produced by the WalletFactory.
+    function areValidWallets(address[] calldata walletAddrs) external view returns (bool allValid);
+
     /*//////////////////////////////////////////////////////////////////////////
                                   ADMIN
     //////////////////////////////////////////////////////////////////////////*/
@@ -172,14 +186,6 @@ interface IRouter {
 
     /// @notice Resume router operations.
     function unpause() external;
-
-    /// @notice Get the current allow list identifier used to gate certain operations.
-    /// @return allowListId Current allow list id.
-    function getAllowListId() external view returns (bytes32 allowListId);
-
-    /// @notice Update the allow list identifier used by the Router.
-    /// @param allowListId New allow list id to set.
-    function setAllowListId(bytes32 allowListId) external;
 
     /*//////////////////////////////////////////////////////////////////////////
                                   TIMEOUTS

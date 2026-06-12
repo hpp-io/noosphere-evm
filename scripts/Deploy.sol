@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.4;
 
+import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
 import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {DeployUtils} from "../test/lib/DeployUtils.sol";
+import {ImmediateFinalizeVerifier} from "../src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {MyTransientClient} from "../src/v1_0_0/sample/MyTransientClient.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
-import {Script} from "forge-std/Script.sol";
-import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
-import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
-import {console} from "forge-std/console.sol";
 
 /// @title Deploy
 /// @notice Deploys noosphere SDK to destination chain defined in environment
@@ -32,22 +30,25 @@ contract Deploy is Script {
         console.log("Deployer nonce (pre-deploy):", initialNonce);
 
         // Deploy contracts via DeployUtils
-        (Router router, Coordinator coordinator, SubscriptionBatchReader reader, WalletFactory walletFactory) =
-                            DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(deployerAddress, deployerAddress, 1, address(0));
 
         // Deploy the new client contract, linking it to the router
-        MyTransientClient myClient = new MyTransientClient(address(router));
+        MyTransientClient myClient = new MyTransientClient(address(contracts.router), address(deployerAddress));
 
         // Wire the Router to the WalletFactory
-        router.setWalletFactory(address(walletFactory));
+        contracts.router.setWalletFactory(address(contracts.walletFactory));
+        contracts.immediateFinalizeVerifier.setTokenSupported(address(0), true);
 
         // Summary logs
         console.log("=== Deploy: summary ===");
-        console.log("Router:        ", address(router));
-        console.log("MyTransientClient: ", address(myClient));
-        console.log("Coordinator:   ", address(coordinator));
-        console.log("Reader:        ", address(reader));
-        console.log("WalletFactory: ", address(walletFactory));
+        console.log("Router:             ", address(contracts.router));
+        console.log("MyTransientClient:    ", address(myClient));
+        console.log("Coordinator:        ", address(contracts.coordinator));
+        console.log("Reader:             ", address(contracts.reader));
+        console.log("ImmediateFinalizeVerifier: ", address(contracts.immediateFinalizeVerifier));
+        console.log("WalletFactory:      ", address(contracts.walletFactory));
+        console.log("MockToken:             ", address(contracts.mockToken));
         console.log("=========================");
 
         // Stop broadcasting transactions

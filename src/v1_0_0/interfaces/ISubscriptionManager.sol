@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeSubscription} from "../types/ComputeSubscription.sol";
 
@@ -26,6 +26,35 @@ interface ISubscriptionsManager {
 
     /// @notice Emitted when a commitment times out and is cleaned up
     event CommitmentTimedOut(bytes32 indexed requestId, uint64 indexed subscriptionId, uint32 indexed interval);
+
+    /// @notice Emitted when the minimum repeat interval is updated
+    event MinRepeatIntervalSet(uint32 newMinRepeatInterval);
+
+    /// @notice Emitted when the callback gas limit is updated
+    event CallbackGasLimitSet(uint32 newCallbackGasLimit);
+
+    /// @notice Emitted when a client callback fails (out of gas or revert)
+    /// @param subscriptionId The subscription ID
+    /// @param interval The interval that failed
+    /// @param client The client contract address that failed
+    event CallbackFailed(uint64 indexed subscriptionId, uint32 indexed interval, address indexed client);
+
+    /*//////////////////////////////////////////////////////////////
+                             ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error NotSubscriptionOwner();
+    error SubscriptionNotFound();
+    error SubscriptionNotActive();
+    error SubscriptionCompleted();
+    error CannotRemoveWithPendingRequests();
+    error InvalidSubscription();
+    error NoSuchCommitment();
+    error CommitmentNotTimeoutable();
+    error InvalidWallet();
+    error SignerMismatch();
+    error SignatureExpired();
+    error SubscriptionIntervalTooShort(uint32 interval, uint32 minInterval);
 
     /*//////////////////////////////////////////////////////////////
                                 READ-ONLY ACCESSORS
@@ -69,7 +98,6 @@ interface ISubscriptionsManager {
      * @param containerId identifier of the container .
      * @param maxExecutions Maximum allowed number of executions for this subscription
      * @param intervalSeconds Interval length in seconds between scheduled executions
-     * @param redundancy Number of redundant node responses required per interval.
      * @param useDeliveryInbox If true, node responses will be stored for later pickup (lazy delivery).
      * @param feeToken Token used to pay per-execution fees (address(0) for native ETH).
      * @param feeAmount Fee amount per execution expressed in `feeToken` base units.
@@ -82,13 +110,26 @@ interface ISubscriptionsManager {
         string memory containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
         address wallet,
         address verifier,
         bytes32 routeId
+    ) external returns (uint64 subscriptionId);
+
+    /// @notice Create a subscription on behalf of a client via EIP-712 delegated signature.
+    /// @dev Validates the provided signature and, if accepted, creates or returns an existing subscription id.
+    /// @param nonce Subscriber-supplied nonce (used to prevent replay).
+    /// @param expiry Signature expiry timestamp.
+    /// @param sub ComputeSubscription payload describing subscription parameters.
+    /// @param signature EIP-712 encoded signature authorizing the creation.
+    /// @return subscriptionId The id of the created (or existing) subscription.
+    function createSubscriptionDelegatee(
+        uint32 nonce,
+        uint32 expiry,
+        ComputeSubscription calldata sub,
+        bytes calldata signature
     ) external returns (uint64 subscriptionId);
 
     /**

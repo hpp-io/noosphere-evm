@@ -7,7 +7,7 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 /// @notice Mocks ERC20 token with exposed mint functionality
 contract MockToken is ERC20 {
     /// @notice Initializes the mock token with a name and symbol.
-    constructor() ERC20("TOKEN", "TOKEN") {}
+    constructor() ERC20("NOOSP", "TOKEN") {}
 
     /// @notice Overrides ERC20.decimals
     /// @dev Purposefully selects a weird decimal implementation (WBTC) to test accurancy independent of standard

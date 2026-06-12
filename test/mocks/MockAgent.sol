@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
 import {DelegateeCoordinator} from "../../src/v1_0_0/DelegateeCoordinator.sol";
 import {ComputeSubscription} from "../../src/v1_0_0/types/ComputeSubscription.sol";
+import {PayloadData} from "../../src/v1_0_0/types/PayloadData.sol";
 
 /// @title MockAgent
 /// @notice Minimal test helper that simulates an off-chain node calling into the DelegateeCoordinator.
@@ -41,16 +42,16 @@ contract MockAgent is StdAssertions {
     /// @notice Forward a regular compute delivery call to the Coordinator.
     /// @dev This wrapper keeps the calling EOA as the msg.sender when tests impersonate the node.
     /// @param deliveryInterval Interval number for which the node produced a response.
-    /// @param input Arbitrary input bytes used for the compute job.
-    /// @param output Arbitrary output bytes produced by the node.
-    /// @param proof Off-chain proof bytes (optional / protocol-specific).
+    /// @param input PayloadData pointing to input data.
+    /// @param output PayloadData pointing to output data.
+    /// @param proof PayloadData pointing to proof data.
     /// @param commitmentData ABI-encoded Commitment struct expected by Coordinator.
     /// @param nodeWallet Wallet address used by the node for payments/escrow operations.
     function reportComputeResult(
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes memory commitmentData,
         address nodeWallet
     ) external {
@@ -74,9 +75,9 @@ contract MockAgent is StdAssertions {
     /// @param sub ComputeSubscription payload (delegated subscription parameters).
     /// @param signature EIP-712 signature authorizing the delegate action.
     /// @param deliveryInterval Interval for which this delivery applies.
-    /// @param input Input payload bytes for compute.
-    /// @param output Output bytes produced by the node.
-    /// @param proof Off-chain proof bytes associated with the output.
+    /// @param input PayloadData pointing to input data.
+    /// @param output PayloadData pointing to output data.
+    /// @param proof PayloadData pointing to proof data.
     /// @param nodeWallet Node wallet address used for settlement bookkeeping.
     function reportDelegatedComputeResult(
         uint32 nonce,
@@ -84,9 +85,9 @@ contract MockAgent is StdAssertions {
         ComputeSubscription calldata sub,
         bytes calldata signature,
         uint32 deliveryInterval,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         address nodeWallet
     ) external {
         delegateeCoordinator.reportDelegatedComputeResult(

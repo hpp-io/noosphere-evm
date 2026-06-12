@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {MockTransientComputeClient} from "./mocks/client/MockTransientComputeClient.sol";
@@ -12,6 +12,8 @@ import {Router} from "../src/v1_0_0/Router.sol";
 import {Test} from "forge-std/Test.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 
 /// @title ISubscriptionManagerErrors
 /// @notice Errors emitted by SubscriptionManager
@@ -46,6 +48,21 @@ abstract contract CoordinatorConstants {
 
     /// @notice Mock delivered proof
     bytes internal constant MOCK_PROOF = "proof";
+
+    /// @notice Mock PayloadData for input (data scheme with content hash)
+    function _mockInput() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_INPUT), uri: bytes("")});
+    }
+
+    /// @notice Mock PayloadData for output (data scheme with content hash)
+    function _mockOutput() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_OUTPUT), uri: bytes("")});
+    }
+
+    /// @notice Mock PayloadData for proof (data scheme with content hash)
+    function _mockProof() internal pure returns (PayloadData memory) {
+        return PayloadData({contentHash: keccak256(MOCK_PROOF), uri: bytes("")});
+    }
 
     /// @notice Mock protocol fee (5.11%)
     uint16 internal constant MOCK_PROTOCOL_FEE = 511;
@@ -123,21 +140,24 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() public virtual {
-        // Create mock protocol wallet
-        uint256 initialNonce = vm.getNonce(address(this));
-        address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
-
         // Initialize contracts
-        (Router _router, DelegateeCoordinator _coordinator,, WalletFactory _walletFactory) = DeployUtils.deployContracts(
-            address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(erc20Token)
-        );
-        ROUTER = _router;
-        COORDINATOR = _coordinator;
-        walletFactory = _walletFactory;
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(address(this), address(this), MOCK_PROTOCOL_FEE, address(erc20Token));
 
-        ROUTER.setWalletFactory(address(walletFactory));
+        ROUTER = contracts.router;
+        COORDINATOR = contracts.coordinator;
+        walletFactory = contracts.walletFactory;
+        erc20Token = contracts.mockToken;
+
+        // Configure contracts - pass address(this) as the protocol wallet owner
+        // DeployUtils will create a wallet for this address
+        DeployUtils.configureContracts(contracts, address(this), address(this), MOCK_PROTOCOL_FEE, address(erc20Token));
+
+        // Get the actual protocol wallet address from the billing config
+        BillingConfig memory config = COORDINATOR.getConfig();
+        protocolWalletAddress = config.protocolFeeRecipient;
+
         PROTOCOL = new MockProtocol(COORDINATOR);
-        erc20Token = new MockToken();
 
         // Initalize mock nodes
         alice = new MockAgent(ROUTER);
@@ -160,12 +180,6 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         Wallet userWallet = Wallet(payable(userWalletAddress));
         aliceWalletAddress = walletFactory.createWallet(address(this));
         bobWalletAddress = walletFactory.createWallet(address(this));
-        protocolWalletAddress = walletFactory.createWallet(ownerProtocolWalletAddress);
-
-        // Approve the coordinator to spend from the protocol wallet for native token
-        DeployUtils.updateBillingConfig(
-            COORDINATOR, 1 weeks, protocolWalletAddress, MOCK_PROTOCOL_FEE, 0 ether, address(0)
-        );
 
         // 2. Define payment details for a paid request.
         uint256 feeAmount = 0.1 ether;
@@ -178,5 +192,30 @@ abstract contract ComputeTest is Test, CoordinatorConstants {
         // The approval is for the native token (address(0)).
         userWallet.approve(address(transientClient), address(0), feeAmount);
         // --- End Wallet Setup ---
+    }
+}
+
+contract ClientInputSecurityTest is ComputeTest {
+    function testCannotTamperTransientClientInputs() public {
+        // This selector points to a non-existent function.
+        bytes4 selector = bytes4(keccak256("setSubscriptionInputs(uint64,uint32,bytes)"));
+
+        // The call should fail because the function does not exist and there's no fallback
+        // in the client contract itself that would make it succeed.
+        // This confirms that an external user cannot call any function to change
+        // the private `_subscriptionInputs` mapping.
+        (bool success,) = address(transientClient).call(abi.encodeWithSelector(selector, 1, 1, "new-input"));
+        assertFalse(success, "External input modification should have failed");
+    }
+
+    function testCannotTamperScheduledClientInputs() public {
+        // This selector points to a non-existent function.
+        bytes4 selector = bytes4(keccak256("setSubscriptionInputs(bytes)"));
+
+        // The call should fail because the function does not exist.
+        // This confirms that an external user cannot call any function to change
+        // the private `_subscriptionInputs` state variable.
+        (bool success,) = address(ScheduledClient).call(abi.encodeWithSelector(selector, bytes("tampered-input")));
+        assertFalse(success, "External input modification should have failed");
     }
 }

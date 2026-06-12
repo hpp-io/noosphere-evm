@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 import {ComputeTest} from "./Compute.t.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
-import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
-import {DeployUtils} from "./lib/DeployUtils.sol";
-import {Router} from "../src/v1_0_0/Router.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
+import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
 import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
+import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 
 contract ComputeNextIntervalPrepareTest is ComputeTest {
     function test_Succeeds_When_PreparingNextInterval_OnDelivery() public {
@@ -16,8 +16,7 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         address bobWallet = walletFactory.createWallet(address(bob));
 
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 2;
-        uint256 totalPaymentForTwoIntervals = feeAmount * redundancy * 2;
+        uint256 totalPaymentForTwoIntervals = feeAmount * 2;
 
         // 2. Fund the wallet
         erc20Token.mint(aliceWallet, totalPaymentForTwoIntervals + 10e6); // Mint extra
@@ -28,11 +27,10 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
 
         // 4. Create subscription and first request (interval 1)
         vm.warp(0);
-        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             2, // maxExecutions
-            1 minutes, // intervalSeconds
-            redundancy,
+            10 minutes, // intervalSeconds
             false, // useDeliveryInbox
             address(erc20Token),
             feeAmount,
@@ -46,56 +44,38 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // --- Assertions for the next interval preparation ---
         // 6. Deliver compute for interval 1, which triggers preparation for interval 2
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, bobWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, bobWallet);
 
         // Expect a new request to be started for interval 2
         bytes32 requestId2 = RequestIdUtils.requestIdPacked(subId, uint32(2));
 
         // Expect funds to be locked for the second request
         vm.expectEmit(true, true, false, false, address(Wallet(payable(aliceWallet))));
-        emit Wallet.RequestLocked(
-            requestId2, address(ScheduledClient), address(erc20Token), feeAmount * redundancy, redundancy
-        );
-        bob.prepareNextInterval(subId, 2, address(bob));
+        emit Wallet.RequestLocked(requestId2, address(ScheduledClient), address(erc20Token), feeAmount);
+        bob.prepareNextInterval(subId, 2, bobWallet);
         // 7. Final assertions on wallet state
         assertEq(
-            Wallet(payable(aliceWallet)).lockedOfRequest(requestId2),
-            feeAmount * redundancy,
-            "Funds for interval 2 should be locked"
+            Wallet(payable(aliceWallet)).lockedOfRequest(requestId2), feeAmount, "Funds for interval 2 should be locked"
         );
     }
 
     function test_DoesNotPrepareNextInterval_OnFinalDelivery() public {
         // 1. Create a subscription with a maxExecutions of 1 (a single-shot request).
-        address consumerWallet = walletFactory.createWallet(address(this));
-        address nodeWallet = walletFactory.createWallet(address(bob));
-        uint256 feeAmount = 40e6;
-        erc20Token.mint(consumerWallet, feeAmount);
-        vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(address(transientClient), address(erc20Token), feeAmount);
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID,
+            1, // maxExecutions
+            10 minutes, // intervalSeconds
+            false, // useDeliveryInbox
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
+        );
 
-        (, Commitment memory commitment1) = transientClient.createMockRequest( //
-        MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
-
-        // 2. Deliver the compute for the final (and only) interval.
-        bytes memory commitmentData1 = abi.encode(commitment1);
-
-        // 3. Record logs to check for the absence of next-interval events.
-        vm.recordLogs();
-
-        // 4. Deliver compute.
-        vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-        bob.prepareNextInterval(commitment1.subscriptionId, 2, address(bob));
-        // 5. Assert that no events related to preparing a next interval were emitted.
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 requestStartSelector = Router.RequestStart.selector;
-        bytes32 requestLockedSelector = Wallet.RequestLocked.selector;
-
-        for (uint256 i = 0; i < logs.length; i++) {
-            assertNotEq(logs[i].topics[0], requestStartSelector, "Should not emit RequestStart");
-            assertNotEq(logs[i].topics[0], requestLockedSelector, "Should not emit RequestLocked");
-        }
+        // 2. The subscription has no next interval after the first one.
+        // Attempting to prepare for interval 2 should revert.
+        vm.expectRevert(ICoordinator.NoNextInterval.selector);
+        bob.prepareNextInterval(subId, 2, address(bob));
     }
 
     function test_DoesNotPrepareNextInterval_WithInsufficientFunds() public {
@@ -103,34 +83,29 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         address consumerWallet = walletFactory.createWallet(address(this));
         address nodeWallet = walletFactory.createWallet(address(bob));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 2;
 
         // 2. Fund the wallet with enough for ONLY the first interval
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval);
 
         // 3. Approve for two intervals (even though funds are insufficient)
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(
-            address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2
-        );
+        Wallet(payable(consumerWallet))
+            .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         // 4. Create subscription and first request
-        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
+        );
         // 5. Deliver compute for the first interval
         bytes memory commitmentData1 = abi.encode(commitment1);
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
         // because hasSubscriptionNextInterval will return false due to insufficient funds.
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        // The call to prepareNextInterval should revert because hasSubscriptionNextInterval returns false.
+        vm.expectRevert(ICoordinator.NoNextInterval.selector);
         bob.prepareNextInterval(subId, 2, address(bob));
-        // 7. Assert that no funds were locked for the next interval.
-        bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
-        assertEq(
-            Wallet(payable(consumerWallet)).lockedOfRequest(requestId2), 0, "Should not lock funds for next interval"
-        );
     }
 
     function test_DoesNotPrepareNextInterval_When_InsufficientAllowance() public {
@@ -138,10 +113,9 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         address consumerWallet = walletFactory.createWallet(address(this));
         address nodeWallet = walletFactory.createWallet(address(bob));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 2;
 
         // 2. Fund the wallet with enough for two intervals
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval * 2);
 
         // 3. Approve for ONLY one interval
@@ -149,25 +123,14 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval);
 
         // 4. Create subscription and first request
-        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER);
-
-        // 5. Deliver compute for the first interval
-        //        vm.warp(block.timestamp + 1 minutes);
-        bytes memory commitmentData1 = abi.encode(commitment1);
+        (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, address(erc20Token), feeAmount, consumerWallet, NO_VERIFIER
+        );
 
         // 6. Deliver compute. This should succeed, but it should NOT trigger the next interval preparation
         // because hasSubscriptionNextInterval will return false due to insufficient allowance.
-        vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
-        bob.prepareNextInterval(commitment1.subscriptionId, 2, address(bob));
-        // 7. Assert that no funds were locked for the next interval.
-        bytes32 requestId2 = keccak256(abi.encodePacked(subId, uint32(2)));
-        assertEq(
-            Wallet(payable(consumerWallet)).lockedOfRequest(requestId2),
-            0,
-            "Should not lock funds for next interval due to allowance"
-        );
+        vm.expectRevert(ICoordinator.NoNextInterval.selector);
+        bob.prepareNextInterval(subId, 2, address(bob));
     }
 
     function test_Succeeds_When_PayingTickFee_OnNextIntervalPreparation() public {
@@ -177,15 +140,19 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // Create a recurring subscription and a node wallet.
         address consumerWallet = walletFactory.createWallet(address(this));
         address nodeWallet = walletFactory.createWallet(address(bob)); // This wallet will receive the tick fee.
-        address protocolWallet = walletFactory.createWallet(address(this));
-        uint16 redundancy = 1;
+        address protocolWallet = walletFactory.createWallet(address(this)); // This wallet will pay the tick fee.
         uint256 feeAmount = 1 ether;
 
         // Fund protocol wallet with ETH
         vm.deal(protocolWallet, 10 ether);
-        DeployUtils.updateBillingConfig(
-            COORDINATOR, 1 weeks, protocolWallet, MOCK_PROTOCOL_FEE, expectedTickFee, address(0)
-        );
+        BillingConfig memory newConfig = BillingConfig({
+            verificationTimeout: 1 weeks,
+            protocolFeeRecipient: protocolWallet,
+            protocolFee: MOCK_PROTOCOL_FEE,
+            tickNodeFee: expectedTickFee,
+            tickNodeFeeToken: address(0) // ETH
+        });
+        COORDINATOR.updateConfig(newConfig);
 
         // The protocol wallet is its own spender for tick fees.
         vm.startPrank(address(this));
@@ -200,14 +167,15 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         Wallet(payable(consumerWallet)).approve(address(ScheduledClient), ZERO_ADDRESS, feeAmount * 2);
 
         // Create the subscription
-        (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription( //
-        MOCK_CONTAINER_ID, 2, 1 minutes, redundancy, false, ZERO_ADDRESS, feeAmount, consumerWallet, NO_VERIFIER);
+        (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID, 2, 10 minutes, false, ZERO_ADDRESS, feeAmount, consumerWallet, NO_VERIFIER
+        );
         assertEq(subId, 1);
 
         // 2. Act: Deliver compute for the first interval, which triggers preparation for the second.
         bytes memory commitmentData1 = abi.encode(commitment);
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, nodeWallet);
         bob.prepareNextInterval(commitment.subscriptionId, 2, nodeWallet);
         // 3. Assert: Check if the node wallet received the tick fee.
         uint256 computeFee = 0.8978 ether;
@@ -216,5 +184,41 @@ contract ComputeNextIntervalPrepareTest is ComputeTest {
         // Get initial balance of the node wallet that will trigger the tick
         uint256 nodeWalletBalance = nodeWallet.balance;
         assertEq(nodeWalletBalance, finalNodeWalletBalance, "Node wallet should receive the tick fee");
+    }
+
+    function test_RevertIf_PreparingNextInterval_WhenNotReady() public {
+        // 1. Create a subscription with maxExecutions = 3
+        (uint64 subId,) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID,
+            3, // maxExecutions
+            10 minutes, // intervalSeconds
+            false, // useDeliveryInbox
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
+        );
+
+        // 2. The current interval is 1. Attempt to prepare for interval 3, skipping 2.
+        vm.expectRevert(ICoordinator.NotReadyForNextInterval.selector);
+        bob.prepareNextInterval(subId, 3, address(bob));
+    }
+
+    function test_RevertIf_PreparingNextInterval_WhenNoNextInterval() public {
+        // 1. Create a subscription with maxExecutions = 1
+        (uint64 subId, Commitment memory commitment) = ScheduledClient.createMockSubscription(
+            MOCK_CONTAINER_ID,
+            1, // maxExecutions
+            10 minutes, // intervalSeconds
+            false, // useDeliveryInbox
+            NO_PAYMENT_TOKEN,
+            0,
+            userWalletAddress,
+            NO_VERIFIER
+        );
+
+        // 2. The subscription has no next interval after the first one.
+        vm.expectRevert(ICoordinator.NoNextInterval.selector);
+        bob.prepareNextInterval(subId, 2, address(bob));
     }
 }

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeTest, ISubscriptionManagerErrors} from "./Compute.t.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 
 contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
@@ -12,21 +13,18 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         // 1. Create a recurring, paid subscription
         address consumerWallet = walletFactory.createWallet(address(this));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 2;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval * 2); // Fund for two intervals
 
         vm.prank(address(this));
-        Wallet(payable(consumerWallet)).approve(
-            address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2
-        );
+        Wallet(payable(consumerWallet))
+            .approve(address(ScheduledClient), address(erc20Token), paymentForOneInterval * 2);
 
         // Create subscription and first request
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             3, // maxExecutions
-            1 minutes, // intervalSeconds
-            redundancy,
+            10 minutes, // intervalSeconds
             false, // useDeliveryInbox
             address(erc20Token),
             feeAmount,
@@ -35,7 +33,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         );
 
         // 2. Warp time to the *second* interval, making the first one timeoutable
-        vm.warp(block.timestamp + 2 minutes); // currentInterval will be 2
+        vm.warp(block.timestamp + 20 minutes); // currentInterval will be 2
 
         // 3. Assert that funds are initially locked for the first request
         assertEq(Wallet(payable(consumerWallet)).lockedOfRequest(commitment1.requestId), paymentForOneInterval);
@@ -58,7 +56,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOutRequest_ForCurrentInterval() public {
         // 1. Create a recurring subscription
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 2. Expect a revert because the interval is not in the past
@@ -69,7 +67,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOutRequest_ForInactiveSubscription() public {
         // 1. Create a recurring subscription. The first request is created immediately.
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 3. Expect a revert because the subscription is not active
@@ -80,7 +78,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
     function test_RevertIf_TimingOut_NonExistentRequest() public {
         // 1. Create a subscription but don't create a request for interval 2
         uint64 subId = ScheduledClient.createMockSubscriptionWithoutRequest(
-            MOCK_CONTAINER_ID, 3, 1 minutes, 1, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, 3, 10 minutes, false, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         // 2. Warp time to make the subscription active
@@ -97,8 +95,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         address consumerWallet = walletFactory.createWallet(address(this));
         address nodeWallet = walletFactory.createWallet(address(bob));
         uint256 feeAmount = 40e6;
-        uint16 redundancy = 1;
-        uint256 paymentForOneInterval = feeAmount * redundancy;
+        uint256 paymentForOneInterval = feeAmount;
         erc20Token.mint(consumerWallet, paymentForOneInterval);
 
         vm.prank(address(this));
@@ -107,8 +104,7 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         (uint64 subId, Commitment memory commitment1) = ScheduledClient.createMockSubscription(
             MOCK_CONTAINER_ID,
             2, // maxExecutions
-            1 minutes, // intervalSeconds
-            redundancy,
+            10 minutes, // intervalSeconds
             false, // useDeliveryInbox
             address(erc20Token),
             feeAmount,
@@ -117,15 +113,15 @@ contract ComputeTimeoutRequestTest is ComputeTest, ISubscriptionManagerErrors {
         );
 
         // 2. Warp time to make the request timeoutable and then time it out.
-        vm.warp(block.timestamp + 2 minutes);
+        vm.warp(block.timestamp + 20 minutes);
         ROUTER.timeoutRequest(commitment1.requestId, subId, 1);
 
         // 3. Attempt to deliver compute for the now-timed-out request.
         // It should revert because the coordinator detects a mismatch between the
-        // delivery interval (1) and the current system interval (2).
+        // commitment is no longer valid after being timed out.
         bytes memory commitmentData1 = abi.encode(commitment1);
-        vm.expectRevert(abi.encodeWithSelector(ICoordinator.IntervalMismatch.selector, 1));
+        vm.expectRevert(ICoordinator.InvalidCommitment.selector);
         vm.prank(address(bob));
-        bob.reportComputeResult(1, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData1, nodeWallet);
+        bob.reportComputeResult(1, _mockInput(), _mockOutput(), _mockProof(), commitmentData1, nodeWallet);
     }
 }

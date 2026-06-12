@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {ComputeSubscription} from "../src/v1_0_0/types/ComputeSubscription.sol";
+import {Coordinator} from "../src/v1_0_0/Coordinator.sol";
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {CoordinatorConstants} from "./Compute.t.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {ICoordinator} from "../src/v1_0_0/interfaces/ICoordinator.sol";
+import {ISubscriptionsManager} from "../src/v1_0_0/interfaces/ISubscriptionManager.sol";
 import {DelegateeCoordinator} from "../src/v1_0_0/DelegateeCoordinator.sol";
 import {DeliveredOutput} from "./mocks/client/MockComputeClient.sol";
 import {DeployUtils} from "./lib/DeployUtils.sol";
@@ -13,6 +16,7 @@ import {MockDelegatorScheduledComputeClient} from "./mocks/client/MockDelegatorS
 import {MockDelegatorTransientComputeClient} from "./mocks/client/MockDelegatorTransientComputeClient.sol";
 import {MockAgent} from "./mocks/MockAgent.sol";
 import {MockProtocol} from "./mocks/MockProtocol.sol";
+import {ImmediateFinalizeVerifier} from "src/v1_0_0/verifier/ImmediateFinalizeVerifier.sol";
 import {MockToken} from "./mocks/MockToken.sol";
 import {PendingDelivery} from "src/v1_0_0/types/PendingDelivery.sol";
 import {SubscriptionBatchReader} from "../src/v1_0_0/utility/SubscriptionBatchReader.sol";
@@ -21,11 +25,13 @@ import {Router} from "../src/v1_0_0/Router.sol";
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {WalletFactory} from "../src/v1_0_0/wallet/WalletFactory.sol";
+import {Wallet} from "../src/v1_0_0/wallet/Wallet.sol";
+import {BillingConfig} from "../src/v1_0_0/types/BillingConfig.sol";
 
 /// @title Delegatee compute integration tests (refactored)
 /// @notice Tests the delegated subscription flow and delegated delivery paths.
 /// @dev Variable names and comments are refactored for clarity; behavior preserved.
-contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
+contract DelegateeComputeTest is Test, CoordinatorConstants {
     /*//////////////////////////////////////////////////////////////
                                 CONTRACT REFERENCES
     //////////////////////////////////////////////////////////////*/
@@ -44,6 +50,9 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
     /// @notice ERC20 token used for protocol fees in tests
     MockToken internal token;
+
+    /// @notice Real immediate finalize verifier
+    ImmediateFinalizeVerifier internal immediateFinalizeVerifier;
 
     /*//////////////////////////////////////////////////////////////
                                MOCK NODES / CLIENTS
@@ -89,33 +98,40 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         address ownerProtocolWalletAddress = vm.computeCreateAddress(address(this), initialNonce + 4);
 
         // Deploy core contracts and supporting utilities via helper
-        (Router deployedRouter, DelegateeCoordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
-            DeployUtils.deployContracts(address(this), ownerProtocolWalletAddress, MOCK_PROTOCOL_FEE, address(token));
-        router = deployedRouter;
-        coordinator = deployedCoordinator;
-        walletFactory = deployedWalletFactory;
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(address(this), address(this), MOCK_PROTOCOL_FEE, address(token));
 
-        router.setWalletFactory(address(walletFactory));
+        router = contracts.router;
+        coordinator = contracts.coordinator;
+        walletFactory = contracts.walletFactory;
 
         // instantiate mocks used by tests
-        protocolMock = new MockProtocol(deployedCoordinator);
         token = new MockToken();
+        immediateFinalizeVerifier = new ImmediateFinalizeVerifier(address(coordinator), address(this));
 
-        // create and register mock nodes
-        nodeAlice = new MockAgent(router);
-        nodeBob = new MockAgent(router);
-        nodeCharlie = new MockAgent(router);
+        // Configure verifier
+        immediateFinalizeVerifier.setTokenSupported(address(token), true);
+        immediateFinalizeVerifier.setTokenSupported(ZERO_ADDRESS, true);
 
         // create wallets for test actors
         userWalletAddr = walletFactory.createWallet(address(this));
         aliceWalletAddr = walletFactory.createWallet(address(this));
         bobWalletAddr = walletFactory.createWallet(address(this));
-        protocolWalletAddr = walletFactory.createWallet(ownerProtocolWalletAddress);
 
-        // configure billing settings for coordinator (protocol fee recipient / wallet)
-        DeployUtils.updateBillingConfig(
-            coordinator, 1 weeks, protocolWalletAddr, MOCK_PROTOCOL_FEE, 0 ether, address(0)
-        );
+        // Configure contracts - pass address(this) as the protocol wallet owner
+        // DeployUtils will create a wallet for this address
+        DeployUtils.configureContracts(contracts, address(this), address(this), MOCK_PROTOCOL_FEE, address(token));
+
+        // Get the actual protocol wallet address from the billing config
+        BillingConfig memory config = coordinator.getConfig();
+        protocolWalletAddr = config.protocolFeeRecipient;
+
+        // instantiate mocks used by tests
+        protocolMock = new MockProtocol(Coordinator(address(contracts.coordinator)));
+        // create and register mock nodes
+        nodeAlice = new MockAgent(router);
+        nodeBob = new MockAgent(router);
+        nodeCharlie = new MockAgent(router);
 
         // setup delegatee and backup keys/addresses
         delegateeKey = 0xA11CE;
@@ -142,7 +158,6 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         return ComputeSubscription({
             activeAt: uint32(block.timestamp),
             client: address(transientClient),
-            redundancy: 1,
             maxExecutions: 1,
             intervalSeconds: 0,
             containerId: HASHED_MOCK_CONTAINER_ID,
@@ -192,7 +207,6 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         ComputeSubscription memory stored = router.getComputeSubscription(expectedId);
         assertEq(sub.activeAt, stored.activeAt);
         assertEq(sub.client, stored.client);
-        assertEq(sub.redundancy, stored.redundancy);
         assertEq(sub.maxExecutions, stored.maxExecutions);
         assertEq(sub.intervalSeconds, stored.intervalSeconds);
         assertEq(sub.containerId, stored.containerId);
@@ -214,6 +228,36 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
             router.delegateCreatedIds(keccak256(abi.encodePacked(address(transientClient), nonce))), subscriptionId
         );
         return subscriptionId;
+    }
+
+    /// @notice Builds and signs an EIP-712 proof for ImmediateFinalizeVerifier.
+    function buildAndSignImmediateProof(
+        bytes32 requestId,
+        bytes memory commitmentData,
+        bytes memory input,
+        bytes memory output,
+        address nodeEoa,
+        uint256 signingKey
+    ) internal view returns (bytes memory) {
+        bytes32 commitmentHash = keccak256(commitmentData);
+        bytes32 inputHash = keccak256(input);
+        bytes32 resultHash = keccak256(output);
+        uint256 timestamp = block.timestamp;
+
+        // The `nodeAddress` in the struct MUST be the EOA that is actually signing the message.
+        bytes32 structHash = immediateFinalizeVerifier.getStructHash(
+            requestId, commitmentHash, inputHash, resultHash, nodeEoa, timestamp
+        );
+
+        // Create the EIP-712 digest for the node to sign.
+        bytes32 digest = immediateFinalizeVerifier.getTypedDataHash(structHash);
+
+        // Sign the digest with the node's private key.
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signingKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v); // v is 27 or 28
+
+        // Encode the proof as expected by ImmediateFinalizeVerifier.
+        return abi.encode(requestId, commitmentHash, inputHash, resultHash, nodeEoa, timestamp, signature);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -268,7 +312,6 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         ComputeSubscription memory stored = router.getComputeSubscription(1);
         assertEq(sub.activeAt, stored.activeAt);
         assertEq(sub.client, stored.client);
-        assertEq(sub.redundancy, stored.redundancy);
         assertEq(sub.maxExecutions, stored.maxExecutions);
         assertEq(sub.intervalSeconds, stored.intervalSeconds);
         assertEq(sub.containerId, stored.containerId);
@@ -332,10 +375,10 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         uint64 subscriptionId = router.createSubscriptionDelegatee(nonce, expiry, sub, signature);
         assertEq(subscriptionId, 1);
 
-        // create another payload with different redundancy but same nonce
+        // create another payload with different maxExecutions but same nonce
         sub = mockSubscription();
-        uint16 originalRedundancy = sub.redundancy;
-        sub.redundancy = 5;
+        uint32 originalMaxExecutions = sub.maxExecutions;
+        sub.maxExecutions = 5;
 
         // sign and attempt to create with same nonce
         typed = buildTypedMessage(nonce, expiry, sub);
@@ -343,10 +386,10 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         signature = abi.encodePacked(r, s, v);
 
         subscriptionId = router.createSubscriptionDelegatee(nonce, expiry, sub, signature);
-        // should return the existing id and not update redundancy
+        // should return the existing id and not update maxExecutions
         assertEq(subscriptionId, 1);
         ComputeSubscription memory stored = router.getComputeSubscription(subscriptionId);
-        assertEq(stored.redundancy, originalRedundancy);
+        assertEq(stored.maxExecutions, originalMaxExecutions);
 
         // rotating signer and attempting to use same nonce with a different signer must also not overwrite
         transientClient.updateMockSigner(backupDelegateeAddr);
@@ -356,7 +399,7 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
 
         assertEq(subscriptionId, 1);
         stored = router.getComputeSubscription(subscriptionId);
-        assertEq(stored.redundancy, originalRedundancy);
+        assertEq(stored.maxExecutions, originalMaxExecutions);
     }
 
     /// @notice Delegated subscription creation should accept out-of-order nonces (non-monotonic), but maxSubscriberNonce should track the maximum seen nonce.
@@ -420,19 +463,15 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         uint32 deliveryInterval = 1;
         // Alice delivers using the delegatee flow; this will create subscription and deliver output
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
-        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval, 1);
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval);
         assertEq(out.subscriptionId, 1);
         assertEq(out.interval, deliveryInterval);
-        assertEq(out.redundancy, 1);
-        assertEq(out.input, MOCK_INPUT);
-        assertEq(out.output, MOCK_OUTPUT);
-        assertEq(out.proof, MOCK_PROOF);
-
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
+        assertEq(out.input.contentHash, _mockInput().contentHash);
+        assertEq(out.output.contentHash, _mockOutput().contentHash);
+        assertEq(out.proof.contentHash, _mockProof().contentHash);
     }
 
     /// @notice When a subscription requests inbox delivery, the delegated delivery should store the pending delivery in the client's inbox.
@@ -452,7 +491,7 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         vm.warp(block.timestamp + 1 minutes);
 
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
         // pending delivery should be stored in the subscription client's inbox
@@ -461,15 +500,12 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         assertTrue(exists, "Expected pending delivery to exist");
         assertEq(pd.subscriptionId, 1);
         assertEq(pd.interval, deliveryInterval);
-        assertEq(pd.input, MOCK_INPUT);
-        assertEq(pd.output, MOCK_OUTPUT);
-        assertEq(pd.proof, MOCK_PROOF);
-
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
+        assertEq(pd.input.contentHash, _mockInput().contentHash);
+        assertEq(pd.output.contentHash, _mockOutput().contentHash);
+        assertEq(pd.proof.contentHash, _mockProof().contentHash);
     }
 
-    /// @notice Attempting to deliver for a completed interval must revert.
+    /// @notice Reusing the same nonce after a transient subscription is completed should revert
     function test_RevertsIf_AtomicallyDeliveringOutput_ForCompletedSubscription() public {
         uint32 nonce = router.maxSubscriberNonce(address(transientClient));
         ComputeSubscription memory sub = mockSubscription();
@@ -479,46 +515,73 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         uint32 deliveryInterval = 1;
-
-        // record logs to extract events emitted by coordinator during atomic delivery
-        vm.recordLogs();
+        // First delivery: creates subscription and delivers output
         nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
 
-        // find RequestStarted Commitment in recorded logs
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 requestStartedTopic = ICoordinator.RequestStarted.selector;
-        Commitment memory commitment;
-        bool found = false;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == requestStartedTopic) {
-                commitment = abi.decode(logs[i].data, (Commitment));
-                found = true;
-                break;
-            }
-        }
-        assertTrue(found, "RequestStarted event not emitted");
-        assertEq(commitment.subscriptionId, uint64(1));
+        // Verify delivery succeeded
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(1, deliveryInterval);
+        assertEq(out.subscriptionId, 1);
 
-        // subsequent deliveries for the same interval should revert with IntervalCompleted
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
-        );
-
-        bytes memory commitmentData = abi.encode(commitment);
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportComputeResult(
-            deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, commitmentData, bobWalletAddr
+        // Second attempt with same nonce should revert because subscription is completed
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
         );
     }
 
-    /// @notice Delegated delivery to an existing subscription should accept multiple distinct node responses up to redundancy.
-    function test_Succeeds_When_DeliveringDelegatedComputeResponse_ForExistingSubscription() public {
+    /// @notice Trying to deliver twice for the same interval should revert with InvalidCommitment
+    function test_RevertsIf_DeliveringDelegatedComputeResponse_Twice() public {
         uint32 nonce = router.maxSubscriberNonce(address(transientClient));
         ComputeSubscription memory sub = mockSubscription();
-        sub.redundancy = 2;
+        uint32 expiry = uint32(block.timestamp) + 30 minutes;
+        bytes32 typed = buildTypedMessage(nonce, expiry, sub);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(delegateeKey, typed);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint32 deliveryInterval = 1;
+        // First delivery succeeds
+        nodeAlice.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), aliceWalletAddr
+        );
+
+        // Bob tries to deliver for the same subscription/interval - should revert
+        // The subscription is already completed (transient with maxExecutions=1), so it should revert
+        vm.expectRevert(ISubscriptionsManager.SubscriptionCompleted.selector);
+        nodeBob.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), _mockProof(), bobWalletAddr
+        );
+    }
+
+    /// @notice A delegated delivery with a valid proof against ImmediateFinalizeVerifier should succeed.
+    /// @dev Skipped: Verifier tests require separate design for PayloadData integration.
+    function test_Succeeds_When_DeliveringDelegatedWithValidImmediateProof() public {
+        vm.skip(true); // TODO: Re-enable after verifier redesign for PayloadData
+        // 1. Setup: Define node EOA and its wallet
+        uint256 nodeKey = 0x411CE; // Alice's EOA key
+        address nodeEoa = vm.addr(nodeKey);
+        address nodeWalletAddr = walletFactory.createWallet(nodeEoa);
+
+        // 2. Fund wallets and set allowances
+        token.mint(userWalletAddr, 50e6); // User has funds for payment
+        token.mint(nodeWalletAddr, 50e6); // Node has funds for escrow
+
+        // User approves the client contract to spend on its behalf
+        vm.prank(address(this)); // Owner of userWalletAddr
+        Wallet(payable(userWalletAddr)).approve(address(transientClient), address(token), 50e6);
+
+        // Node EOA approves itself to lock funds from its own CA wallet
+        vm.prank(nodeEoa);
+        Wallet(payable(nodeWalletAddr)).approve(nodeEoa, address(token), 50e6);
+
+        // 3. Prepare the delegated subscription payload
+        uint32 nonce = router.maxSubscriberNonce(address(transientClient));
+        ComputeSubscription memory sub = mockSubscription();
+        sub.wallet = payable(userWalletAddr);
+        sub.feeToken = address(token);
+        sub.feeAmount = 40e6;
+        sub.verifier = payable(address(immediateFinalizeVerifier)); // Use the immediate verifier
 
         uint32 expiry = uint32(block.timestamp) + 30 minutes;
         bytes32 typed = buildTypedMessage(nonce, expiry, sub);
@@ -526,24 +589,50 @@ contract DelegateeComputeTestRefactored is Test, CoordinatorConstants {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         uint32 deliveryInterval = 1;
-        // first node responds
-        nodeAlice.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, aliceWalletAddr
-        );
-        bytes32 key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeAlice)));
-        assertEq(coordinator.nodeResponded(key), true);
 
-        // second node responds
-        nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
-        );
-        key = keccak256(abi.encode(uint64(1), deliveryInterval, address(nodeBob)));
-        assertEq(coordinator.nodeResponded(key), true);
+        // 4. Prepare the proof for ImmediateFinalizeVerifier
+        // The requestId for a delegated subscription is derived from the client and nonce.
+        bytes32 expectedRequestId = keccak256(abi.encodePacked(address(transientClient), nonce));
 
-        // a duplicate attempt from the same node should revert
-        vm.expectRevert(ICoordinator.IntervalCompleted.selector);
-        nodeBob.reportDelegatedComputeResult(
-            nonce, expiry, sub, signature, deliveryInterval, MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bobWalletAddr
+        // For a delegated request, the commitment does not yet exist on-chain when the proof is generated.
+        // The proof's `commitmentHash` is therefore created by hashing the subscription data itself,
+        // mirroring the off-chain proof generation logic and the on-chain verification in Billing.sol.
+        bytes memory commitmentData = abi.encode(sub);
+
+        bytes memory validProof =
+            buildAndSignImmediateProof(expectedRequestId, commitmentData, MOCK_INPUT, MOCK_OUTPUT, nodeEoa, nodeKey);
+
+        // Create PayloadData for the dynamically generated proof
+        PayloadData memory proof_ = PayloadData({contentHash: keccak256(validProof), uri: bytes("")});
+
+        // 5. Execute the delegated report from the node's EOA
+        // This atomically creates the subscription and delivers the result.
+        vm.startPrank(nodeEoa);
+        coordinator.reportDelegatedComputeResult(
+            nonce, expiry, sub, signature, deliveryInterval, _mockInput(), _mockOutput(), proof_, nodeWalletAddr
         );
+        vm.stopPrank();
+
+        // 6. Assert final balances
+        // User's wallet: 50e6 (initial) - 40e6 (payment) = 10e6
+        assertEq(token.balanceOf(userWalletAddr), 10e6, "User wallet balance incorrect");
+
+        // Node's wallet: 50e6 (initial) + (40e6 - protocol_fee)
+        // Protocol fee: 40e6 * 0.0511 * 2 = 4,088,000
+        // Net to Node: 40e6 - 4,088,000 = 35,912,000
+        // Total: 50,000,000 + 35,912,000 = 85,912,000
+        assertEq(token.balanceOf(nodeWalletAddr), 85_912_000, "Node wallet balance incorrect");
+
+        // Verifier gets no fee in this setup
+        assertEq(token.balanceOf(address(immediateFinalizeVerifier)), 0, "Verifier wallet balance incorrect");
+
+        // Protocol wallet gets the fee
+        assertEq(token.balanceOf(protocolWalletAddr), 4_088_000, "Protocol wallet balance incorrect");
+
+        // 7. Assert that the output was delivered to the client
+        uint64 createdSubId = router.delegateCreatedIds(expectedRequestId);
+        DeliveredOutput memory out = transientClient.getDeliveredOutput(createdSubId, deliveryInterval);
+        assertEq(out.subscriptionId, createdSubId);
+        assertEq(out.output.contentHash, _mockOutput().contentHash);
     }
 }

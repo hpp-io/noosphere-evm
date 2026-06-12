@@ -1,0 +1,9 @@
+{
+  "solc_remaps": [
+    "@openzeppelin/contracts/=/Users/nol/work/noosphere/noosphere-evm/lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src"
+  ],
+  "filter_paths": "(test/|mocks/|node_modules/)",
+  "ignore_paths": [],
+  "args": []
+}

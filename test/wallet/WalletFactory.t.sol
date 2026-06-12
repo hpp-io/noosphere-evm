@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Coordinator} from "../../src/v1_0_0/Coordinator.sol";
 import {Router} from "../../src/v1_0_0/Router.sol";
@@ -33,15 +33,15 @@ contract WalletFactoryTest is Test {
     /// @notice Deploy Router / Coordinator / WalletFactory via LibDeploy and wire Router -> WalletFactory.
     function setUp() public {
         // Deploy core contracts. LibDeploy returns (Router, Coordinator, SubscriptionBatchReader , WalletFactory)
-        (Router deployedRouter, Coordinator deployedCoordinator,, WalletFactory deployedWalletFactory) =
-            DeployUtils.deployContracts(address(this), address(0), 1, address(0));
+        DeployUtils.DeployedContracts memory contracts =
+            DeployUtils.deployContracts(address(this), address(this), 1, address(0));
 
-        router = deployedRouter;
-        coordinator = deployedCoordinator;
-        walletFactory = deployedWalletFactory;
+        router = contracts.router;
+        coordinator = Coordinator(address(contracts.coordinator));
+        walletFactory = contracts.walletFactory;
 
         // Complete wiring: inform Router about the WalletFactory address
-        router.setWalletFactory(address(walletFactory));
+        router.setWalletFactory(address(contracts.walletFactory));
     }
 
     /*//////////////////////////////////////////////////////////////

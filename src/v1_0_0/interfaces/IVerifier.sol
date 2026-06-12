@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
+
+import {ProofVerificationRequest} from "../types/ProofVerificationRequest.sol";
+import {PayloadData} from "../types/PayloadData.sol";
 
 /// @title IVerifier
 /// @notice Minimal asynchronous verifier interface used by the protocol.
@@ -11,8 +14,8 @@ interface IVerifier {
     /// @notice Emitted when a verification request has been accepted by the verifier.
     /// @param subscriptionId Subscription identifier that this verification relates to.
     /// @param interval Interval index (or round) that this verification concerns.
-    /// @param node Address of the agent/node that submitted the proof.
-    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address node);
+    /// @param nodeAddress Address of the agent/node that submitted the proof.
+    event VerificationRequested(uint64 indexed subscriptionId, uint32 indexed interval, address nodeAddress);
 
     /// @notice Returns the fee required by the verifier when paid in `token`.
     /// @param token ERC20 token address (or `address(0)` for native ETH).
@@ -28,14 +31,26 @@ interface IVerifier {
     /// @return accepted True when the token is accepted for payment.
     function isPaymentTokenSupported(address token) external view returns (bool accepted);
 
-    /// @notice Submit a proof for asynchronous verification.
-    /// @dev Implementations MUST either emit `VerificationRequested(requestId, ...)` or return a non-zero
+    /// @notice Returns token support status and fee in a single call.
+    /// @dev Gas optimization: combines isPaymentTokenSupported + fee into one external call.
+    ///      Saves ~45k gas on Arbitrum Nitro v3.9+ (Multi-Constraint Pricing).
+    /// @param token ERC20 token address. Use `address(0)` for native ETH if supported.
+    /// @return supported True when the token is accepted for payment.
+    /// @return feeAmount Fee amount denominated in `token` base units.
+    function getTokenFeeInfo(address token) external view returns (bool supported, uint256 feeAmount);
+
+    /// @notice Submit a proof for asynchronous verification using a structured request.
+    /// @dev This is an overloaded function that accepts a `ProofVerificationRequest` struct.
+    ///      Implementations MUST either emit `VerificationRequested(requestId, ...)` or return a non-zero
     ///      `requestId` when a submission is accepted. Verification results are delivered out-of-band
     ///      (events, callbacks, or off-chain notifications). Do not expect synchronous verification here.
-    /// @param subscriptionId Subscription identifier associated with this proof.
-    /// @param interval Interval index (or round) that this proof corresponds to.
-    /// @param node Address of the agent/node that produced and submitted the proof.
-    /// @param proof Arbitrary proof bytes understood by the verifier implementation.
-    function submitProofForVerification(uint64 subscriptionId, uint32 interval, address node, bytes calldata proof)
-        external;
+    /// @param request A struct containing subscriptionId, interval, submitter, and nodeWallet.
+    /// @param proof PayloadData containing proof data (contentHash for verification, uri for actual proof bytes).
+    function submitProofForVerification(
+        ProofVerificationRequest calldata request,
+        PayloadData calldata proof,
+        bytes32 commitmentHash,
+        bytes32 inputHash,
+        bytes32 resultHash
+    ) external;
 }

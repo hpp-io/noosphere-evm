@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 struct Commitment {
     /// @dev The unique identifier for the request.
@@ -12,8 +12,6 @@ struct Commitment {
     uint32 interval;
     /// @dev Indicates if the commitment is useDeliveryInbox (i.e., renewed only when needed).
     bool useDeliveryInbox;
-    /// @dev The number of redundant nodes for the commitment.
-    uint16 redundancy;
     /// @dev The wallet address associated with the commitment.
     address walletAddress;
     /// @dev The amount of payment for the commitment.
@@ -24,4 +22,6 @@ struct Commitment {
     address verifier;
     /// @dev The address of the coordinator contract.
     address coordinator;
+    /// @dev The verifier fee amount (cached to avoid duplicate external calls).
+    uint256 verifierFee;
 }

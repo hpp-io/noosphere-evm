@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity 0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../src/v1_0_0/types/Commitment.sol";
 import {ComputeClient} from "../src/v1_0_0/client/ComputeClient.sol";
 import {ComputeTest} from "./Compute.t.sol";
+import {PayloadData} from "../src/v1_0_0/types/PayloadData.sol";
 import {MockCoordinatorV2} from "./mocks/MockCoordinatorV2.sol";
 import {IOwnableRouter} from "../src/v1_0_0/interfaces/IOwnableRouter.sol";
 import {RequestIdUtils} from "../src/v1_0_0/utility/RequestIdUtils.sol";
@@ -16,14 +17,14 @@ contract GeneralComputeTest is ComputeTest {
     function test_SubscriptionId_IsNeverReassigned() public {
         // Create new callback subscription
         (uint64 id1, Commitment memory commitment1) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
 
         assertEq(id1, 1);
 
         // Create new subscriptions
         (uint64 id2,) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         // Assert head
         assertEq(id2, 2);
@@ -35,7 +36,7 @@ contract GeneralComputeTest is ComputeTest {
 
         // Create new subscription
         (uint64 id3,) = transientClient.createMockRequest(
-            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, 1, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
+            MOCK_CONTAINER_ID, MOCK_CONTAINER_INPUTS, NO_PAYMENT_TOKEN, 0, userWalletAddress, NO_VERIFIER
         );
         assertEq(id3, 3);
     }
@@ -45,7 +46,7 @@ contract GeneralComputeTest is ComputeTest {
         // Expect revert sending from address(this)
         vm.expectRevert(ComputeClient.NotRouter.selector);
         transientClient.receiveRequestCompute(
-            1, 1, 1, false, address(this), MOCK_INPUT, MOCK_OUTPUT, MOCK_PROOF, bytes32(0)
+            1, 1, false, address(this), _mockInput(), _mockOutput(), _mockProof(), bytes32(0)
         );
     }
 
@@ -84,7 +85,6 @@ contract GeneralComputeTest is ComputeTest {
                 nextSubscriptionId,
                 keccak256(abi.encode(MOCK_CONTAINER_ID)),
                 interval,
-                1, // redundancy
                 false,
                 NO_PAYMENT_TOKEN,
                 0, // feeAmount
@@ -98,7 +98,6 @@ contract GeneralComputeTest is ComputeTest {
         transientClient.createMockRequestWithRouteId(
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,
-            1,
             NO_PAYMENT_TOKEN,
             0,
             userWalletAddress,
@@ -112,14 +111,13 @@ contract GeneralComputeTest is ComputeTest {
         // 1. Define an invalid routeId that is not registered in the router
         bytes32 invalidRouteId = bytes32("invalid_route_id");
 
-        // 2. Expect a revert with the "Coordinator not found" error message
-        vm.expectRevert(bytes("Coordinator not found"));
+        // 2. Expect a revert with the CoordinatorNotFound error
+        vm.expectRevert(abi.encodeWithSignature("CoordinatorNotFound()"));
 
         // 3. Attempt to create a request using the invalid routeId
         transientClient.createMockRequestWithRouteId(
             MOCK_CONTAINER_ID,
             MOCK_CONTAINER_INPUTS,
-            1,
             NO_PAYMENT_TOKEN,
             0,
             userWalletAddress,

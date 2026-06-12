@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.23;
+pragma solidity 0.8.24;
 
 import {Commitment} from "../../../src/v1_0_0/types/Commitment.sol";
 import {ComputeSubscription} from "../../../src/v1_0_0/types/ComputeSubscription.sol";
 import {ScheduledComputeClient} from "../../../src/v1_0_0/client/ScheduledComputeClient.sol";
 import {MockComputeClient, DeliveredOutput} from "./MockComputeClient.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
+import {PayloadData} from "../../../src/v1_0_0/types/PayloadData.sol";
 
 /// @notice Mocks ScheduledComputeClient.sol
 contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient, StdAssertions {
-    /*//////////////////////////////////////////////////////////////
-                               CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Hard-coded container inputs
-    bytes public constant CONTAINER_INPUTS = bytes("CONTAINER_INPUTS");
-
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -45,7 +39,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -57,7 +50,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -71,7 +63,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -79,8 +70,7 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             verifier,
             creationTimestamp
         );
-
-        return _requestCompute(actualSubscriptionID, 1);
+        return _requestCompute(actualSubscriptionID, bytes("input"));
     }
 
     /// @notice Create new mock subscription without sending an initial request
@@ -88,7 +78,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -99,7 +88,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -113,7 +101,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
             containerId,
             maxExecutions,
             intervalSeconds,
-            redundancy,
             useDeliveryInbox,
             feeToken,
             feeAmount,
@@ -131,7 +118,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         string calldata containerId,
         uint32 maxExecutions,
         uint32 intervalSeconds,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address feeToken,
         uint256 feeAmount,
@@ -143,7 +129,6 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
 
         assertEq(sub.activeAt, type(uint32).max);
         assertEq(sub.client, address(this));
-        assertEq(sub.redundancy, redundancy);
         assertEq(sub.maxExecutions, maxExecutions);
         assertEq(sub.intervalSeconds, intervalSeconds);
         assertEq(sub.containerId, keccak256(abi.encode(containerId)));
@@ -166,33 +151,22 @@ contract MockScheduledComputeClient is MockComputeClient, ScheduledComputeClient
         //        assertEq(actual.activeAt, expected);
     }
 
-    function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller)
-        external
-        pure
-        override
-        returns (bytes memory)
-    {
-        return CONTAINER_INPUTS;
-    }
-
     /// @notice Overrides internal function, pushing received response to delivered outputs map
     /// @dev Allows further overriding downstream (useful for `Allowlist` testing)
     function _receiveCompute(
         uint64 subscriptionId,
         uint32 interval,
-        uint16 redundancy,
         bool useDeliveryInbox,
         address node,
-        bytes calldata input,
-        bytes calldata output,
-        bytes calldata proof,
+        PayloadData calldata input,
+        PayloadData calldata output,
+        PayloadData calldata proof,
         bytes32 containerId
     ) internal virtual override {
         // Log delivered output
-        outputs[subscriptionId][interval][redundancy] = DeliveredOutput({
+        outputs[subscriptionId][interval] = DeliveredOutput({
             subscriptionId: subscriptionId,
             interval: interval,
-            redundancy: redundancy,
             useDeliveryInbox: useDeliveryInbox,
             node: node,
             input: input,

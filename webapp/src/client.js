@@ -20,7 +20,7 @@ function getLatestDeploymentAddress(contractName) {
     try {
         // Load the broadcast file which contains the results of the last deployment.
         const chainId = 31337; // Assuming local Anvil chain
-        const broadcastPath = path.join(projectRoot, `broadcast/Deploy.sol/${chainId}/run-latest.json`);
+        const broadcastPath = path.join(projectRoot, `broadcast/DeployTest.sol/${chainId}/run-latest.json`);
         const broadcast = require(broadcastPath);
         // Find the transaction for the contract deployment.
         const deployment = broadcast.transactions.find(
@@ -32,6 +32,16 @@ function getLatestDeploymentAddress(contractName) {
         return undefined;
     }
 }
+
+function requestIdPacked(subscriptionId, interval) {
+    const packedData = ethers.solidityPacked(
+        ['uint64', 'uint32'],
+        [subscriptionId, interval]
+    );
+    const rid = ethers.keccak256(packedData);
+    return rid;
+}
+
 
 async function main() {
     // Load RPC_URL and PRIVATE_KEY from the .env file.
@@ -149,7 +159,6 @@ async function main() {
         console.log("\n1️⃣  Sending transaction to create a new compute subscription...");
         const subscriptionParams = {
             containerId: "my-container-id",
-            redundancy: 1,
             useDeliveryInbox: false,
             feeToken: ethers.ZeroAddress, // Native ETH
             feeAmount: ethers.parseEther("0.0001"),
@@ -161,7 +170,6 @@ async function main() {
         // Use the pending-based nonce
         const createSubTx = await clientContract.createSubscription.send(
             subscriptionParams.containerId,
-            subscriptionParams.redundancy,
             subscriptionParams.useDeliveryInbox,
             subscriptionParams.feeToken,
             subscriptionParams.feeAmount,
@@ -222,6 +230,14 @@ async function main() {
         }
 
         const { requestId } = ourRequestEvent.args;
+
+        const expectedRequestId = requestIdPacked(subscriptionId, 1);
+        if (requestId === expectedRequestId) {
+            console.log(`   ✅ Request ID matches expected value derived from requestIdPacked.`);
+        } else {
+            console.warn(`   ⚠️ Warning: Request ID (${requestId}) does not match expected value (${expectedRequestId}).`);
+        }
+
 
         console.log(`   ✅ Compute requested successfully!`);
         console.log(`   Request ID: ${requestId}`);
