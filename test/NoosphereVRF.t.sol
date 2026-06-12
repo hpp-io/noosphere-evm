@@ -455,6 +455,72 @@ contract NoosphereVRFCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+            BINDING / FULFILLMENT OWNERSHIP (P1 security)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev A non-blocked third party cannot bind a requestId it did not reserve.
+    function test_bindRequest_revertsForNonReserver() public {
+        vm.prank(CONSUMER);
+        uint256 id = vrf.reserveRequestId();
+
+        // Attacker is not blocked, but did not reserve `id`.
+        vm.prank(address(0xA77ACC));
+        vm.expectRevert(NoosphereVRF.NotRequestOwner.selector);
+        vrf.bindRequest(1, 7, id);
+    }
+
+    /// @dev P1 #6: an attacker binding to the same (subscriptionId, interval) writes only into
+    ///      its own namespace and cannot overwrite/corrupt the victim's binding.
+    function test_bindRequest_attackerCannotOverwriteVictimBinding() public {
+        address attacker = address(0xA77ACC);
+
+        // Victim reserves id=0 and binds (1, 7).
+        vm.startPrank(CONSUMER);
+        uint256 victimId = vrf.reserveRequestId();
+        vrf.bindRequest(1, 7, victimId);
+        vm.stopPrank();
+
+        // Attacker reserves its own id=1 and binds the SAME (1, 7) — allowed, but scoped to attacker.
+        vm.startPrank(attacker);
+        uint256 attackerId = vrf.reserveRequestId();
+        vrf.bindRequest(1, 7, attackerId);
+        vm.stopPrank();
+
+        // Victim's fulfillment still resolves the victim's request with the correct random value.
+        bytes memory uri = _buildDataUri(abi.encodePacked(RV0, leaf1, node23));
+        vm.prank(CONSUMER);
+        (uint256 retId, bytes32 retRv,,) = vrf.fulfillRandomValue(1, 7, uri);
+
+        assertEq(retId, victimId);
+        assertEq(retRv, RV0);
+    }
+
+    /// @dev P1 #7: an attacker who obtains the victim's outputUri cannot consume/delete the
+    ///      victim's binding via a direct fulfillment call.
+    function test_fulfillRandomValue_attackerCannotHijack() public {
+        address attacker = address(0xA77ACC);
+
+        vm.startPrank(CONSUMER);
+        vrf.reserveRequestId();
+        vrf.bindRequest(1, 7, 0);
+        vm.stopPrank();
+
+        bytes memory uri = _buildDataUri(abi.encodePacked(RV0, leaf1, node23));
+
+        // Attacker calls fulfillment for the victim's (1, 7) — resolves the attacker's empty
+        // namespace and reverts without touching the victim's binding.
+        vm.prank(attacker);
+        vm.expectRevert(NoosphereVRF.AlreadyFulfilledOrInvalid.selector);
+        vrf.fulfillRandomValue(1, 7, uri);
+
+        // Victim's binding is intact and still fulfillable.
+        vm.prank(CONSUMER);
+        (uint256 retId, bytes32 retRv,,) = vrf.fulfillRandomValue(1, 7, uri);
+        assertEq(retId, 0);
+        assertEq(retRv, RV0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                        REQUEST EXPIRY
     //////////////////////////////////////////////////////////////*/
 

@@ -53,10 +53,16 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     /// @notice Block number when each request was made (deleted after fulfillment)
     mapping(uint256 => uint256) public requestBlocks;
 
-    /// @notice Callback routing: (subscriptionId, interval) → requestId+1
-    /// @dev Stored as requestId+1 so that 0 means "empty/fulfilled".
+    /// @notice requestId → the consumer that reserved it (gates binding; deleted after fulfillment)
+    mapping(uint256 => address) public requestOwner;
+
+    /// @notice Callback routing: (consumer, subscriptionId, interval) → requestId+1
+    /// @dev Scoped by the calling consumer (msg.sender) so a caller can only write/read its
+    ///      own bindings — this prevents cross-consumer binding overwrites and fulfillment
+    ///      hijacking (a third party cannot consume or delete a binding it did not create).
+    ///      Stored as requestId+1 so that 0 means "empty/fulfilled".
     ///      Deleted after fulfillment for replay prevention + gas refund.
-    mapping(uint64 => mapping(uint32 => uint256)) private intervalToRequestId;
+    mapping(address => mapping(uint64 => mapping(uint32 => uint256))) private intervalToRequestId;
 
     /// @notice Blocked consumer contracts (blacklist — default: all allowed)
     mapping(address => bool) public blockedConsumers;
@@ -76,6 +82,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     error EpochNotRegistered();
     error AlreadyFulfilledOrInvalid();
     error InvalidRequestId();
+    error NotRequestOwner();
     error InvalidMerkleProof();
     error InvalidOutputData();
 
@@ -127,8 +134,9 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         uint256 epoch = requestId / EPOCH_SIZE;
         if (epochRoots[epoch] == bytes32(0)) revert EpochNotRegistered();
 
-        // Record block number for 2-party entropy
+        // Record block number for 2-party entropy and the reserving consumer (binding owner)
         requestBlocks[requestId] = ARB_SYS.arbBlockNumber();
+        requestOwner[requestId] = msg.sender;
 
         // Warn when epoch is running low
         uint256 usedInEpoch = requestId % EPOCH_SIZE + 1;
@@ -140,7 +148,11 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
     /// @inheritdoc INoosphereVRF
     function bindRequest(uint64 subscriptionId, uint32 interval, uint256 requestId) external notBlocked {
         if (requestBlocks[requestId] == 0) revert InvalidRequestId();
-        intervalToRequestId[subscriptionId][interval] = requestId + 1;
+        // Only the consumer that reserved this requestId may bind it, and the binding is
+        // scoped to that consumer — a caller can neither bind someone else's requestId nor
+        // overwrite another consumer's (subscriptionId, interval) routing slot.
+        if (requestOwner[requestId] != msg.sender) revert NotRequestOwner();
+        intervalToRequestId[msg.sender][subscriptionId][interval] = requestId + 1;
     }
 
     /// @inheritdoc INoosphereVRF
@@ -149,11 +161,13 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         notBlocked
         returns (uint256 requestId, bytes32 randomValue, bytes32 blockHash, bool expired)
     {
-        // ① Resolve requestId (replay prevention: delete after read)
-        uint256 stored = intervalToRequestId[subscriptionId][interval];
+        // ① Resolve requestId from the caller's own binding namespace (replay prevention:
+        //    delete after read). Scoping by msg.sender means a third party cannot consume
+        //    or delete a binding it did not create.
+        uint256 stored = intervalToRequestId[msg.sender][subscriptionId][interval];
         if (stored == 0) revert AlreadyFulfilledOrInvalid();
         requestId = stored - 1;
-        delete intervalToRequestId[subscriptionId][interval]; // replay prevention + gas refund
+        delete intervalToRequestId[msg.sender][subscriptionId][interval]; // replay prevention + gas refund
 
         // ② Decode packed hex from data URI
         bytes32[] memory proof;
@@ -168,6 +182,7 @@ contract NoosphereVRF is INoosphereVRF, ITypeAndVersion {
         // ④ Get L2 blockhash for 2-party entropy (via ArbSys)
         blockHash = ARB_SYS.arbBlockHash(requestBlocks[requestId]);
         delete requestBlocks[requestId]; // gas refund — no longer needed
+        delete requestOwner[requestId]; // gas refund — binding consumed
 
         expired = (blockHash == bytes32(0));
 
