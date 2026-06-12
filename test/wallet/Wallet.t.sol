@@ -239,4 +239,44 @@ contract WalletTest is Test, IWalletFactoryEvents {
         assertEq(ownerBalanceAfter - ownerBalanceBefore, unlockedAmount);
         assertEq(token.balanceOf(address(wallet)), lockAmount);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                       EIP-1271 isValidSignature
+    //////////////////////////////////////////////////////////////*/
+
+    bytes4 internal constant EIP1271_MAGIC = 0x1626ba7e;
+    bytes4 internal constant EIP1271_FAIL = 0xffffffff;
+
+    function test_isValidSignature_validOwnerSignature_returnsMagic() public {
+        (address signer, uint256 signerKey) = makeAddrAndKey("eip1271-owner");
+        Wallet w = Wallet(payable(walletFactory.createWallet(signer)));
+
+        bytes32 hash = keccak256("hello");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, hash);
+        bytes memory sig = abi.encodePacked(r, s, v);
+
+        assertEq(w.isValidSignature(hash, sig), EIP1271_MAGIC);
+    }
+
+    function test_isValidSignature_wrongSigner_returnsFailure() public {
+        (address signer,) = makeAddrAndKey("eip1271-owner");
+        (, uint256 attackerKey) = makeAddrAndKey("eip1271-attacker");
+        Wallet w = Wallet(payable(walletFactory.createWallet(signer)));
+
+        bytes32 hash = keccak256("hello");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(attackerKey, hash);
+        bytes memory sig = abi.encodePacked(r, s, v);
+
+        assertEq(w.isValidSignature(hash, sig), EIP1271_FAIL);
+    }
+
+    /// @dev Regression: a malformed signature (length != 65) must return the failure value
+    ///      rather than reverting, per EIP-1271. `ECDSA.recover` would have reverted.
+    function test_isValidSignature_malformedSignature_returnsFailureWithoutReverting() public {
+        (address signer,) = makeAddrAndKey("eip1271-owner");
+        Wallet w = Wallet(payable(walletFactory.createWallet(signer)));
+
+        assertEq(w.isValidSignature(keccak256("hello"), hex"1234"), EIP1271_FAIL);
+        assertEq(w.isValidSignature(keccak256("hello"), bytes("")), EIP1271_FAIL);
+    }
 }

@@ -193,10 +193,12 @@ contract ImmediateFinalizeVerifier is IVerifier, EIP712, Ownable {
             )
         );
 
-        address signer;
-        signer = ECDSA.recover(digest, proofData.signature);
+        // Use tryRecover so a malformed signature (bad length / invalid v,s) is reported as a
+        // failed verification rather than reverting the whole call — reverting would prevent the
+        // coordinator from recording the failure (and any downstream slashing/penalty).
+        (address signer, ECDSA.RecoverError recoverErr,) = ECDSA.tryRecover(digest, proofData.signature);
 
-        if (signer == address(0)) {
+        if (recoverErr != ECDSA.RecoverError.NoError || signer == address(0)) {
             emit VerificationFailed(
                 request.subscriptionId, request.interval, request.submitterAddress, "zero_address_signer"
             );

@@ -376,7 +376,10 @@ contract Wallet is Ownable, Routable, ReentrancyGuard, IERC1271 {
      * @return `bytes4(keccak256("isValidSignature(bytes32,bytes)"))` if the signature is valid, and `0xffffffff` otherwise.
      */
     function isValidSignature(bytes32 hash_, bytes memory signature_) external view override returns (bytes4) {
-        if (ECDSA.recover(hash_, signature_) == owner()) {
+        // EIP-1271 requires returning a non-magic value (not reverting) for invalid signatures.
+        // tryRecover keeps malformed signatures (bad length / invalid v,s) from reverting.
+        (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(hash_, signature_);
+        if (err == ECDSA.RecoverError.NoError && signer == owner()) {
             return IERC1271.isValidSignature.selector;
         }
         return bytes4(0xffffffff);
