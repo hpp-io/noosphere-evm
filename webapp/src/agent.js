@@ -183,8 +183,9 @@ async function main() {
             console.log("   1. Fetching compute inputs...");
             const subscription = await routerContract.getComputeSubscription(commitment.subscriptionId);
             const clientContract = new ethers.Contract(subscription.client, ClientArtifact.abi, provider); // Read-only is fine
-            const inputs = await clientContract.getComputeInputs(subscriptionId, commitment.interval, now(), nodePaymentWalletAddress);
-            console.log(`      Inputs received: ${inputs}`);
+            // getComputeInputs now returns (bytes data, InputType inputType)
+            const [inputData] = await clientContract.getComputeInputs(subscriptionId, commitment.interval, now(), nodePaymentWalletAddress);
+            console.log(`      Inputs received: ${inputData}`);
 
             // [EXAMPLE] Get the delegated signer from the client contract
             console.log("   -> Fetching delegated signer from client contract...");
@@ -196,7 +197,7 @@ async function main() {
             const timestamp = new Date().toISOString();
             // Generate a long string for testing purposes (approx. 1000 chars)
             const longText = "This is a long string for testing data transmission. It repeats multiple times to increase its length and simulate a more realistic payload that a compute job might return. This helps in verifying that the system can handle larger data sizes without issues. 1. ".repeat(5);
-            const rawOutput = `I am GPT. Processed at: ${timestamp}. Inputs: ${ethers.toUtf8String(inputs)}. Payload: ${longText}`;
+            const rawOutput = `I am GPT. Processed at: ${timestamp}. Inputs: ${ethers.toUtf8String(inputData)}. Payload: ${longText}`;
             const outputBytes = ethers.hexlify(ethers.toUtf8Bytes(rawOutput));
 
             console.log(`   2. Computation finished. Output: "${rawOutput}" (bytes: ${outputBytes})`);
@@ -243,11 +244,18 @@ async function main() {
             console.log(`         Verifier Fee: ${eventCommitment.data.verifierFee}`);
 
 
+            // The Coordinator expects PayloadData tuples {contentHash, uri} for input/output/proof.
+            // Data scheme: carry keccak256(content) and leave uri empty — matches the on-chain
+            // _mockInput/_mockOutput shape (PayloadData{contentHash: keccak256(data), uri: ""}).
+            const inputPayload = { contentHash: ethers.keccak256(inputData), uri: "0x" };
+            const outputPayload = { contentHash: ethers.keccak256(outputBytes), uri: "0x" };
+            const proofPayload = { contentHash: ethers.ZeroHash, uri: "0x" }; // no proof in this flow
+
             const reportTx = await coordinatorContract.reportComputeResult(
                 commitment.interval,
-                inputs,
-                outputBytes,
-                "0x", // proof (placeholder)
+                inputPayload,
+                outputPayload,
+                proofPayload,
                 eventCommitment.encode(), // Use the reconstructed data for the report
                 nodePaymentWalletAddress // The node's dedicated Wallet contract that will receive payment
             );
