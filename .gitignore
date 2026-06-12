@@ -30,3 +30,5 @@ package-lock.json
 webapp/src/benchmark/logs/
 .env-*
 CLAUDE.md
+.claude/
+.codex/
